@@ -34,4 +34,7 @@ __pycache__/
 .coverage
 htmlcov/
 *.egg-info/
-
+# Environment and local secrets
+.env
+.env.*
+!.env.example

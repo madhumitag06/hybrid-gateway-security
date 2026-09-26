@@ -161,3 +161,35 @@ def test_presets_endpoint():
     assert "BENIGN_HTTPS" in data
     assert "PORT_SCAN" in data
     assert "BRUTE_FORCE_SSH" in data
+
+
+def test_predict_and_verify_database_persistence():
+    payload = {
+        "packet_count": 2,
+        "byte_count": 120,
+        "duration": 0.08,
+        "conn_rate": 120.0,
+        "dst_port": 8080,
+        "unique_dst_ports": 75,
+        "failed_auth_count": 0,
+        "source_ip": "192.168.1.200",
+        "destination_ip": "10.100.4.55",
+        "persist": True,
+    }
+    response = client.post("/api/v1/predict", json=payload)
+    assert response.status_code == 200
+    data = response.json()
+
+    assert data["event_id"] is not None
+    event_id = data["event_id"]
+
+    # Retrieve from PostgreSQL events endpoint
+    get_res = client.get(f"/api/v1/events/{event_id}")
+    assert get_res.status_code == 200
+    event_data = get_res.json()
+    assert event_data["id"] == event_id
+    assert event_data["source"] == "192.168.1.200"
+    assert event_data["destination"] == "10.100.4.55"
+    assert event_data["attack_type"] == "PORT_SCAN"
+    assert event_data["risk"] == data["risk_score"]
+

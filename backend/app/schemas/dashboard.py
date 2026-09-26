@@ -1,10 +1,12 @@
 """
-Dashboard API Schemas
-=====================
-Pydantic models for the dashboard summary, security events, and policy action endpoints.
+Dashboard & Security Event API Schemas
+======================================
+Pydantic models for the dashboard summary, security events query/filtering,
+audit histories, and policy action responses.
 """
 
-from typing import List, Literal, Optional
+from datetime import datetime
+from typing import Any, Dict, List, Literal, Optional
 from pydantic import BaseModel, Field
 
 FrontendSeverity = Literal["low", "medium", "high", "critical"]
@@ -25,6 +27,38 @@ class SecurityEventSchema(BaseModel):
     description: str
     attack_type: Optional[str] = None
     confidence: Optional[float] = None
+    is_anomaly: Optional[bool] = None
+    is_demo: Optional[bool] = False
+
+
+class SecurityEventDetailSchema(SecurityEventSchema):
+    flow_features: Dict[str, Any] = Field(default_factory=dict)
+    class_probabilities: Dict[str, float] = Field(default_factory=dict)
+    top_contributing_features: List[Dict[str, Any]] = Field(default_factory=list)
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+
+class EventListResponseSchema(BaseModel):
+    events: List[SecurityEventSchema]
+    total: int
+    limit: int
+    offset: int
+
+
+class PolicyAuditLogSchema(BaseModel):
+    id: int
+    event_id: str
+    requested_action: PolicyAction
+    previous_action: Optional[str] = None
+    resulting_status: EventStatus
+    actor: str
+    timestamp: datetime
+
+
+class EventHistoryResponseSchema(BaseModel):
+    event_id: str
+    history: List[PolicyAuditLogSchema]
 
 
 class RiskReasonSchema(BaseModel):
@@ -39,12 +73,14 @@ class DashboardDataSchema(BaseModel):
     activeFlows: int
     events: List[SecurityEventSchema]
     reasons: List[RiskReasonSchema]
-    modelStatus: str = "Trained RandomForestClassifier active"
-    isSimulatedFlowBuffer: bool = True  # Explicit disclaimer until live packet capture is implemented
+    modelStatus: str = "Trained RandomForestClassifier active (Phase 1)"
+    isSimulatedFlowBuffer: bool = False  # Now PostgreSQL backed
+    databaseBackend: str = "PostgreSQL (Persistent Storage)"
 
 
 class PolicyActionRequest(BaseModel):
     action: PolicyAction
+    actor: Optional[str] = "analyst"
 
 
 class PolicyActionResponse(BaseModel):
@@ -52,3 +88,4 @@ class PolicyActionResponse(BaseModel):
     action: PolicyAction
     status: EventStatus
     message: str
+    timestamp: Optional[datetime] = None

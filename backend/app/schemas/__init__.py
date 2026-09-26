@@ -13,6 +13,14 @@ from backend.app.schemas.dashboard import (
     PolicyActionRequest,
     PolicyActionResponse,
 )
+from backend.app.schemas.ingest import (
+    FlowFeatureSummary,
+    IngestedFlowResult,
+    IngestionMetrics,
+    PcapIngestionResponse,
+    SamplePcapInfo,
+    IngestionStatusResponse,
+)
 
 __all__ = [
     "NetworkFlowRequest",
@@ -25,4 +33,10 @@ __all__ = [
     "RiskReasonSchema",
     "PolicyActionRequest",
     "PolicyActionResponse",
+    "FlowFeatureSummary",
+    "IngestedFlowResult",
+    "IngestionMetrics",
+    "PcapIngestionResponse",
+    "SamplePcapInfo",
+    "IngestionStatusResponse",
 ]

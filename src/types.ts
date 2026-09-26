@@ -75,3 +75,69 @@ export interface BackendHealth {
   timestamp_utc: string
 }
 
+export interface SamplePcapInfo {
+  sample_id: string
+  name: string
+  filename: string
+  description: string
+  packet_count: number
+  expected_threat: string
+  file_size_bytes: number
+}
+
+export interface FlowFeatureSummary {
+  flow_id: string
+  source_ip: string
+  destination_ip: string
+  protocol: string
+  dst_port: number
+  packet_count: number
+  byte_count: number
+  duration: number
+  conn_rate: number
+  unique_dst_ports: number
+  failed_auth_count: number
+}
+
+export interface IngestedFlowResult {
+  flow_id: string
+  flow_features: FlowFeatureSummary
+  prediction: FlowPredictionResponse
+  persisted_event_id?: string
+}
+
+export interface IngestionMetrics {
+  packets_read: number
+  packets_processed: number
+  packets_skipped: number
+  flows_generated: number
+  parse_duration_ms: number
+  inference_duration_ms: number
+  persist_duration_ms: number
+  total_duration_ms: number
+  throughput_packets_per_sec: number
+}
+
+export interface PcapIngestionResponse {
+  source_type: string
+  filename: string
+  file_size_bytes: number
+  is_demo: boolean
+  metrics: IngestionMetrics
+  flows_evaluated: number
+  high_risk_flows_count: number
+  results: IngestedFlowResult[]
+}
+
+export interface IngestionStatusResponse {
+  engine_status: string
+  active_mode: string
+  raw_socket_capture_supported: boolean
+  platform: string
+  supported_formats: string[]
+  max_upload_size_mb: number
+  total_pcaps_ingested: number
+  total_packets_processed: number
+  total_flows_generated: number
+}
+

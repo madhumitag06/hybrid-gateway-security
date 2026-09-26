@@ -1,10 +1,12 @@
 """
 Dashboard API Router (v1)
 =========================
-Serves aggregated dashboard metrics and accepts policy action updates.
+Serves aggregated dashboard metrics from PostgreSQL and persists policy action updates.
 """
 
-from fastapi import APIRouter, Path
+from fastapi import APIRouter, Depends, Path
+from sqlalchemy.orm import Session
+from backend.app.db.session import get_db
 from backend.app.schemas.dashboard import (
     DashboardDataSchema,
     PolicyActionRequest,
@@ -19,22 +21,28 @@ router = APIRouter(tags=["Dashboard"])
     "/dashboard",
     response_model=DashboardDataSchema,
     summary="Get aggregated security dashboard metrics",
-    description="Returns gateway risk state, active flow count, security events, and top risk explanations derived dynamically from the ML model.",
+    description="Returns gateway risk state, active flow count, security events, and top risk explanations derived dynamically from PostgreSQL-persisted events.",
 )
 @router.get("/v1/dashboard", response_model=DashboardDataSchema, include_in_schema=False)
-def get_dashboard() -> DashboardDataSchema:
-    return DashboardService.get_dashboard_data()
+def get_dashboard(db: Session = Depends(get_db)) -> DashboardDataSchema:
+    return DashboardService.get_dashboard_data(db=db)
 
 
 @router.post(
     "/events/{event_id}/action",
     response_model=PolicyActionResponse,
     summary="Update policy action for security event",
-    description="Applies a gateway policy action ('Monitor', 'Restrict', 'Block') to an incident event.",
+    description="Applies and logs a gateway policy action ('Monitor', 'Restrict', 'Block') to PostgreSQL.",
 )
 @router.post("/v1/events/{event_id}/action", response_model=PolicyActionResponse, include_in_schema=False)
 def update_event_action(
     event_id: str = Path(..., description="ID of the security event to update"),
     request: PolicyActionRequest = ...,
+    db: Session = Depends(get_db),
 ) -> PolicyActionResponse:
-    return DashboardService.apply_policy_action(event_id=event_id, action=request.action)
+    return DashboardService.apply_policy_action(
+        db=db,
+        event_id=event_id,
+        action=request.action,
+        actor=request.actor or "analyst",
+    )

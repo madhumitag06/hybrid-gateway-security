@@ -26,6 +26,9 @@ class NetworkFlowRequest(BaseModel):
     bytes_per_sec: Optional[float] = Field(default=None, ge=0.0, description="Throughput (bytes/sec)")
     packets_per_sec: Optional[float] = Field(default=None, ge=0.0, description="Packet rate (packets/sec)")
     avg_packet_size: Optional[float] = Field(default=None, ge=0.0, description="Average packet size (bytes)")
+    source_ip: Optional[str] = Field(default="192.168.1.100", description="Source IP address")
+    destination_ip: Optional[str] = Field(default="10.100.1.10", description="Destination IP address")
+    persist: Optional[bool] = Field(default=True, description="Whether to persist this prediction into PostgreSQL")
 
 
 class ContributingFeatureSchema(BaseModel):
@@ -50,6 +53,7 @@ class PredictionResponse(BaseModel):
     top_contributing_features: List[ContributingFeatureSchema] = Field(
         default_factory=list, description="Top anomalous feature indicators"
     )
+    event_id: Optional[str] = Field(default=None, description="Persisted PostgreSQL security event identifier")
 
 
 class BatchPredictionRequest(BaseModel):

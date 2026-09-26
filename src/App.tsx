@@ -2,11 +2,18 @@ import { useEffect, useMemo, useState } from 'react'
 import './App.css'
 import { applyAction, getDashboard } from './services/dashboard'
 import { getPresets, predictFlow } from './services/predictor'
+import {
+  ingestSamplePcap,
+  listSamplePcaps,
+  uploadPcapFile,
+} from './services/ingestion'
 import type {
   DashboardData,
   FlowPredictionRequest,
   FlowPredictionResponse,
+  PcapIngestionResponse,
   PolicyAction,
+  SamplePcapInfo,
   SecurityEvent,
 } from './types'
 
@@ -201,6 +208,12 @@ export default function App() {
   const [predicting, setPredicting] = useState(false)
   const [presets, setPresets] = useState<Record<string, FlowPredictionRequest>>({})
 
+  // Phase 4: PCAP Ingestion State
+  const [showIngestModal, setShowIngestModal] = useState(false)
+  const [samplePcaps, setSamplePcaps] = useState<SamplePcapInfo[]>([])
+  const [ingesting, setIngesting] = useState(false)
+  const [ingestResponse, setIngestResponse] = useState<PcapIngestionResponse | null>(null)
+
   useEffect(() => {
     const controller = new AbortController()
     getDashboard(controller.signal)
@@ -224,6 +237,11 @@ export default function App() {
           BORDERLINE_FLOW: { packet_count: 8, byte_count: 600, duration: 0.8, conn_rate: 15.0, dst_port: 8080, unique_dst_ports: 5, failed_auth_count: 0 },
         })
       })
+
+    // Preload sample PCAP fixtures list
+    listSamplePcaps()
+      .then(setSamplePcaps)
+      .catch(() => {})
 
     return () => controller.abort()
   }, [])
@@ -273,6 +291,39 @@ export default function App() {
     if (preset) {
       setFlowInput({ ...preset })
       setPredictResult(null)
+    }
+  }
+
+  const handleIngestSample = async (filename: string) => {
+    setIngesting(true)
+    try {
+      const res = await ingestSamplePcap(filename, true)
+      setIngestResponse(res)
+      setToast(`Ingested ${res.filename}: ${res.metrics.packets_processed} pkts -> ${res.flows_evaluated} flows evaluated.`)
+      // Refresh dashboard to show newly persisted flows
+      getDashboard().then((d) => setData(d.data)).catch(() => {})
+    } catch (err) {
+      setToast(`PCAP Ingestion error: ${String(err)}`)
+    } finally {
+      setIngesting(false)
+    }
+  }
+
+  const handleUploadPcap = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setIngesting(true)
+    try {
+      const res = await uploadPcapFile(file, true)
+      setIngestResponse(res)
+      setToast(`Uploaded & Ingested ${res.filename}: ${res.metrics.packets_processed} pkts -> ${res.flows_evaluated} flows.`)
+      // Refresh dashboard
+      getDashboard().then((d) => setData(d.data)).catch(() => {})
+    } catch (err) {
+      setToast(`Upload error: ${String(err)}`)
+    } finally {
+      setIngesting(false)
+      e.target.value = ''
     }
   }
 
@@ -333,6 +384,9 @@ export default function App() {
           </div>
           <button className="analyzer-btn" onClick={() => setShowAnalyzer(true)}>
             ⚡ Test Live Flow (ML API)
+          </button>
+          <button className="analyzer-btn pcap-btn" onClick={() => setShowIngestModal(true)}>
+            📥 Ingest PCAP Traffic
           </button>
           <button className="select">Production ⌄</button>
           <select
@@ -719,6 +773,133 @@ export default function App() {
                     ))}
                   </div>
                 )}
+              </div>
+            )}
+          </section>
+        </div>
+      )}
+
+      {showIngestModal && (
+        <div className="backdrop" onClick={() => setShowIngestModal(false)}>
+          <section className="analyzer-modal" onClick={(e) => e.stopPropagation()}>
+            <button className="close-btn" onClick={() => setShowIngestModal(false)}>
+              ×
+            </button>
+            <div className="modal-badge-row">
+              <span className="api-badge">Phase 4 Engine</span>
+              <span className="model-badge">Scapy PcapReader + 5-Tuple Aggregator</span>
+            </div>
+            <h2>PCAP Traffic Ingestion & Flow Capture</h2>
+            <p className="analyzer-sub">
+              Ingest raw packet traces (.pcap/.pcapng), aggregate packets into bidirectional flow sessions,
+              extract Phase 1 ML feature vectors, and persist evaluated events to PostgreSQL.
+            </p>
+
+            <div className="preset-container">
+              <label>1. Verified Pre-Packaged Benchmark Captures</label>
+              <div className="pcap-sample-grid">
+                {samplePcaps.map((sample) => (
+                  <div
+                    key={sample.sample_id}
+                    className="pcap-sample-card"
+                    onClick={() => handleIngestSample(sample.filename)}
+                  >
+                    <div>
+                      <h4>{sample.name}</h4>
+                      <p>{sample.description}</p>
+                    </div>
+                    <div className="pcap-sample-footer">
+                      <span>{sample.packet_count} packets</span>
+                      <span className={`badge ${sample.expected_threat}`}>{sample.expected_threat}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="preset-container">
+              <label>2. Or Upload Custom PCAP / PCAPNG File (Max 15MB)</label>
+              <label className="pcap-upload-zone">
+                <input
+                  type="file"
+                  accept=".pcap,.pcapng,.cap"
+                  disabled={ingesting}
+                  onChange={handleUploadPcap}
+                />
+                <span>{ingesting ? 'Parsing Packets & Evaluating ML Flows...' : '📁 Click to Choose or Drop PCAP File'}</span>
+                <small>Supports standard IPv4/IPv6 TCP, UDP, and ICMP captures</small>
+              </label>
+            </div>
+
+            {ingestResponse && (
+              <div className="prediction-result-panel">
+                <div className="result-header">
+                  <h3>Ingestion Telemetry & ML Results: {ingestResponse.filename}</h3>
+                  <span className={`threat-tag ${ingestResponse.high_risk_flows_count > 0 ? 'HIGH' : 'LOW'}`}>
+                    {ingestResponse.flows_evaluated} Flows ({ingestResponse.high_risk_flows_count} High Risk)
+                  </span>
+                </div>
+
+                <div className="metrics-strip">
+                  <div className="metric-box">
+                    <small>Packets Parsed</small>
+                    <b>{ingestResponse.metrics.packets_processed}</b>
+                  </div>
+                  <div className="metric-box">
+                    <small>Flows Created</small>
+                    <b>{ingestResponse.metrics.flows_generated}</b>
+                  </div>
+                  <div className="metric-box">
+                    <small>Parse Time</small>
+                    <b>{ingestResponse.metrics.parse_duration_ms} ms</b>
+                  </div>
+                  <div className="metric-box">
+                    <small>ML Inference</small>
+                    <b>{ingestResponse.metrics.inference_duration_ms} ms</b>
+                  </div>
+                  <div className="metric-box">
+                    <small>DB Persist</small>
+                    <b>{ingestResponse.metrics.persist_duration_ms} ms</b>
+                  </div>
+                  <div className="metric-box">
+                    <small>Throughput</small>
+                    <b>{ingestResponse.metrics.throughput_packets_per_sec} pkt/s</b>
+                  </div>
+                </div>
+
+                <div className="prob-breakdown">
+                  <h4>Aggregated Flow Classifications (Persisted to PostgreSQL)</h4>
+                  <table className="ingest-flow-table">
+                    <thead>
+                      <tr>
+                        <th>Flow ID</th>
+                        <th>Endpoints</th>
+                        <th>Dst Port</th>
+                        <th>Packets</th>
+                        <th>Risk Score</th>
+                        <th>Attack Type</th>
+                        <th>Policy Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {ingestResponse.results.slice(0, 10).map((r) => (
+                        <tr key={r.flow_id}>
+                          <td><code>{r.flow_id.split('-')[1] || r.flow_id}</code></td>
+                          <td>{r.flow_features.source_ip} → {r.flow_features.destination_ip}</td>
+                          <td>{r.flow_features.dst_port}</td>
+                          <td>{r.flow_features.packet_count}</td>
+                          <td>
+                            <b className={r.prediction.risk_score >= 70 ? 'r-high' : r.prediction.risk_score >= 40 ? 'r-med' : 'r-low'}>
+                              {r.prediction.risk_score}
+                            </b>
+                          </td>
+                          <td>{r.prediction.attack_type}</td>
+                          <td>{r.prediction.action_recommendation}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             )}
           </section>

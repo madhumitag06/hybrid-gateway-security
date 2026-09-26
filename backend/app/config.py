@@ -24,6 +24,13 @@ class Settings(BaseSettings):
     # ML Artifacts directory
     ml_artifacts_dir: Path = DEFAULT_ML_ARTIFACTS_DIR
 
+    # Database Configuration (PostgreSQL with psycopg3)
+    database_url: str = "postgresql+psycopg://postgres:postgres@localhost:5434/hybrid_gateway_db"
+    db_echo: bool = False
+    db_pool_size: int = 10
+    db_max_overflow: int = 20
+
+
     # Allowed CORS origins
     cors_origins: List[str] = [
         "http://localhost:5173",
@@ -33,6 +40,7 @@ class Settings(BaseSettings):
     ]
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
 
 
 

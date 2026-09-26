@@ -105,5 +105,33 @@
 .deviations-list { background: #0b1d2e; border: 1px solid #1f405c; border-radius: 8px; padding: 12px 14px; }
 .deviations-list h4 { margin: 0 0 8px; font-size: 12px; color: #89b1d6; text-transform: uppercase; letter-spacing: 0.05em; }
 .deviation-item { font-size: 12px; color: #b7cde3; padding: 4px 0; border-bottom: 1px solid #17334b; }
-.deviation-item:last-child { border-bottom: 0; }
+.analyzer-btn.pcap-btn { background: linear-gradient(135deg, #107e54, #0b593a); border-color: #27ae7a; }
+.analyzer-btn.pcap-btn:hover { background: linear-gradient(135deg, #159b67, #0e6b47); box-shadow: 0 4px 14px #107e5466; }
+
+.pcap-sample-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin-bottom: 16px; }
+.pcap-sample-card { background: #0c2033; border: 1px solid #1c4263; border-radius: 8px; padding: 12px; cursor: pointer; text-align: left; transition: all 0.2s ease; display: flex; flex-direction: column; justify-content: space-between; }
+.pcap-sample-card:hover { background: #132e48; border-color: #3b8cd9; transform: translateY(-1px); }
+.pcap-sample-card h4 { margin: 0 0 4px; font-size: 13px; color: #f0f6fc; font-weight: 600; }
+.pcap-sample-card p { margin: 0 0 8px; font-size: 11px; color: #8faec9; line-height: 1.4; flex-grow: 1; }
+.pcap-sample-footer { display: flex; justify-content: space-between; align-items: center; font-size: 11px; }
+.pcap-sample-footer .badge { padding: 2px 6px; border-radius: 4px; font-weight: 600; }
+.pcap-sample-footer .badge.BENIGN { background: #123d30; color: #42dfa0; }
+.pcap-sample-footer .badge.PORT_SCAN { background: #481e25; color: #ff7f8c; }
+.pcap-sample-footer .badge.TRAFFIC_SPIKE { background: #4a2810; color: #ffa463; }
+
+.pcap-upload-zone { border: 2px dashed #244b6e; border-radius: 8px; padding: 18px; text-align: center; background: #091928; margin-bottom: 16px; cursor: pointer; transition: all 0.2s ease; }
+.pcap-upload-zone:hover { border-color: #3a8fe6; background: #0e2236; }
+.pcap-upload-zone input { display: none; }
+.pcap-upload-zone span { display: block; font-size: 13px; color: #bed6ec; font-weight: 500; }
+.pcap-upload-zone small { display: block; font-size: 11px; color: #7a9cb9; margin-top: 4px; }
+
+.metrics-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; margin-bottom: 14px; background: #081726; border: 1px solid #193853; border-radius: 8px; padding: 10px; }
+.metric-box { text-align: center; }
+.metric-box small { display: block; font-size: 10px; color: #82a4c2; text-transform: uppercase; margin-bottom: 2px; }
+.metric-box b { font-size: 14px; color: #eaf3fd; }
+
+.ingest-flow-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 12px; }
+.ingest-flow-table th { text-align: left; padding: 6px 8px; font-size: 11px; color: #7aa5cb; border-bottom: 1px solid #1c3e5d; text-transform: uppercase; }
+.ingest-flow-table td { padding: 6px 8px; border-bottom: 1px solid #142c43; color: #d6e5f5; }
+.ingest-flow-table tr:hover td { background: #0e253b; }
 

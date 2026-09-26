@@ -50,6 +50,13 @@ class Settings(BaseSettings):
         "1.1.1.1/32",
     ]
 
+    # Hybrid Cloud & AWS Telemetry Configuration (Phase 6)
+    on_prem_cidrs: List[str] = ["192.168.0.0/16", "10.0.0.0/16"]
+    aws_vpc_cidrs: List[str] = ["10.100.0.0/16", "172.31.0.0/16"]
+    aws_telemetry_mode: str = "AWS_FIXTURE"  # "AWS_FIXTURE" or "AWS_READ_ONLY"
+    aws_region: str = "us-east-1"
+    aws_cloudwatch_log_group: str = "/aws/vpc/flow-logs"
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 

@@ -14,12 +14,21 @@ import {
   revokeEnforcementRule,
   updateEnforcementMode,
 } from './services/enforcement'
+import {
+  getAwsVpcSamples,
+  getHybridTopology,
+  ingestAwsVpcSample,
+  ingestRawVpcLogs,
+} from './services/hybrid'
 import type {
   ActiveEnforcementRule,
+  AwsVpcIngestionResponse,
+  AwsVpcSampleFixtureInfo,
   DashboardData,
   EnforcementConfig,
   FlowPredictionRequest,
   FlowPredictionResponse,
+  HybridTopologySummary,
   PcapIngestionResponse,
   PolicyAction,
   PolicyComparisonResult,
@@ -150,48 +159,53 @@ function Traffic() {
   )
 }
 
-function Connectivity({ flows }: { flows: number }) {
+function Connectivity({ flows, topology }: { flows: number; topology: HybridTopologySummary | null }) {
   return (
     <div className="connect">
       <div className="title-line">
         <div>
           <h2>Hybrid Cloud Connectivity</h2>
           <p>
-            <i /> All links operational
+            <i /> All links operational • <strong>Read-Only Telemetry Active</strong>
           </p>
         </div>
-        <span>↔ &nbsp;{flows} active flows</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span className="topology-badge" title="AWS Integration Mode">
+            ☁ {topology?.telemetry_mode || 'AWS_FIXTURE'}
+          </span>
+          <span>↔ &nbsp;{flows} active flows</span>
+        </div>
       </div>
       <div className="network">
         <div className="node">
           <b>☁</b>
-          <strong>AWS Cloud</strong>
+          <strong>AWS Cloud (VPC)</strong>
           <small>
-            us-east-1
+            {topology?.aws_region || 'us-east-1'}
             <br />
-            10.100.0.0/16
+            {topology?.aws_vpc_cidrs.join(', ') || '10.100.0.0/16'}
           </small>
-          <em>Healthy</em>
+          <em>Read-Only</em>
         </div>
         <div className="wire">
-          <label>Secure VPN</label>
+          <label>VPC Flow Logs</label>
           <small>● &nbsp;12 ms</small>
         </div>
         <div className="node central">
           <b>⬡</b>
           <strong>AI Security Gateway</strong>
-          <small>Inspect • Analyze • Protect</small>
+          <small>Inspect • Classify • Sandbox</small>
           <em>Active</em>
         </div>
         <div className="wire">
-          <label>Transit Gateway</label>
+          <label>On-Prem PCAP</label>
           <small>● &nbsp;18 ms</small>
         </div>
         <div className="node">
           <b>▤</b>
-          <strong>On-Premise Data Center</strong>
-          <small>192.168.1.0/24</small>
-          <em>Healthy</em>
+          <strong>On-Premise Network</strong>
+          <small>{topology?.on_prem_cidrs.join(', ') || '192.168.0.0/16'}</small>
+          <em>Monitored</em>
         </div>
       </div>
     </div>
@@ -231,6 +245,14 @@ export default function App() {
   const [comparisonResult, setComparisonResult] = useState<PolicyComparisonResult | null>(null)
   const [comparing, setComparing] = useState(false)
 
+  // Phase 6: Hybrid Cloud & AWS VPC Flow Log State
+  const [topology, setTopology] = useState<HybridTopologySummary | null>(null)
+  const [awsVpcSamples, setAwsVpcSamples] = useState<AwsVpcSampleFixtureInfo[]>([])
+  const [ingestTab, setIngestTab] = useState<'PCAP' | 'AWS_VPC'>('PCAP')
+  const [awsVpcResponse, setAwsVpcResponse] = useState<AwsVpcIngestionResponse | null>(null)
+  const [rawVpcText, setRawVpcText] = useState('')
+  const [ingestingVpc, setIngestingVpc] = useState(false)
+
   useEffect(() => {
     const controller = new AbortController()
     getDashboard(controller.signal)
@@ -245,7 +267,6 @@ export default function App() {
     getPresets(controller.signal)
       .then(setPresets)
       .catch(() => {
-        // Fallback local presets if offline
         setPresets({
           BENIGN_HTTPS: { packet_count: 25, byte_count: 15000, duration: 2.5, conn_rate: 2.0, dst_port: 443, unique_dst_ports: 1, failed_auth_count: 0 },
           PORT_SCAN: { packet_count: 2, byte_count: 120, duration: 0.08, conn_rate: 120.0, dst_port: 8080, unique_dst_ports: 75, failed_auth_count: 0 },
@@ -267,6 +288,15 @@ export default function App() {
 
     listEnforcementRules('ACTIVE')
       .then(setActiveRules)
+      .catch(() => {})
+
+    // Preload Phase 6 Hybrid Topology and AWS VPC fixtures
+    getHybridTopology()
+      .then(setTopology)
+      .catch(() => {})
+
+    getAwsVpcSamples()
+      .then(setAwsVpcSamples)
       .catch(() => {})
 
     return () => controller.abort()
@@ -351,6 +381,37 @@ export default function App() {
     } finally {
       setIngesting(false)
       e.target.value = ''
+    }
+  }
+
+  const handleIngestAwsSample = async (sampleId: string) => {
+    setIngestingVpc(true)
+    try {
+      const res = await ingestAwsVpcSample(sampleId, true)
+      setAwsVpcResponse(res)
+      setToast(`Ingested AWS VPC sample '${sampleId}': ${res.total_flows_aggregated} flows evaluated & persisted.`)
+      getDashboard().then((d) => setData(d.data)).catch(() => {})
+      refreshRules()
+    } catch (err) {
+      setToast(`AWS VPC Ingestion error: ${String(err)}`)
+    } finally {
+      setIngestingVpc(false)
+    }
+  }
+
+  const handleIngestRawVpcLogs = async () => {
+    if (!rawVpcText.trim()) return
+    setIngestingVpc(true)
+    try {
+      const res = await ingestRawVpcLogs(rawVpcText, false, 'custom_raw_vpc_input')
+      setAwsVpcResponse(res)
+      setToast(`Ingested custom AWS VPC logs: ${res.total_flows_aggregated} flows evaluated & persisted.`)
+      getDashboard().then((d) => setData(d.data)).catch(() => {})
+      refreshRules()
+    } catch (err) {
+      setToast(`Raw VPC Log ingestion error: ${String(err)}`)
+    } finally {
+      setIngestingVpc(false)
     }
   }
 
@@ -565,7 +626,7 @@ export default function App() {
 
           <section className="middle">
             <article className="card">
-              <Connectivity flows={data.activeFlows} />
+              <Connectivity flows={data.activeFlows} topology={topology} />
             </article>
             <article className="card">
               <h2>
@@ -897,121 +958,295 @@ export default function App() {
               ×
             </button>
             <div className="modal-badge-row">
-              <span className="api-badge">Phase 4 Engine</span>
-              <span className="model-badge">Scapy PcapReader + 5-Tuple Aggregator</span>
+              <span className="api-badge">{ingestTab === 'PCAP' ? 'Phase 4 Engine' : 'Phase 6 Telemetry Engine'}</span>
+              <span className="model-badge">
+                {ingestTab === 'PCAP'
+                  ? 'Scapy PcapReader + 5-Tuple Aggregator'
+                  : 'AWS VPC Flow Log (v2) Parser + ML + Dry-Run Sandbox'}
+              </span>
             </div>
-            <h2>PCAP Traffic Ingestion & Flow Capture</h2>
+            <h2>Hybrid Cloud Telemetry Ingestion</h2>
             <p className="analyzer-sub">
-              Ingest raw packet traces (.pcap/.pcapng), aggregate packets into bidirectional flow sessions,
-              extract Phase 1 ML feature vectors, and persist evaluated events to PostgreSQL.
+              Ingest telemetry from On-Premises PCAP captures or AWS VPC Flow Logs. Normalizes traffic, classifies network zones, runs ML inference, and evaluates containment policies in isolated Dry-Run / Sandbox mode.
             </p>
 
-            <div className="preset-container">
-              <label>1. Verified Pre-Packaged Benchmark Captures</label>
-              <div className="pcap-sample-grid">
-                {samplePcaps.map((sample) => (
-                  <div
-                    key={sample.sample_id}
-                    className="pcap-sample-card"
-                    onClick={() => handleIngestSample(sample.filename)}
-                  >
-                    <div>
-                      <h4>{sample.name}</h4>
-                      <p>{sample.description}</p>
-                    </div>
-                    <div className="pcap-sample-footer">
-                      <span>{sample.packet_count} packets</span>
-                      <span className={`badge ${sample.expected_threat}`}>{sample.expected_threat}</span>
-                    </div>
-                  </div>
-                ))}
+            <div className="mode-toggle-bar" style={{ marginBottom: '20px' }}>
+              <div>
+                <small style={{ color: '#8faec9', display: 'block' }}>Telemetry Source Type</small>
+                <b style={{ color: '#f0f6fe' }}>
+                  {ingestTab === 'PCAP' ? '📁 On-Premises PCAP Capture' : '☁ AWS VPC Flow Logs (Read-Only)'}
+                </b>
+              </div>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  className={`chip ${ingestTab === 'PCAP' ? 'active' : ''}`}
+                  onClick={() => setIngestTab('PCAP')}
+                >
+                  📁 On-Prem PCAP
+                </button>
+                <button
+                  className={`chip ${ingestTab === 'AWS_VPC' ? 'active' : ''}`}
+                  onClick={() => setIngestTab('AWS_VPC')}
+                >
+                  ☁ AWS VPC Flow Logs
+                </button>
               </div>
             </div>
 
-            <div className="preset-container">
-              <label>2. Or Upload Custom PCAP / PCAPNG File (Max 15MB)</label>
-              <label className="pcap-upload-zone">
-                <input
-                  type="file"
-                  accept=".pcap,.pcapng,.cap"
-                  disabled={ingesting}
-                  onChange={handleUploadPcap}
-                />
-                <span>{ingesting ? 'Parsing Packets & Evaluating ML Flows...' : '📁 Click to Choose or Drop PCAP File'}</span>
-                <small>Supports standard IPv4/IPv6 TCP, UDP, and ICMP captures</small>
-              </label>
-            </div>
-
-            {ingestResponse && (
-              <div className="prediction-result-panel">
-                <div className="result-header">
-                  <h3>Ingestion Telemetry & ML Results: {ingestResponse.filename}</h3>
-                  <span className={`threat-tag ${ingestResponse.high_risk_flows_count > 0 ? 'HIGH' : 'LOW'}`}>
-                    {ingestResponse.flows_evaluated} Flows ({ingestResponse.high_risk_flows_count} High Risk)
-                  </span>
-                </div>
-
-                <div className="metrics-strip">
-                  <div className="metric-box">
-                    <small>Packets Parsed</small>
-                    <b>{ingestResponse.metrics.packets_processed}</b>
-                  </div>
-                  <div className="metric-box">
-                    <small>Flows Created</small>
-                    <b>{ingestResponse.metrics.flows_generated}</b>
-                  </div>
-                  <div className="metric-box">
-                    <small>Parse Time</small>
-                    <b>{ingestResponse.metrics.parse_duration_ms} ms</b>
-                  </div>
-                  <div className="metric-box">
-                    <small>ML Inference</small>
-                    <b>{ingestResponse.metrics.inference_duration_ms} ms</b>
-                  </div>
-                  <div className="metric-box">
-                    <small>DB Persist</small>
-                    <b>{ingestResponse.metrics.persist_duration_ms} ms</b>
-                  </div>
-                  <div className="metric-box">
-                    <small>Throughput</small>
-                    <b>{ingestResponse.metrics.throughput_packets_per_sec} pkt/s</b>
+            {ingestTab === 'PCAP' ? (
+              <>
+                <div className="preset-container">
+                  <label>1. Verified Pre-Packaged Benchmark Captures</label>
+                  <div className="pcap-sample-grid">
+                    {samplePcaps.map((sample) => (
+                      <div
+                        key={sample.sample_id}
+                        className="pcap-sample-card"
+                        onClick={() => handleIngestSample(sample.filename)}
+                      >
+                        <div>
+                          <h4>{sample.name}</h4>
+                          <p>{sample.description}</p>
+                        </div>
+                        <div className="pcap-sample-footer">
+                          <span>{sample.packet_count} packets</span>
+                          <span className={`badge ${sample.expected_threat}`}>{sample.expected_threat}</span>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
 
-                <div className="prob-breakdown">
-                  <h4>Aggregated Flow Classifications (Persisted to PostgreSQL)</h4>
-                  <table className="ingest-flow-table">
-                    <thead>
-                      <tr>
-                        <th>Flow ID</th>
-                        <th>Endpoints</th>
-                        <th>Dst Port</th>
-                        <th>Packets</th>
-                        <th>Risk Score</th>
-                        <th>Attack Type</th>
-                        <th>Policy Action</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {ingestResponse.results.slice(0, 10).map((r) => (
-                        <tr key={r.flow_id}>
-                          <td><code>{r.flow_id.split('-')[1] || r.flow_id}</code></td>
-                          <td>{r.flow_features.source_ip} → {r.flow_features.destination_ip}</td>
-                          <td>{r.flow_features.dst_port}</td>
-                          <td>{r.flow_features.packet_count}</td>
-                          <td>
-                            <b className={r.prediction.risk_score >= 70 ? 'r-high' : r.prediction.risk_score >= 40 ? 'r-med' : 'r-low'}>
-                              {r.prediction.risk_score}
-                            </b>
-                          </td>
-                          <td>{r.prediction.attack_type}</td>
-                          <td>{r.prediction.action_recommendation}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                <div className="preset-container">
+                  <label>2. Or Upload Custom PCAP / PCAPNG File (Max 15MB)</label>
+                  <label className="pcap-upload-zone">
+                    <input
+                      type="file"
+                      accept=".pcap,.pcapng,.cap"
+                      disabled={ingesting}
+                      onChange={handleUploadPcap}
+                    />
+                    <span>{ingesting ? 'Parsing Packets & Evaluating ML Flows...' : '📁 Click to Choose or Drop PCAP File'}</span>
+                    <small>Supports standard IPv4/IPv6 TCP, UDP, and ICMP captures</small>
+                  </label>
                 </div>
-              </div>
+
+                {ingestResponse && (
+                  <div className="prediction-result-panel">
+                    <div className="result-header">
+                      <h3>Ingestion Telemetry & ML Results: {ingestResponse.filename}</h3>
+                      <span className={`threat-tag ${ingestResponse.high_risk_flows_count > 0 ? 'HIGH' : 'LOW'}`}>
+                        {ingestResponse.flows_evaluated} Flows ({ingestResponse.high_risk_flows_count} High Risk)
+                      </span>
+                    </div>
+
+                    <div className="metrics-strip">
+                      <div className="metric-box">
+                        <small>Packets Parsed</small>
+                        <b>{ingestResponse.metrics.packets_processed}</b>
+                      </div>
+                      <div className="metric-box">
+                        <small>Flows Created</small>
+                        <b>{ingestResponse.metrics.flows_generated}</b>
+                      </div>
+                      <div className="metric-box">
+                        <small>Parse Time</small>
+                        <b>{ingestResponse.metrics.parse_duration_ms} ms</b>
+                      </div>
+                      <div className="metric-box">
+                        <small>ML Inference</small>
+                        <b>{ingestResponse.metrics.inference_duration_ms} ms</b>
+                      </div>
+                      <div className="metric-box">
+                        <small>DB Persist</small>
+                        <b>{ingestResponse.metrics.persist_duration_ms} ms</b>
+                      </div>
+                      <div className="metric-box">
+                        <small>Throughput</small>
+                        <b>{ingestResponse.metrics.throughput_packets_per_sec} pkt/s</b>
+                      </div>
+                    </div>
+
+                    <div className="prob-breakdown">
+                      <h4>Aggregated Flow Classifications (Persisted to PostgreSQL)</h4>
+                      <table className="ingest-flow-table">
+                        <thead>
+                          <tr>
+                            <th>Flow ID</th>
+                            <th>Endpoints</th>
+                            <th>Dst Port</th>
+                            <th>Packets</th>
+                            <th>Risk Score</th>
+                            <th>Attack Type</th>
+                            <th>Policy Action</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {ingestResponse.results.slice(0, 10).map((r) => (
+                            <tr key={r.flow_id}>
+                              <td><code>{r.flow_id.split('-')[1] || r.flow_id}</code></td>
+                              <td>{r.flow_features.source_ip} → {r.flow_features.destination_ip}</td>
+                              <td>{r.flow_features.dst_port}</td>
+                              <td>{r.flow_features.packet_count}</td>
+                              <td>
+                                <b className={r.prediction.risk_score >= 70 ? 'r-high' : r.prediction.risk_score >= 40 ? 'r-med' : 'r-low'}>
+                                  {r.prediction.risk_score}
+                                </b>
+                              </td>
+                              <td>{r.prediction.attack_type}</td>
+                              <td>{r.prediction.action_recommendation}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </>
+            ) : (
+              <>
+                <div className="preset-container">
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <label>1. Standard AWS VPC Flow Log Fixtures (Deterministic / Offline)</label>
+                    <span className="topology-badge" style={{ fontSize: '11px' }}>Mode: {topology?.telemetry_mode || 'AWS_FIXTURE'}</span>
+                  </div>
+                  <div className="pcap-sample-grid">
+                    {awsVpcSamples.map((sample) => (
+                      <div
+                        key={sample.sample_id}
+                        className="pcap-sample-card"
+                        onClick={() => handleIngestAwsSample(sample.sample_id)}
+                      >
+                        <div>
+                          <h4>{sample.name}</h4>
+                          <p>{sample.description}</p>
+                        </div>
+                        <div className="pcap-sample-footer">
+                          <span>{sample.record_count} records</span>
+                          <span className={`badge ${sample.expected_threat}`}>{sample.expected_threat}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="preset-container">
+                  <label>2. Or Paste Raw AWS VPC Flow Log Lines (Version 2 Format)</label>
+                  <textarea
+                    className="raw-log-input"
+                    rows={4}
+                    placeholder="2 123456789012 eni-0a1b2c3d4e5f67890 198.51.100.25 10.100.1.10 49152 443 6 25 15000 1620000000 1620000060 ACCEPT OK"
+                    value={rawVpcText}
+                    onChange={(e) => setRawVpcText(e.target.value)}
+                  />
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '8px' }}>
+                    <button
+                      className="chip active"
+                      style={{ padding: '8px 16px', fontWeight: 600 }}
+                      disabled={ingestingVpc || !rawVpcText.trim()}
+                      onClick={handleIngestRawVpcLogs}
+                    >
+                      {ingestingVpc ? 'Parsing & Evaluating AWS Flows...' : '⚡ Ingest & Evaluate Raw Flow Logs'}
+                    </button>
+                  </div>
+                </div>
+
+                {awsVpcResponse && (
+                  <div className="prediction-result-panel">
+                    <div className="result-header">
+                      <h3>Ingestion Telemetry: {awsVpcResponse.source_label}</h3>
+                      <span className={`threat-tag ${awsVpcResponse.high_risk_flows_count > 0 ? 'HIGH' : 'LOW'}`}>
+                        {awsVpcResponse.total_flows_aggregated} Flows ({awsVpcResponse.high_risk_flows_count} High Risk)
+                      </span>
+                    </div>
+
+                    <div className="metrics-strip">
+                      <div className="metric-box">
+                        <small>Lines Parsed</small>
+                        <b>{awsVpcResponse.total_records_parsed}</b>
+                      </div>
+                      <div className="metric-box">
+                        <small>Flows Created</small>
+                        <b>{awsVpcResponse.total_flows_aggregated}</b>
+                      </div>
+                      <div className="metric-box">
+                        <small>Telemetry Source</small>
+                        <b style={{ fontSize: '11px', color: '#38bdf8' }}>{awsVpcResponse.telemetry_source}</b>
+                      </div>
+                      <div className="metric-box">
+                        <small>Parse Time</small>
+                        <b>{awsVpcResponse.parse_duration_ms} ms</b>
+                      </div>
+                      <div className="metric-box">
+                        <small>ML Inference</small>
+                        <b>{awsVpcResponse.inference_duration_ms} ms</b>
+                      </div>
+                      <div className="metric-box">
+                        <small>Total Duration</small>
+                        <b>{awsVpcResponse.total_duration_ms} ms</b>
+                      </div>
+                    </div>
+
+                    <div className="prob-breakdown">
+                      <h4>Zone-Classified Flow Ingestion Results (Persisted to PostgreSQL)</h4>
+                      <table className="ingest-flow-table">
+                        <thead>
+                          <tr>
+                            <th>Flow ID</th>
+                            <th>Source Zone</th>
+                            <th>Dest Zone</th>
+                            <th>Direction</th>
+                            <th>Dst Port</th>
+                            <th>Risk Score</th>
+                            <th>Attack Type</th>
+                            <th>Policy Action</th>
+                            <th>Enforcement</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {awsVpcResponse.results.slice(0, 10).map((r) => (
+                            <tr key={r.flow_id}>
+                              <td><code>{r.flow_id.split('-')[1] || r.flow_id}</code></td>
+                              <td>
+                                <span className={`zone-tag ${r.source_zone}`}>
+                                  {r.source_zone}
+                                </span>
+                                <br />
+                                <small style={{ color: '#8faec9' }}>{r.source_ip}</small>
+                              </td>
+                              <td>
+                                <span className={`zone-tag ${r.destination_zone}`}>
+                                  {r.destination_zone}
+                                </span>
+                                <br />
+                                <small style={{ color: '#8faec9' }}>{r.destination_ip}</small>
+                              </td>
+                              <td>
+                                <code style={{ fontSize: '11px', color: '#a0c4e8' }}>
+                                  {r.traffic_direction}
+                                </code>
+                              </td>
+                              <td>{r.dst_port}</td>
+                              <td>
+                                <b className={r.prediction.risk_score >= 70 ? 'r-high' : r.prediction.risk_score >= 40 ? 'r-med' : 'r-low'}>
+                                  {r.prediction.risk_score}
+                                </b>
+                              </td>
+                              <td>{r.prediction.attack_type}</td>
+                              <td>{r.prediction.action_recommendation}</td>
+                              <td>
+                                <span className="enforce-status-tag">
+                                  {r.policy_decision?.policy_action || 'Permit'}
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </section>
         </div>

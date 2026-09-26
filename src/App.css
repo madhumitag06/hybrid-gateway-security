@@ -164,3 +164,70 @@
 .comp-box b.Monitor { color: #79bdf0; }
 .divergence-note { font-size: 12px; color: #cbdcf0; background: #142f49; border-left: 3px solid #3b93f7; padding: 8px 10px; border-radius: 0 4px 4px 0; line-height: 1.4; }
 
+/* Phase 6: AWS VPC Flow Log & Hybrid Topology Styles */
+.raw-log-input {
+  width: 100%;
+  background: #081726;
+  border: 1px solid #1c3e5d;
+  border-radius: 6px;
+  color: #c9e1fa;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier, monospace;
+  font-size: 11px;
+  padding: 10px;
+  resize: vertical;
+  line-height: 1.5;
+  box-sizing: border-box;
+}
+.raw-log-input:focus {
+  outline: none;
+  border-color: #38bdf8;
+  box-shadow: 0 0 0 2px #38bdf833;
+}
+
+.zone-tag {
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.zone-tag.ON_PREMISE {
+  background: #113628;
+  color: #34d399;
+  border: 1px solid #059669;
+}
+.zone-tag.AWS_VPC {
+  background: #0f3057;
+  color: #38bdf8;
+  border: 1px solid #0284c7;
+}
+.zone-tag.INTERNET {
+  background: #372013;
+  color: #fb923c;
+  border: 1px solid #d97706;
+}
+
+.topology-badge {
+  background: #0d2847;
+  color: #7dd3fc;
+  border: 1px solid #0284c7;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.enforce-status-tag {
+  display: inline-block;
+  background: #19273c;
+  color: #93c5fd;
+  border: 1px solid #2563eb;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+

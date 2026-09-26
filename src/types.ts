@@ -1,6 +1,16 @@
 export type Severity = 'low' | 'medium' | 'high' | 'critical'
 export type PolicyAction = 'Allow' | 'Monitor' | 'Restrict' | 'Block'
 export type ThreatLevel = 'LOW' | 'MEDIUM' | 'HIGH'
+export type NetworkZone = 'ON_PREMISE' | 'AWS_VPC' | 'INTERNET'
+export type TrafficDirection =
+  | 'ON_PREM_TO_CLOUD'
+  | 'CLOUD_TO_ON_PREM'
+  | 'INTRA_CLOUD'
+  | 'INTRA_ON_PREM'
+  | 'INGRESS_EXTERNAL'
+  | 'EGRESS_EXTERNAL'
+  | 'EXTERNAL_TO_EXTERNAL'
+export type TelemetrySourceType = 'AWS_VPC_FLOW_LOG' | 'AWS_VPC_FLOW_LOG_FIXTURE' | 'PCAP' | 'DEMO_SEED'
 
 export interface SecurityEvent {
   id: string
@@ -15,6 +25,10 @@ export interface SecurityEvent {
   description: string
   attack_type?: string
   confidence?: number
+  source_zone?: NetworkZone
+  destination_zone?: NetworkZone
+  traffic_direction?: TrafficDirection
+  telemetry_source?: TelemetrySourceType
 }
 
 export interface RiskReason {
@@ -197,5 +211,60 @@ export interface PolicyComparisonResult {
   adaptive_confidence: number
   decision_divergence: boolean
   divergence_rationale: string
+}
+
+export interface HybridTopologySummary {
+  on_prem_cidrs: string[]
+  aws_vpc_cidrs: string[]
+  aws_region: string
+  telemetry_mode: string
+  is_cloud_read_only: boolean
+  cloud_firewall_modification_enabled: boolean
+}
+
+export interface AwsVpcSampleFixtureInfo {
+  sample_id: string
+  name: string
+  filename: string
+  description: string
+  record_count: number
+  expected_threat: string
+  file_size_bytes: number
+  telemetry_source: string
+}
+
+export interface AwsVpcFlowItemResult {
+  flow_id: string
+  source_ip: string
+  destination_ip: string
+  source_zone: NetworkZone
+  destination_zone: NetworkZone
+  traffic_direction: TrafficDirection
+  protocol_name: string
+  dst_port: number
+  packet_count: number
+  byte_count: number
+  duration: number
+  conn_rate: number
+  unique_dst_ports: number
+  failed_auth_count: number
+  interface_id?: string
+  account_id?: string
+  prediction: FlowPredictionResponse
+  policy_decision?: PolicyDecision
+  persisted_event_id?: string
+}
+
+export interface AwsVpcIngestionResponse {
+  telemetry_source: TelemetrySourceType
+  source_label: string
+  is_fixture: boolean
+  total_records_parsed: number
+  total_flows_aggregated: number
+  high_risk_flows_count: number
+  parse_duration_ms: number
+  inference_duration_ms: number
+  total_duration_ms: number
+  results: AwsVpcFlowItemResult[]
 }
 

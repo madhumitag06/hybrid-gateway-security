@@ -135,3 +135,32 @@
 .ingest-flow-table td { padding: 6px 8px; border-bottom: 1px solid #142c43; color: #d6e5f5; }
 .ingest-flow-table tr:hover td { background: #0e253b; }
 
+.analyzer-btn.enforce-btn { background: linear-gradient(135deg, #8a3ffc, #6929c4); border-color: #a56eff; }
+.analyzer-btn.enforce-btn:hover { background: linear-gradient(135deg, #a56eff, #8a3ffc); box-shadow: 0 4px 14px #8a3ffc66; }
+
+.mode-toggle-bar { display: flex; justify-content: space-between; align-items: center; background: #081726; border: 1px solid #1c3e5d; border-radius: 8px; padding: 10px 14px; margin-bottom: 16px; }
+.mode-toggle-bar .mode-pill { padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 700; text-transform: uppercase; }
+.mode-toggle-bar .mode-pill.DRY_RUN { background: #132e48; color: #79bdf0; border: 1px solid #285477; }
+.mode-toggle-bar .mode-pill.SANDBOX { background: #3d1b4d; color: #d187ff; border: 1px solid #78359f; }
+
+.rules-list-container { display: flex; flex-direction: column; gap: 10px; max-height: 50vh; overflow-y: auto; margin-top: 12px; }
+.rule-card { background: #0c2033; border: 1px solid #1d4366; border-radius: 8px; padding: 12px; display: flex; justify-content: space-between; align-items: center; }
+.rule-card .rule-info h4 { margin: 0 0 4px; font-size: 13px; color: #f0f6fe; }
+.rule-card .rule-info p { margin: 0; font-size: 11px; color: #8faec9; }
+.rule-card .rule-meta { display: flex; align-items: center; gap: 12px; }
+.rule-card .ttl-badge { background: #142a3e; border: 1px solid #244b6e; padding: 4px 8px; border-radius: 6px; font-size: 12px; color: #ffd166; font-family: 'Space Grotesk', monospace; font-weight: 600; }
+.rule-card .revoke-btn { background: #481e25; border: 1px solid #9b3746; color: #ff7f8c; padding: 5px 10px; border-radius: 6px; font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.2s ease; }
+.rule-card .revoke-btn:hover { background: #731e2d; color: #fff; }
+
+.comparison-card { background: #0a1b2b; border: 1px solid #1f4262; border-radius: 8px; padding: 14px; margin-top: 14px; }
+.comparison-card h4 { margin: 0 0 10px; font-size: 13px; color: #8cb5db; text-transform: uppercase; letter-spacing: 0.05em; }
+.comparison-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }
+.comp-box { background: #0e2439; border: 1px solid #224b70; border-radius: 6px; padding: 10px; }
+.comp-box small { display: block; font-size: 10px; color: #7fa4c4; text-transform: uppercase; }
+.comp-box b { font-size: 15px; color: #f0f6fe; margin-top: 2px; display: block; }
+.comp-box b.Block { color: #ff5e6f; }
+.comp-box b.Restrict { color: #ffbd42; }
+.comp-box b.Allow { color: #42dfa0; }
+.comp-box b.Monitor { color: #79bdf0; }
+.divergence-note { font-size: 12px; color: #cbdcf0; background: #142f49; border-left: 3px solid #3b93f7; padding: 8px 10px; border-radius: 0 4px 4px 0; line-height: 1.4; }
+

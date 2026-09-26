@@ -21,6 +21,15 @@ from backend.app.schemas.ingest import (
     SamplePcapInfo,
     IngestionStatusResponse,
 )
+from backend.app.schemas.policy import (
+    PolicyDecision,
+    ActiveEnforcementRule,
+    EnforcementConfigSchema,
+    EnforcementConfigUpdate,
+    PolicyComparisonResult,
+    RevokeRuleRequest,
+    RevokeRuleResponse,
+)
 
 __all__ = [
     "NetworkFlowRequest",
@@ -39,4 +48,11 @@ __all__ = [
     "PcapIngestionResponse",
     "SamplePcapInfo",
     "IngestionStatusResponse",
+    "PolicyDecision",
+    "ActiveEnforcementRule",
+    "EnforcementConfigSchema",
+    "EnforcementConfigUpdate",
+    "PolicyComparisonResult",
+    "RevokeRuleRequest",
+    "RevokeRuleResponse",
 ]

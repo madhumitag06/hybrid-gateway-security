@@ -10,12 +10,14 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from backend.app.api.health import router as health_router
 from backend.app.api.v1.dashboard import router as dashboard_router
+from backend.app.api.v1.enforcement import router as enforcement_router
 from backend.app.api.v1.events import router as events_router
 from backend.app.api.v1.ingest import router as ingest_router
 from backend.app.api.v1.predict import router as predict_router
 from backend.app.config import settings
 from backend.app.db.session import SessionLocal, init_db
 from backend.app.services.dashboard_service import DashboardService
+from backend.app.services.enforcement_service import EnforcementService
 from backend.app.services.ml_service import MLService
 
 
@@ -23,7 +25,8 @@ from backend.app.services.ml_service import MLService
 async def lifespan(app: FastAPI):
     """
     Application startup and shutdown lifespan context.
-    Preloads Phase 1 ML model artifacts and initializes the PostgreSQL database.
+    Preloads Phase 1 ML model artifacts, initializes PostgreSQL database,
+    and reconciles active containment rules into the sandbox adapter.
     """
     print(f"[*] Starting {settings.app_name} v{settings.app_version}...")
 
@@ -41,6 +44,8 @@ async def lifespan(app: FastAPI):
         init_db()
         with SessionLocal() as db:
             DashboardService.seed_initial_data_if_empty(db)
+            # 3. Reconcile Active Containment Rules into Sandbox
+            EnforcementService.reconcile_from_db(db)
             db.commit()
         print("[+] PostgreSQL database initialized and verified.")
     except Exception as e:
@@ -73,6 +78,7 @@ app.include_router(health_router, prefix="/api")
 app.include_router(predict_router, prefix="/api")
 app.include_router(events_router, prefix="/api")
 app.include_router(ingest_router, prefix="/api")
+app.include_router(enforcement_router, prefix="/api")
 app.include_router(dashboard_router, prefix="/api")
 
 # Also include root-level convenience endpoints
@@ -92,4 +98,5 @@ def root():
         "prediction_endpoint": "/api/v1/predict",
         "events_endpoint": "/api/v1/events",
         "ingestion_endpoint": "/api/v1/ingest/pcap",
+        "enforcement_endpoint": "/api/v1/enforcement/rules",
     }

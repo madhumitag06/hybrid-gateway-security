@@ -38,3 +38,6 @@ htmlcov/
 .env
 .env.*
 !.env.example
+
+# Scratch scripts and temporary test files
+scratch/

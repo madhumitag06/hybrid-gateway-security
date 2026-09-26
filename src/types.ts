@@ -11,7 +11,7 @@ export interface SecurityEvent {
   risk: number
   severity: Severity
   action: PolicyAction
-  status: 'Applied' | 'Monitoring' | 'Allowed'
+  status: 'Applied' | 'Monitoring' | 'Allowed' | 'Simulated' | 'Pending'
   description: string
   attack_type?: string
   confidence?: number
@@ -139,5 +139,63 @@ export interface IngestionStatusResponse {
   total_pcaps_ingested: number
   total_packets_processed: number
   total_flows_generated: number
+}
+
+export type EnforcementMode = 'DRY_RUN' | 'SANDBOX'
+export type EnforcementStatus = 'ACTIVE' | 'SIMULATED' | 'EXPIRED' | 'REVOKED' | 'FAILED'
+
+export interface PolicyDecision {
+  decision_id: string
+  event_id?: string
+  target_ip: string
+  target_port?: number
+  protocol?: string
+  policy_action: PolicyAction
+  enforcement_required: boolean
+  confidence: number
+  threat_level: string
+  attack_type: string
+  risk_score: number
+  rule_name: string
+  reason: string
+  suggested_ttl_seconds: number
+}
+
+export interface ActiveEnforcementRule {
+  rule_id: string
+  event_id?: string
+  target_ip: string
+  target_port?: number
+  protocol?: string
+  action: PolicyAction
+  status: EnforcementStatus
+  mode: EnforcementMode
+  reason: string
+  ttl_seconds: number
+  expires_at: string
+  remaining_ttl_seconds: number
+  created_at: string
+  revoked_at?: string
+  revoked_by?: string
+}
+
+export interface EnforcementConfig {
+  active_mode: EnforcementMode
+  default_ttl_seconds: number
+  management_allowlist: string[]
+  total_active_rules: number
+}
+
+export interface PolicyComparisonResult {
+  flow_id: string
+  target_ip: string
+  dst_port: number
+  static_decision: PolicyAction
+  static_rule_matched?: string
+  adaptive_decision: PolicyAction
+  adaptive_risk_score: number
+  adaptive_confidence: number
+  decision_divergence: boolean
+  divergence_rationale: string
 }
 

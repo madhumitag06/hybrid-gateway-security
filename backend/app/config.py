@@ -39,9 +39,18 @@ class Settings(BaseSettings):
         "http://127.0.0.1:3000",
     ]
 
+    # Enforcement Configuration (Phase 5)
+    default_enforcement_mode: str = "DRY_RUN"  # "DRY_RUN" or "SANDBOX"
+    default_rule_ttl_seconds: int = 300  # 5 minutes default
+    management_allowlist: List[str] = [
+        "127.0.0.1/32",
+        "::1/128",
+        "192.168.1.1/32",
+        "8.8.8.8/32",
+        "1.1.1.1/32",
+    ]
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
-
-
 
 
 settings = Settings()

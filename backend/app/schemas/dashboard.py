@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 
 FrontendSeverity = Literal["low", "medium", "high", "critical"]
 PolicyAction = Literal["Allow", "Monitor", "Restrict", "Block"]
-EventStatus = Literal["Applied", "Monitoring", "Allowed"]
+EventStatus = Literal["Applied", "Monitoring", "Allowed", "Simulated", "Pending"]
 
 
 class SecurityEventSchema(BaseModel):

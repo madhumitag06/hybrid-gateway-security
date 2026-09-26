@@ -145,8 +145,12 @@ class DashboardService:
         is_demo: bool = False,
     ) -> Tuple_Pred_Event:
         """
-        Executes ML inference via ThreatPredictor and persists the event into PostgreSQL.
+        Executes ML inference via ThreatPredictor, evaluates contextual policy via PolicyEngine,
+        executes containment via EnforcementService, and persists the event into PostgreSQL.
         """
+        from backend.app.services.policy_engine import PolicyEngine
+        from backend.app.services.enforcement_service import EnforcementService
+
         pred: PredictionResponse = MLService.predict(flow_request)
 
         event_id = custom_id or f"evt-{uuid.uuid4().hex[:8]}"
@@ -161,8 +165,17 @@ class DashboardService:
         else:
             severity = "low"
 
-        action = pred.action_recommendation
-        status = "Applied" if action in ["Restrict", "Block"] else ("Monitoring" if action == "Monitor" else "Allowed")
+        # Evaluate Context-Aware Policy Decision (Phase 5)
+        policy_decision = PolicyEngine.evaluate(
+            prediction=pred,
+            source_ip=source_ip,
+            destination_ip=destination_ip,
+            dst_port=flow_request.dst_port,
+            protocol="TCP",
+            event_id=event_id,
+        )
+
+        action = policy_decision.policy_action
 
         if pred.is_anomaly:
             feat_reasons = ", ".join([f"{c.feature} ({c.value})" for c in pred.top_contributing_features[:2]])
@@ -181,7 +194,7 @@ class DashboardService:
             confidence=pred.confidence,
             action_recommendation=pred.action_recommendation,
             current_policy_action=action,
-            status=status,
+            status="Pending",
             description=desc,
             is_anomaly=pred.is_anomaly,
             is_demo=is_demo,
@@ -191,17 +204,22 @@ class DashboardService:
         )
 
         repo = SecurityEventRepository(db)
-        repo.create(event_model)
+        repo.create(event_model)  # Inserts event into DB so FK is valid
 
-        # Log initial policy action in audit ledger
-        audit_repo = PolicyAuditRepository(db)
-        audit_repo.log_action(
-            event_id=event_id,
-            requested_action=action,
-            previous_action=None,
-            resulting_status=status,
+        # Execute containment through active EnforcementAdapter (DRY_RUN / SANDBOX)
+        enforce_res, rule_model = EnforcementService.execute_decision(
+            decision=policy_decision,
+            db=db,
             actor="ml_policy_engine" if not is_demo else "demo_seed",
         )
+
+        final_status = (
+            "Applied"
+            if enforce_res.status == "ACTIVE"
+            else ("Simulated" if enforce_res.status == "SIMULATED" else ("Monitoring" if action == "Monitor" else "Allowed"))
+        )
+        event_model.status = final_status
+        db.flush()
 
         pred.event_id = event_id
         return pred, event_model
@@ -347,7 +365,35 @@ class DashboardService:
             event = placeholder
 
         previous_action = event.current_policy_action
-        new_status = "Applied" if action in ["Restrict", "Block"] else ("Monitoring" if action == "Monitor" else "Allowed")
+
+        # Create decision and execute through active EnforcementAdapter
+        from backend.app.schemas.policy import PolicyDecision
+        from backend.app.services.enforcement_service import EnforcementService
+
+        decision = PolicyDecision(
+            decision_id=f"dec-manual-{uuid.uuid4().hex[:8]}",
+            event_id=event_id,
+            target_ip=event.source_ip,
+            target_port=None,
+            protocol="ANY",
+            policy_action=action,
+            enforcement_required=action in ["Restrict", "Block"],
+            confidence=1.0,
+            threat_level="HIGH" if action == "Block" else ("MEDIUM" if action == "Restrict" else "LOW"),
+            attack_type=event.attack_type or "MANUAL_OVERRIDE",
+            risk_score=event.risk_score,
+            rule_name="MANUAL_ANALYST_OVERRIDE",
+            reason=f"Manual policy override applied: {action}",
+            suggested_ttl_seconds=300,
+        )
+
+        enforce_res, _ = EnforcementService.execute_decision(decision, db=db, actor=actor)
+
+        new_status = (
+            "Applied"
+            if action in ["Restrict", "Block"]
+            else ("Monitoring" if action == "Monitor" else "Allowed")
+        )
 
         repo.update_policy_action(event_id=event_id, new_action=action, new_status=new_status)
 
@@ -365,7 +411,7 @@ class DashboardService:
             eventId=event_id,
             action=action,
             status=new_status,
-            message=f"Policy action '{action}' successfully persisted to PostgreSQL for event '{event_id}'.",
+            message=f"Policy action '{action}' [{enforce_res.status}] successfully processed for event '{event_id}'.",
             timestamp=datetime.now(timezone.utc),
         )
 

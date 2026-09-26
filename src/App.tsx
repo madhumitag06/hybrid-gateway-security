@@ -7,12 +7,22 @@ import {
   listSamplePcaps,
   uploadPcapFile,
 } from './services/ingestion'
+import {
+  comparePolicies,
+  getEnforcementConfig,
+  listEnforcementRules,
+  revokeEnforcementRule,
+  updateEnforcementMode,
+} from './services/enforcement'
 import type {
+  ActiveEnforcementRule,
   DashboardData,
+  EnforcementConfig,
   FlowPredictionRequest,
   FlowPredictionResponse,
   PcapIngestionResponse,
   PolicyAction,
+  PolicyComparisonResult,
   SamplePcapInfo,
   SecurityEvent,
 } from './types'
@@ -214,6 +224,13 @@ export default function App() {
   const [ingesting, setIngesting] = useState(false)
   const [ingestResponse, setIngestResponse] = useState<PcapIngestionResponse | null>(null)
 
+  // Phase 5: Policy & Active Enforcement State
+  const [showRulesModal, setShowRulesModal] = useState(false)
+  const [activeRules, setActiveRules] = useState<ActiveEnforcementRule[]>([])
+  const [enforcementConfig, setEnforcementConfig] = useState<EnforcementConfig | null>(null)
+  const [comparisonResult, setComparisonResult] = useState<PolicyComparisonResult | null>(null)
+  const [comparing, setComparing] = useState(false)
+
   useEffect(() => {
     const controller = new AbortController()
     getDashboard(controller.signal)
@@ -241,6 +258,15 @@ export default function App() {
     // Preload sample PCAP fixtures list
     listSamplePcaps()
       .then(setSamplePcaps)
+      .catch(() => {})
+
+    // Preload active enforcement configuration and rules
+    getEnforcementConfig()
+      .then(setEnforcementConfig)
+      .catch(() => {})
+
+    listEnforcementRules('ACTIVE')
+      .then(setActiveRules)
       .catch(() => {})
 
     return () => controller.abort()
@@ -319,11 +345,57 @@ export default function App() {
       setToast(`Uploaded & Ingested ${res.filename}: ${res.metrics.packets_processed} pkts -> ${res.flows_evaluated} flows.`)
       // Refresh dashboard
       getDashboard().then((d) => setData(d.data)).catch(() => {})
+      refreshRules()
     } catch (err) {
       setToast(`Upload error: ${String(err)}`)
     } finally {
       setIngesting(false)
       e.target.value = ''
+    }
+  }
+
+  const refreshRules = async () => {
+    try {
+      const rules = await listEnforcementRules('ACTIVE')
+      setActiveRules(rules)
+      const conf = await getEnforcementConfig()
+      setEnforcementConfig(conf)
+    } catch {
+      // ignore
+    }
+  }
+
+  const handleRevokeRule = async (ruleId: string) => {
+    try {
+      await revokeEnforcementRule(ruleId, 'Krishna (Analyst)')
+      setToast(`Containment rule '${ruleId}' revoked.`)
+      await refreshRules()
+      getDashboard().then((d) => setData(d.data)).catch(() => {})
+    } catch (err) {
+      setToast(`Failed to revoke rule: ${String(err)}`)
+    }
+  }
+
+  const handleToggleMode = async (mode: 'DRY_RUN' | 'SANDBOX') => {
+    try {
+      const conf = await updateEnforcementMode(mode)
+      setEnforcementConfig(conf)
+      setToast(`Enforcement mode switched to ${mode}.`)
+    } catch (err) {
+      setToast(`Mode switch error: ${String(err)}`)
+    }
+  }
+
+  const handleComparePolicies = async () => {
+    setComparing(true)
+    try {
+      const res = await comparePolicies(flowInput)
+      setComparisonResult(res)
+      setToast(`Comparison complete: Divergence=${res.decision_divergence ? 'YES' : 'NO'}`)
+    } catch (err) {
+      setToast(`Policy comparison error: ${String(err)}`)
+    } finally {
+      setComparing(false)
     }
   }
 
@@ -387,6 +459,9 @@ export default function App() {
           </button>
           <button className="analyzer-btn pcap-btn" onClick={() => setShowIngestModal(true)}>
             📥 Ingest PCAP Traffic
+          </button>
+          <button className="analyzer-btn enforce-btn" onClick={() => { refreshRules(); setShowRulesModal(true); }}>
+            🛡️ Active Rules ({activeRules.length})
           </button>
           <button className="select">Production ⌄</button>
           <select
@@ -773,6 +848,42 @@ export default function App() {
                     ))}
                   </div>
                 )}
+
+                <div style={{ marginTop: '16px' }}>
+                  <button
+                    className="chip"
+                    onClick={handleComparePolicies}
+                    disabled={comparing}
+                    style={{ width: '100%', padding: '8px', background: '#1c3e5d', borderColor: '#3b8cd9', fontWeight: 600 }}
+                  >
+                    {comparing ? 'Evaluating Baseline Comparison...' : '⚖️ Compare with Static Rule-Based Baseline'}
+                  </button>
+                </div>
+
+                {comparisonResult && (
+                  <div className="comparison-card">
+                    <h4>Static Baseline vs. Adaptive AI Policy Comparison</h4>
+                    <div className="comparison-grid">
+                      <div className="comp-box">
+                        <small>Static Baseline Rule</small>
+                        <b className={comparisonResult.static_decision}>{comparisonResult.static_decision}</b>
+                        <span style={{ fontSize: '10px', color: '#7fa4c4' }}>
+                          {comparisonResult.static_rule_matched || 'Default Permit Policy'}
+                        </span>
+                      </div>
+                      <div className="comp-box">
+                        <small>Adaptive AI Decision</small>
+                        <b className={comparisonResult.adaptive_decision}>{comparisonResult.adaptive_decision}</b>
+                        <span style={{ fontSize: '10px', color: '#7fa4c4' }}>
+                          Risk: {comparisonResult.adaptive_risk_score} (Conf: {(comparisonResult.adaptive_confidence * 100).toFixed(0)}%)
+                        </span>
+                      </div>
+                    </div>
+                    <div className="divergence-note">
+                      <strong>Analysis: </strong>{comparisonResult.divergence_rationale}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </section>
@@ -902,6 +1013,88 @@ export default function App() {
                 </div>
               </div>
             )}
+          </section>
+        </div>
+      )}
+
+      {showRulesModal && (
+        <div className="backdrop" onClick={() => setShowRulesModal(false)}>
+          <section className="analyzer-modal" onClick={(e) => e.stopPropagation()}>
+            <button className="close-btn" onClick={() => setShowRulesModal(false)}>
+              ×
+            </button>
+            <div className="modal-badge-row">
+              <span className="api-badge">Phase 5 Enforcement Layer</span>
+              <span className="model-badge">
+                Mode: {enforcementConfig?.active_mode || 'DRY_RUN'} (Zero Host Modifications)
+              </span>
+            </div>
+            <h2>Active Containment Policies & Enforcements</h2>
+            <p className="analyzer-sub">
+              Live containment rules applied by the Adaptive Policy Engine. Rules operate in isolated
+              DRY_RUN or in-memory SANDBOX modes with automatic TTL expiration.
+            </p>
+
+            <div className="mode-toggle-bar">
+              <div>
+                <small style={{ color: '#8faec9', display: 'block' }}>Operating Mode</small>
+                <b style={{ color: '#f0f6fe' }}>{enforcementConfig?.active_mode || 'DRY_RUN'}</b>
+              </div>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  className={`chip ${enforcementConfig?.active_mode === 'DRY_RUN' ? 'active' : ''}`}
+                  onClick={() => handleToggleMode('DRY_RUN')}
+                >
+                  Dry-Run (Simulation)
+                </button>
+                <button
+                  className={`chip ${enforcementConfig?.active_mode === 'SANDBOX' ? 'active' : ''}`}
+                  onClick={() => handleToggleMode('SANDBOX')}
+                >
+                  Sandbox (Lab Filter)
+                </button>
+              </div>
+            </div>
+
+            <div className="preset-container">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <label>Active Rules ({activeRules.length})</label>
+                <button className="chip" onClick={refreshRules} style={{ fontSize: '11px', padding: '3px 8px' }}>
+                  ↻ Refresh
+                </button>
+              </div>
+
+              {activeRules.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '24px', color: '#7fa4c4', background: '#091928', borderRadius: '8px' }}>
+                  No active containment rules currently enforced.
+                </div>
+              ) : (
+                <div className="rules-list-container">
+                  {activeRules.map((rule) => (
+                    <div className="rule-card" key={rule.rule_id}>
+                      <div className="rule-info">
+                        <h4>{rule.target_ip} ({rule.action})</h4>
+                        <p>{rule.reason}</p>
+                        <small style={{ fontSize: '10px', color: '#688cae' }}>
+                          ID: <code>{rule.rule_id}</code> | Port: {rule.target_port || 'ALL'} | Protocol: {rule.protocol}
+                        </small>
+                      </div>
+                      <div className="rule-meta">
+                        <span className="ttl-badge" title="Remaining TTL before automatic expiration">
+                          ⏱ {Math.floor(rule.remaining_ttl_seconds / 60)}:{(rule.remaining_ttl_seconds % 60).toString().padStart(2, '0')}
+                        </span>
+                        <button
+                          className="revoke-btn"
+                          onClick={() => handleRevokeRule(rule.rule_id)}
+                        >
+                          Revoke
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </section>
         </div>
       )}

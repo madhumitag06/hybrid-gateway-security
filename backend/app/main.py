@@ -9,6 +9,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.app.api.health import router as health_router
+from backend.app.api.v1.analytics import router as analytics_router
 from backend.app.api.v1.dashboard import router as dashboard_router
 from backend.app.api.v1.enforcement import router as enforcement_router
 from backend.app.api.v1.events import router as events_router
@@ -82,6 +83,8 @@ app.include_router(ingest_router, prefix="/api")
 app.include_router(enforcement_router, prefix="/api")
 app.include_router(hybrid_router, prefix="/api/v1")
 app.include_router(hybrid_router, prefix="/api")
+app.include_router(analytics_router, prefix="/api/v1")
+app.include_router(analytics_router, prefix="/api")
 app.include_router(dashboard_router, prefix="/api")
 
 # Also include root-level convenience endpoints

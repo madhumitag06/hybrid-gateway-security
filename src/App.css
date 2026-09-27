@@ -230,4 +230,329 @@
   font-weight: 600;
 }
 
+/* Phase 7: Security Analytics & SHAP Explainability Styles */
+.analytics-container {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.analytics-metrics-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.analytics-stat-card {
+  background: linear-gradient(145deg, #0e2438, #0a1c2c);
+  border: 1px solid #1c394e;
+  border-radius: 10px;
+  padding: 14px 16px;
+  box-shadow: 0 4px 14px #020b1330;
+}
+
+.analytics-stat-card small {
+  display: block;
+  font-size: 11px;
+  color: #8daac7;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 4px;
+}
+
+.analytics-stat-card b {
+  font-size: 22px;
+  font-family: 'Space Grotesk', sans-serif;
+  color: #f1f6fd;
+}
+
+.analytics-stat-card em {
+  display: block;
+  font-style: normal;
+  font-size: 11px;
+  color: #65a7e6;
+  margin-top: 4px;
+}
+
+.analytics-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+@media (max-width: 900px) {
+  .analytics-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.histogram-bars-container {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.histogram-row {
+  display: grid;
+  grid-template-columns: 110px 1fr 45px 50px;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: #c4d7ea;
+}
+
+.hist-track {
+  height: 14px;
+  background: #102436;
+  border-radius: 4px;
+  overflow: hidden;
+  border: 1px solid #1c3d59;
+}
+
+.hist-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.hist-fill.bin-0 { background: linear-gradient(90deg, #10b981, #34d399); }
+.hist-fill.bin-1 { background: linear-gradient(90deg, #3b82f6, #60a5fa); }
+.hist-fill.bin-2 { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
+.hist-fill.bin-3 { background: linear-gradient(90deg, #f97316, #fb923c); }
+.hist-fill.bin-4 { background: linear-gradient(90deg, #ef4444, #f87171); }
+
+.hist-count {
+  font-weight: 700;
+  color: #eaf2fc;
+  text-align: right;
+}
+
+.hist-pct {
+  color: #8daac7;
+  font-size: 11px;
+  text-align: right;
+}
+
+.zone-grid-list, .provenance-cards-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.zone-stat-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #091c2d;
+  border: 1px solid #1a3c58;
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: #d1e2f3;
+}
+
+.provenance-item-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #091c2d;
+  border: 1px solid #1a3c58;
+  border-radius: 6px;
+  padding: 10px 12px;
+}
+
+.prov-source-name {
+  font-weight: 600;
+  font-size: 12px;
+  color: #eaf2fc;
+  font-family: 'SFMono-Regular', Consolas, monospace;
+}
+
+.prov-badge {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  margin-left: 8px;
+}
+
+.prov-badge.real {
+  background: #064e3b;
+  color: #34d399;
+  border: 1px solid #059669;
+}
+
+.prov-badge.fixture {
+  background: #451a03;
+  color: #fb923c;
+  border: 1px solid #d97706;
+}
+
+.shap-ranking-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.shap-ranking-row {
+  display: grid;
+  grid-template-columns: 24px 180px 1fr 60px;
+  align-items: center;
+  gap: 10px;
+  background: #081827;
+  border: 1px solid #183752;
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 12px;
+}
+
+.shap-rank-badge {
+  color: #60a5fa;
+  font-weight: 700;
+  font-size: 11px;
+}
+
+.shap-feat-name {
+  color: #e2eaf4;
+  font-family: 'SFMono-Regular', Consolas, monospace;
+}
+
+.shap-track {
+  height: 8px;
+  background: #0f273b;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.shap-fill-sensitivity {
+  height: 100%;
+  background: linear-gradient(90deg, #3b82f6, #9333ea);
+  border-radius: 4px;
+}
+
+.shap-val-text {
+  font-family: 'SFMono-Regular', Consolas, monospace;
+  font-size: 11px;
+  color: #93c5fd;
+  text-align: right;
+}
+
+.non-causal-disclaimer {
+  background: #0b1d2e;
+  border: 1px solid #234d70;
+  border-left: 4px solid #38bdf8;
+  border-radius: 6px;
+  padding: 10px 14px;
+  font-size: 11px;
+  color: #94a3b8;
+  line-height: 1.5;
+  margin-top: 12px;
+}
+
+.non-causal-disclaimer strong {
+  color: #38bdf8;
+}
+
+/* Modal SHAP Waterfall Styles */
+.shap-modal-section {
+  margin-top: 16px;
+  border-top: 1px solid #1c3f5e;
+  padding-top: 14px;
+}
+
+.shap-modal-section h4 {
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: #93c5fd;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.shap-breakdown-box {
+  background: #081928;
+  border: 1px solid #193c5c;
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+
+.shap-bars-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.shap-bar-row {
+  display: grid;
+  grid-template-columns: 140px 1fr 60px;
+  align-items: center;
+  gap: 10px;
+  font-size: 11px;
+}
+
+.shap-bar-feat {
+  color: #cbd5e1;
+  font-family: 'SFMono-Regular', Consolas, monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.shap-fill {
+  height: 100%;
+  border-radius: 3px;
+}
+
+.shap-fill.INCREASES_RISK {
+  background: linear-gradient(90deg, #ef4444, #f87171);
+}
+
+.shap-fill.DECREASES_RISK {
+  background: linear-gradient(90deg, #10b981, #34d399);
+}
+
+.shap-fill.NEUTRAL {
+  background: #64748b;
+}
+
+.policy-trace-box {
+  background: #0a1c2e;
+  border: 1px solid #1e4568;
+  border-radius: 8px;
+  padding: 12px;
+  margin-top: 12px;
+}
+
+.policy-trace-box h4 {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: #7dd3fc;
+  text-transform: uppercase;
+}
+
+.policy-trace-steps {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  flex-wrap: wrap;
+}
+
+.trace-step {
+  background: #0f2b45;
+  border: 1px solid #23547e;
+  padding: 4px 10px;
+  border-radius: 6px;
+  color: #e2e8f0;
+}
+
+.trace-arrow {
+  color: #38bdf8;
+  font-weight: bold;
+}
+
 

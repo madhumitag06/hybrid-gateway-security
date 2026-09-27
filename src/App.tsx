@@ -20,12 +20,15 @@ import {
   ingestAwsVpcSample,
   ingestRawVpcLogs,
 } from './services/hybrid'
+import { getEventExplanation } from './services/analytics'
+import { AnalyticsView } from './components/AnalyticsView'
 import type {
   ActiveEnforcementRule,
   AwsVpcIngestionResponse,
   AwsVpcSampleFixtureInfo,
   DashboardData,
   EnforcementConfig,
+  EventExplanationResponse,
   FlowPredictionRequest,
   FlowPredictionResponse,
   HybridTopologySummary,
@@ -252,6 +255,23 @@ export default function App() {
   const [awsVpcResponse, setAwsVpcResponse] = useState<AwsVpcIngestionResponse | null>(null)
   const [rawVpcText, setRawVpcText] = useState('')
   const [ingestingVpc, setIngestingVpc] = useState(false)
+
+  // Phase 7: Explainability & Incident Review State
+  const [selectedExplanation, setSelectedExplanation] = useState<EventExplanationResponse | null>(null)
+  const [loadingExplanation, setLoadingExplanation] = useState(false)
+
+  useEffect(() => {
+    if (selected) {
+      setLoadingExplanation(true)
+      setSelectedExplanation(null)
+      getEventExplanation(selected.id)
+        .then(setSelectedExplanation)
+        .catch(() => {})
+        .finally(() => setLoadingExplanation(false))
+    } else {
+      setSelectedExplanation(null)
+    }
+  }, [selected])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -549,158 +569,164 @@ export default function App() {
         </header>
 
         <div className="content">
-          <section className="intro">
-            <div>
-              <h1>{activeNav === 'Dashboard' ? 'Good evening, Krishna' : activeNav}</h1>
-              <p>Your hybrid cloud environment is secure, with real-time AI anomaly evaluation active.</p>
-            </div>
-            <div className="metrics">
-              <Metric icon="♢" label="Uptime" value="99.98%" />
-              <Metric icon="⌁" label="Active Flows" value={String(data.activeFlows)} note="+12% vs. prev" />
-              <Metric icon="◴" label="Avg. Latency" value="18 ms" />
-              <Metric icon="●" label="Connection Health" value="Healthy" note="AWS ↔ On-Prem" green />
-            </div>
-          </section>
-
-          <section className="top">
-            <article className="card risk">
-              <h2>
-                Current Risk Score <small>ⓘ</small>
-              </h2>
-              <div className="risk-body">
-                <div className="gauge">
-                  <span>
-                    <b>{data.riskScore}</b>
-                    <small>/ 100</small>
-                    <em>{data.riskState.toUpperCase()}</em>
-                  </span>
-                </div>
+          {activeNav === 'Reports' ? (
+            <AnalyticsView />
+          ) : (
+            <>
+              <section className="intro">
                 <div>
-                  <h3>⬡　{data.riskScore >= 70 ? 'Elevated risk detected' : 'Normal Operating Baseline'}</h3>
-                  <p>
-                    {data.riskScore >= 70
-                      ? 'Unusual traffic patterns and anomalous flow vectors detected by trained ML model.'
-                      : 'Observed network flow distributions adhere to learned benign baseline behaviors.'}
-                  </p>
-                  <button className="primary" onClick={() => data.events[0] && setSelected(data.events[0])}>
-                    Review incident <span>→</span>
-                  </button>
+                  <h1>{activeNav === 'Dashboard' ? 'Good evening, Krishna' : activeNav}</h1>
+                  <p>Your hybrid cloud environment is secure, with real-time AI anomaly evaluation active.</p>
                 </div>
-              </div>
-            </article>
+                <div className="metrics">
+                  <Metric icon="♢" label="Uptime" value="99.98%" />
+                  <Metric icon="⌁" label="Active Flows" value={String(data.activeFlows)} note="+12% vs. prev" />
+                  <Metric icon="◴" label="Avg. Latency" value="18 ms" />
+                  <Metric icon="●" label="Connection Health" value="Healthy" note="AWS ↔ On-Prem" green />
+                </div>
+              </section>
 
-            <article className="card reason-card">
-              <h2>Top Risk Reasons (Explainable AI)</h2>
-              {data.reasons.map((reason) => (
-                <div className="reason" key={reason.label}>
-                  <span>{reason.label}</span>
-                  <div>
-                    <i className={reason.tone} style={{ width: `${Math.min(reason.value, 100)}%` }} />
+              <section className="top">
+                <article className="card risk">
+                  <h2>
+                    Current Risk Score <small>ⓘ</small>
+                  </h2>
+                  <div className="risk-body">
+                    <div className="gauge">
+                      <span>
+                        <b>{data.riskScore}</b>
+                        <small>/ 100</small>
+                        <em>{data.riskState.toUpperCase()}</em>
+                      </span>
+                    </div>
+                    <div>
+                      <h3>⬡　{data.riskScore >= 70 ? 'Elevated risk detected' : 'Normal Operating Baseline'}</h3>
+                      <p>
+                        {data.riskScore >= 70
+                          ? 'Unusual traffic patterns and anomalous flow vectors detected by trained ML model.'
+                          : 'Observed network flow distributions adhere to learned benign baseline behaviors.'}
+                      </p>
+                      <button className="primary" onClick={() => data.events[0] && setSelected(data.events[0])}>
+                        Review incident <span>→</span>
+                      </button>
+                    </div>
                   </div>
-                  <b>{reason.value}%</b>
-                </div>
-              ))}
-            </article>
+                </article>
 
-            <article className="card ai">
-              <h2>✦　AI Recommendation</h2>
-              <div className="recommend">
-                <i>⬡</i>
-                <section>
-                  <h3>{data.riskScore >= 70 ? 'Restrict and investigate' : 'Maintain standard monitoring'}</h3>
-                  <small>
-                    Policy Engine Recommendation: <b>{data.riskState}</b>
-                  </small>
-                  <p>
-                    {data.riskScore >= 70
-                      ? 'Elevated threat probability detected across active flows. Recommend applying policy restriction.'
-                      : 'All evaluated flows remain within normal Gaussian bounds. Continuing standard gateway inspection.'}
-                  </p>
-                  <button className="primary" onClick={() => data.events[0] && setSelected(data.events[0])}>
-                    Review incident <span>→</span>
-                  </button>
-                </section>
-              </div>
-            </article>
-          </section>
+                <article className="card reason-card">
+                  <h2>Top Risk Reasons (Explainable AI)</h2>
+                  {data.reasons.map((reason) => (
+                    <div className="reason" key={reason.label}>
+                      <span>{reason.label}</span>
+                      <div>
+                        <i className={reason.tone} style={{ width: `${Math.min(reason.value, 100)}%` }} />
+                      </div>
+                      <b>{reason.value}%</b>
+                    </div>
+                  ))}
+                </article>
 
-          <section className="middle">
-            <article className="card">
-              <Connectivity flows={data.activeFlows} topology={topology} />
-            </article>
-            <article className="card">
-              <h2>
-                Inbound / Outbound Traffic <small>({range})</small>
-              </h2>
-              <Traffic />
-            </article>
-          </section>
-
-          <section className="bottom">
-            <article className="card events">
-              <div className="title-line">
-                <h2>Recent Security Events (ML Evaluated)</h2>
-                <button onClick={() => setSearch('')}>Clear filters　→</button>
-              </div>
-              <div className="table">
-                <div className="row head">
-                  <span>Time</span>
-                  <span>Event</span>
-                  <span>Source</span>
-                  <span>Destination</span>
-                  <span>Risk</span>
-                  <span>Action</span>
-                  <span>Status</span>
-                </div>
-                {filtered.map((event) => (
-                  <button className="row event-row" onClick={() => setSelected(event)} key={event.id}>
-                    <span>
-                      <i className={`dot ${riskClass(event.risk)}`} />
-                      {event.time}
-                    </span>
-                    <span>{event.event}</span>
-                    <span>{event.source}</span>
-                    <span>{event.destination}</span>
-                    <span>
-                      <b className={`pill ${riskClass(event.risk)}`}>{event.risk}</b>
-                    </span>
-                    <span>
-                      <b className={`action ${event.action.toLowerCase()}`}>{event.action}</b>
-                    </span>
-                    <span>
-                      <i className={`status ${event.status.toLowerCase()}`} />
-                      {event.status}
-                    </span>
-                  </button>
-                ))}
-                {filtered.length === 0 && <p className="empty">No security events match “{search}”.</p>}
-              </div>
-            </article>
-
-            <article className="card timeline">
-              <h2>Automated Response Timeline</h2>
-              {timeline.map(([time, title, sub, icon]) => (
-                <div className="step" key={time}>
-                  <i>{icon}</i>
-                  <div>
-                    <span>{time}</span>
-                    <b>{title}</b>
-                    <small>{sub}</small>
+                <article className="card ai">
+                  <h2>✦　AI Recommendation</h2>
+                  <div className="recommend">
+                    <i>⬡</i>
+                    <section>
+                      <h3>{data.riskScore >= 70 ? 'Restrict and investigate' : 'Maintain standard monitoring'}</h3>
+                      <small>
+                        Policy Engine Recommendation: <b>{data.riskState}</b>
+                      </small>
+                      <p>
+                        {data.riskScore >= 70
+                          ? 'Elevated threat probability detected across active flows. Recommend applying policy restriction.'
+                          : 'All evaluated flows remain within normal Gaussian bounds. Continuing standard gateway inspection.'}
+                      </p>
+                      <button className="primary" onClick={() => data.events[0] && setSelected(data.events[0])}>
+                        Review incident <span>→</span>
+                      </button>
+                    </section>
                   </div>
-                </div>
-              ))}
-            </article>
+                </article>
+              </section>
 
-            <article className="card key">
-              <h2>Key Metrics</h2>
-              <div>
-                <Metric icon="⌘" label="Detection Rate" value="98.5%" note="Trained RF Classifier" />
-                <Metric icon="♢" label="False Positives" value="0.0%" note="Holdout validation" />
-                <Metric icon="◴" label="ML Latency" value="< 2 ms" note="Inference speed" />
-                <Metric icon="▣" label="Active Policies" value="12" note="2 in monitor mode" />
-              </div>
-            </article>
-          </section>
+              <section className="middle">
+                <article className="card">
+                  <Connectivity flows={data.activeFlows} topology={topology} />
+                </article>
+                <article className="card">
+                  <h2>
+                    Inbound / Outbound Traffic <small>({range})</small>
+                  </h2>
+                  <Traffic />
+                </article>
+              </section>
+
+              <section className="bottom">
+                <article className="card events">
+                  <div className="title-line">
+                    <h2>Recent Security Events (ML Evaluated)</h2>
+                    <button onClick={() => setSearch('')}>Clear filters　→</button>
+                  </div>
+                  <div className="table">
+                    <div className="row head">
+                      <span>Time</span>
+                      <span>Event</span>
+                      <span>Source</span>
+                      <span>Destination</span>
+                      <span>Risk</span>
+                      <span>Action</span>
+                      <span>Status</span>
+                    </div>
+                    {filtered.map((event) => (
+                      <button className="row event-row" onClick={() => setSelected(event)} key={event.id}>
+                        <span>
+                          <i className={`dot ${riskClass(event.risk)}`} />
+                          {event.time}
+                        </span>
+                        <span>{event.event}</span>
+                        <span>{event.source}</span>
+                        <span>{event.destination}</span>
+                        <span>
+                          <b className={`pill ${riskClass(event.risk)}`}>{event.risk}</b>
+                        </span>
+                        <span>
+                          <b className={`action ${event.action.toLowerCase()}`}>{event.action}</b>
+                        </span>
+                        <span>
+                          <i className={`status ${event.status.toLowerCase()}`} />
+                          {event.status}
+                        </span>
+                      </button>
+                    ))}
+                    {filtered.length === 0 && <p className="empty">No security events match “{search}”.</p>}
+                  </div>
+                </article>
+
+                <article className="card timeline">
+                  <h2>Automated Response Timeline</h2>
+                  {timeline.map(([time, title, sub, icon]) => (
+                    <div className="step" key={time}>
+                      <i>{icon}</i>
+                      <div>
+                        <span>{time}</span>
+                        <b>{title}</b>
+                        <small>{sub}</small>
+                      </div>
+                    </div>
+                  ))}
+                </article>
+
+                <article className="card key">
+                  <h2>Key Metrics</h2>
+                  <div>
+                    <Metric icon="⌘" label="Detection Rate" value="98.5%" note="Trained RF Classifier" />
+                    <Metric icon="♢" label="False Positives" value="0.0%" note="Holdout validation" />
+                    <Metric icon="◴" label="ML Latency" value="< 2 ms" note="Inference speed" />
+                    <Metric icon="▣" label="Active Policies" value="12" note="2 in monitor mode" />
+                  </div>
+                </article>
+              </section>
+            </>
+          )}
         </div>
       </main>
 
@@ -713,6 +739,7 @@ export default function App() {
             aria-modal="true"
             aria-labelledby="incident-title"
             onMouseDown={(event) => event.stopPropagation()}
+            style={{ maxWidth: '640px' }}
           >
             <button className="close" onClick={() => setSelected(null)} aria-label="Close incident details">
               ×
@@ -738,7 +765,54 @@ export default function App() {
                 <dd>{selected.action}</dd>
               </div>
             </dl>
-            <div className="modal-actions">
+
+            {/* Phase 7: Deep SHAP Feature Attribution Section */}
+            <div className="shap-modal-section">
+              <h4>✦ Transparent XAI Feature Attributions (SHAP)</h4>
+              {loadingExplanation ? (
+                <div style={{ fontSize: '11px', color: '#8faec9', padding: '8px 0' }}>
+                  Calculating Shapley feature attributions via TreeExplainer…
+                </div>
+              ) : selectedExplanation ? (
+                <div className="shap-breakdown-box">
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '11px' }}>
+                    <span>Model Base Expected Prior: <b>{(selectedExplanation.expected_base_probability * 100).toFixed(1)}%</b></span>
+                    <span>Threat: <b>{selectedExplanation.attack_type}</b></span>
+                  </div>
+
+                  <div className="shap-bars-list">
+                    {selectedExplanation.feature_attributions.slice(0, 6).map((fa) => (
+                      <div className="shap-bar-row" key={fa.feature}>
+                        <span className="shap-feat-name">{fa.feature} ({fa.value})</span>
+                        <div className="shap-track">
+                          <div
+                            className={`shap-fill ${fa.contribution_direction}`}
+                            style={{
+                              width: `${Math.min(Math.abs(fa.shap_value) * 200, 100)}%`,
+                            }}
+                          />
+                        </div>
+                        <span className={`shap-val-text ${fa.contribution_direction}`}>
+                          {fa.shap_value > 0 ? `+${(fa.shap_value * 100).toFixed(1)}%` : `${(fa.shap_value * 100).toFixed(1)}%`}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="policy-trace-box">
+                    <small>Policy Engine Reason: <strong>{selectedExplanation.policy_reasoning.policy_rule_name}</strong></small>
+                    <small style={{ display: 'block', marginTop: '2px', color: '#89b1d6' }}>
+                      Enforcement: {selectedExplanation.policy_reasoning.enforcement_status} (Sandbox Isolated)
+                    </small>
+                  </div>
+                  <div style={{ fontSize: '10px', color: '#688cae', marginTop: '6px', lineHeight: '1.3' }}>
+                    {selectedExplanation.disclaimer}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+
+            <div className="modal-actions" style={{ marginTop: '16px' }}>
               <button onClick={() => updateAction('Monitor')}>Monitor</button>
               <button onClick={() => updateAction('Restrict')}>Restrict</button>
               <button className="danger-button" onClick={() => updateAction('Block')}>

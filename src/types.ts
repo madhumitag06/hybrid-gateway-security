@@ -65,6 +65,8 @@ export interface ContributingFeature {
   value: number
   deviation_z_score: number
   description: string
+  shap_value?: number
+  contribution_direction?: 'INCREASES_RISK' | 'DECREASES_RISK' | 'NEUTRAL'
 }
 
 export interface FlowPredictionResponse {
@@ -267,4 +269,111 @@ export interface AwsVpcIngestionResponse {
   total_duration_ms: number
   results: AwsVpcFlowItemResult[]
 }
+
+// Phase 7: Analytics & Explainability Types
+
+export interface AnalyticsHistogramBin {
+  bin_label: string
+  min_score: number
+  max_score: number
+  count: number
+  percentage: number
+}
+
+export interface AttackTypeDistribution {
+  attack_type: string
+  count: number
+  percentage: number
+}
+
+export interface ZoneTrafficDistribution {
+  traffic_direction: string
+  count: number
+  percentage: number
+}
+
+export interface TelemetryProvenanceDistribution {
+  telemetry_source: string
+  count: number
+  percentage: number
+  is_real_telemetry: boolean
+}
+
+export interface PolicyDecisionDistribution {
+  policy_action: PolicyAction
+  count: number
+  percentage: number
+}
+
+export interface GlobalFeatureSensitivity {
+  feature: string
+  mean_abs_shap: number
+  importance_rank: number
+}
+
+export interface AnalyticsSummaryResponse {
+  total_events_evaluated: number
+  real_telemetry_events: number
+  fixture_demo_events: number
+  active_sandbox_rules_count: number
+  histogram_buckets: AnalyticsHistogramBin[]
+  attack_type_distribution: AttackTypeDistribution[]
+  zone_traffic_distribution: ZoneTrafficDistribution[]
+  telemetry_provenance_distribution: TelemetryProvenanceDistribution[]
+  policy_decision_distribution: PolicyDecisionDistribution[]
+  top_sensitive_features: GlobalFeatureSensitivity[]
+  generated_at_utc: string
+}
+
+export interface DetailedFeatureAttribution {
+  feature: string
+  value: number
+  shap_value: number
+  contribution_direction: string
+  description: string
+  deviation_z_score?: number
+}
+
+export interface PolicyReasoningTrace {
+  enacted_policy_action: PolicyAction
+  policy_rule_name: string
+  enforcement_status: string
+  is_confidence_gated: boolean
+  is_allowlisted: boolean
+}
+
+export interface EventExplanationResponse {
+  event_id: string
+  timestamp: string
+  source_ip: string
+  destination_ip: string
+  telemetry_source: string
+  attack_type: string
+  confidence: number
+  risk_score: number
+  threat_level: ThreatLevel
+  expected_base_probability: number
+  all_base_values: Record<string, number>
+  feature_attributions: DetailedFeatureAttribution[]
+  top_positive_contributors: DetailedFeatureAttribution[]
+  top_mitigating_contributors: DetailedFeatureAttribution[]
+  policy_reasoning: PolicyReasoningTrace
+  disclaimer: string
+}
+
+export interface FlowExplanationResponse {
+  attack_type: string
+  confidence: number
+  risk_score: number
+  threat_level: ThreatLevel
+  action_recommendation: PolicyAction
+  enacted_policy_decision: PolicyAction
+  policy_rule_name: string
+  expected_base_probability: number
+  feature_attributions: DetailedFeatureAttribution[]
+  top_positive_contributors: DetailedFeatureAttribution[]
+  top_mitigating_contributors: DetailedFeatureAttribution[]
+  disclaimer: string
+}
+
 

@@ -36,6 +36,12 @@ class ContributingFeatureSchema(BaseModel):
     value: float
     deviation_z_score: float
     description: str
+    shap_value: Optional[float] = Field(
+        default=None, description="Shapley feature attribution value for the predicted class"
+    )
+    contribution_direction: Optional[str] = Field(
+        default=None, description="Direction of contribution: INCREASES_RISK, DECREASES_RISK, or NEUTRAL"
+    )
 
 
 class PredictionResponse(BaseModel):

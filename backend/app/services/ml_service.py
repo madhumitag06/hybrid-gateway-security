@@ -55,15 +55,37 @@ class MLService:
         flow_input = NetworkFlowInput(**request.model_dump())
         pred_output: PredictionOutput = predictor.predict_flow(flow_input)
 
-        contributing = [
-            ContributingFeatureSchema(
-                feature=cf.feature,
-                value=cf.value,
-                deviation_z_score=cf.deviation_z_score,
-                description=cf.description,
+        from backend.app.services.explainability_service import ExplainabilityService
+
+        # Generate lightweight top-3 SHAP feature attributions
+        try:
+            explain_svc = ExplainabilityService.get_instance()
+            shap_features = explain_svc.explain_flow(
+                flow_input=flow_input,
+                predicted_class=pred_output.attack_type,
+                top_n=3,
             )
-            for cf in pred_output.top_contributing_features
-        ]
+            contributing = [
+                ContributingFeatureSchema(
+                    feature=sf["feature"],
+                    value=sf["value"],
+                    deviation_z_score=sf.get("deviation_z_score", 0.0) or 0.0,
+                    description=sf["description"],
+                    shap_value=sf.get("shap_value"),
+                    contribution_direction=sf.get("contribution_direction"),
+                )
+                for sf in shap_features
+            ]
+        except Exception:
+            contributing = [
+                ContributingFeatureSchema(
+                    feature=cf.feature,
+                    value=cf.value,
+                    deviation_z_score=cf.deviation_z_score,
+                    description=cf.description,
+                )
+                for cf in pred_output.top_contributing_features
+            ]
 
         return PredictionResponse(
             risk_score=pred_output.risk_score,

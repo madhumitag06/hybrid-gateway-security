@@ -37,14 +37,121 @@ export interface RiskReason {
   tone: string
 }
 
+export interface TrafficPoint {
+  time_label: string
+  timestamp?: string
+  inbound_val: number
+  outbound_val: number
+  flow_count: number
+  anomaly_count: number
+  anomaly_note?: string
+  total_packets?: number
+}
+
+export interface TimelineStep {
+  id?: string
+  time: string
+  title: string
+  sub: string
+  icon: string
+  action?: string
+  status?: string
+}
+
+export interface KeyMetrics {
+  detection_rate: string
+  detection_note: string
+  false_positives: string
+  fp_note: string
+  ml_latency: string
+  latency_note: string
+  active_policies: number
+  policies_note: string
+}
+
+export interface NotificationItem {
+  id: string
+  event_id: string
+  title: string
+  source: string
+  destination: string
+  risk: number
+  severity: string
+  attack_type: string
+  time: string
+  is_read: boolean
+}
+
+export interface SearchResultItem {
+  id: string
+  result_type: 'EVENT' | 'RULE' | 'TOPOLOGY'
+  title: string
+  subtitle: string
+  badge: string
+  risk_score?: number
+  target?: string
+  action?: string
+}
+
+export interface SearchResults {
+  query: string
+  total_matches: number
+  results: SearchResultItem[]
+}
+
+export interface SystemProfile {
+  username: string
+  full_name: string
+  role: string
+  organization: string
+  auth_status?: string
+  active_mode: string
+  is_safety_active: boolean
+  supported_environments: Array<{ id: string; name: string; status: string; desc: string }>
+  uptime_seconds: number
+  uptime_formatted: string
+  process_start_time?: string
+  database_status: string
+  ml_model_status: string
+}
+
+export interface AICopilotBriefing {
+  event_id: string
+  provider: string
+  model: string
+  is_llm_generated: boolean
+  executive_summary: string
+  threat_narrative: string
+  remediation_steps: string[]
+  disclaimer: string
+}
+
 export interface DashboardData {
   riskScore: number
   riskState: PolicyAction
   activeFlows: number
+  evaluatedEventsCount?: number
   events: SecurityEvent[]
   reasons: RiskReason[]
   modelStatus?: string
   isSimulatedFlowBuffer?: boolean
+  databaseBackend?: string
+  processUptime?: string
+  uptime?: string
+  uptimeSeconds?: number
+  processStartTimeUtc?: string
+  inferenceLatency?: string
+  pipelineLatency?: string
+  avgLatency?: string
+  connectionHealth?: string
+  connectionNote?: string
+  timeRange?: string
+  trafficVolumeUnit?: string
+  trafficPoints?: TrafficPoint[]
+  timeline?: TimelineStep[]
+  keyMetrics?: KeyMetrics
+  notifications?: NotificationItem[]
+  unreadNotificationsCount?: number
 }
 
 export interface FlowPredictionRequest {
@@ -200,6 +307,16 @@ export interface EnforcementConfig {
   default_ttl_seconds: number
   management_allowlist: string[]
   total_active_rules: number
+}
+
+export interface PolicyAuditLog {
+  id: number
+  timestamp: string
+  event_id: string
+  requested_action: string
+  previous_action?: string | null
+  resulting_status: string
+  actor: string
 }
 
 export interface PolicyComparisonResult {

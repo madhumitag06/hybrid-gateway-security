@@ -101,3 +101,13 @@ class RevokeRuleResponse(BaseModel):
     status: str
     message: str
     timestamp: datetime
+
+
+class PolicyAuditLogSchema(BaseModel):
+    id: int
+    timestamp: datetime
+    event_id: str
+    requested_action: str
+    previous_action: Optional[str] = None
+    resulting_status: str
+    actor: str

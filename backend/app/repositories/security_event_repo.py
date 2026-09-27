@@ -8,6 +8,7 @@ aggregation, and policy state updates.
 from typing import Any, Dict, List, Optional, Tuple
 from sqlalchemy import desc, func, select, or_
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import flag_modified
 from backend.app.models.security_event import SecurityEventModel
 
 
@@ -103,6 +104,36 @@ class SecurityEventRepository:
         )
         return list(self.db.scalars(stmt).all())
 
+    def mark_notification_read(self, event_id: str) -> bool:
+        """Persist read status for an event notification in PostgreSQL JSON features while preserving all existing keys."""
+        event = self.get_by_id(event_id)
+        if not event:
+            return False
+        curr_ff = dict(event.flow_features or {})
+        curr_ff["is_read"] = True
+        event.flow_features = curr_ff
+        flag_modified(event, "flow_features")
+        self.db.flush()
+        return True
+
+    def mark_all_notifications_read(self) -> int:
+        """Mark all high-risk/anomalous event notifications as read in PostgreSQL while preserving all existing keys."""
+        stmt = select(SecurityEventModel).where(
+            or_(SecurityEventModel.risk_score >= 70, SecurityEventModel.threat_level.in_(["HIGH", "MEDIUM"]))
+        )
+        events = list(self.db.scalars(stmt).all())
+        count = 0
+        for ev in events:
+            curr_ff = dict(ev.flow_features or {})
+            if not curr_ff.get("is_read"):
+                curr_ff["is_read"] = True
+                ev.flow_features = curr_ff
+                flag_modified(ev, "flow_features")
+                count += 1
+        if count > 0:
+            self.db.flush()
+        return count
+
     def delete_by_id(self, event_id: str) -> bool:
         """Delete an event by ID."""
         event = self.get_by_id(event_id)
@@ -111,3 +142,4 @@ class SecurityEventRepository:
         self.db.delete(event)
         self.db.flush()
         return True
+

@@ -57,7 +57,18 @@ class Settings(BaseSettings):
     aws_region: str = "us-east-1"
     aws_cloudwatch_log_group: str = "/aws/vpc/flow-logs"
 
+    # Optional Security Analyst AI Copilot Configuration (Phase 10)
+    # Providers: "none" (default, deterministic synthesis), "groq", "openai"
+    ai_provider: str = "none"
+    llm_provider: str = "none"
+    groq_api_key: str = ""
+    groq_model: str = "llama-3.3-70b-versatile"
+    openai_api_key: str = ""
+    openai_model: str = "gpt-4o-mini"
+    llm_model: str = ""
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 
 settings = Settings()
+

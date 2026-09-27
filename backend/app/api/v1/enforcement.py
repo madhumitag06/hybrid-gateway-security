@@ -13,10 +13,12 @@ from sqlalchemy.orm import Session
 from backend.app.config import settings
 from backend.app.db.session import get_db
 from backend.app.repositories.enforcement_repo import EnforcementRepository
+from backend.app.repositories.policy_audit_repo import PolicyAuditRepository
 from backend.app.schemas.policy import (
     ActiveEnforcementRule,
     EnforcementConfigSchema,
     EnforcementConfigUpdate,
+    PolicyAuditLogSchema,
     PolicyComparisonResult,
     PolicyDecision,
     RevokeRuleRequest,
@@ -196,3 +198,30 @@ def compare_policies(
         adaptive_decision=adaptive_decision,
         flow_id=f"flow-cmp-{flow_request.dst_port}",
     )
+
+
+@router.get(
+    "/v1/enforcement/audit",
+    response_model=List[PolicyAuditLogSchema],
+    summary="Get recent policy audit logs",
+    description="Returns chronological audit history of policy actions and rollbacks recorded in PostgreSQL.",
+)
+def get_policy_audit_logs(
+    limit: int = Query(50, ge=1, le=200),
+    db: Session = Depends(get_db),
+) -> List[PolicyAuditLogSchema]:
+    repo = PolicyAuditRepository(db)
+    logs = repo.get_recent_logs(limit=limit)
+    return [
+        PolicyAuditLogSchema(
+            id=log.id,
+            timestamp=log.timestamp,
+            event_id=log.event_id,
+            requested_action=log.requested_action,
+            previous_action=log.previous_action,
+            resulting_status=log.resulting_status,
+            actor=log.actor,
+        )
+        for log in logs
+    ]
+

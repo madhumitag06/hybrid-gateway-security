@@ -1,46 +1,34 @@
 /**
  * PCAP Traffic Ingestion API Client Service
+ * =========================================
+ * Manages PCAP file streaming, sample fixture execution, and upload parsing.
  */
 
+import { getApiUrl, request } from './api'
 import type {
   IngestionStatusResponse,
   PcapIngestionResponse,
   SamplePcapInfo,
 } from '../types'
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
-
 export async function getIngestionStatus(): Promise<IngestionStatusResponse> {
-  const response = await fetch(`${API_BASE_URL}/api/v1/ingest/status`)
-  if (!response.ok) {
-    throw new Error(`Failed to fetch ingestion status (${response.status})`)
-  }
-  return response.json()
+  return request<IngestionStatusResponse>('v1/ingest/status')
 }
 
 export async function listSamplePcaps(): Promise<SamplePcapInfo[]> {
-  const response = await fetch(`${API_BASE_URL}/api/v1/ingest/samples`)
-  if (!response.ok) {
-    throw new Error(`Failed to list sample PCAPs (${response.status})`)
-  }
-  return response.json()
+  return request<SamplePcapInfo[]>('v1/ingest/samples')
 }
 
 export async function ingestSamplePcap(
   filename: string,
   persist: boolean = true
 ): Promise<PcapIngestionResponse> {
-  const response = await fetch(
-    `${API_BASE_URL}/api/v1/ingest/samples/${encodeURIComponent(filename)}?persist=${persist}`,
+  return request<PcapIngestionResponse>(
+    `v1/ingest/samples/${encodeURIComponent(filename)}?persist=${persist}`,
     {
       method: 'POST',
     }
   )
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}))
-    throw new Error(errorData.detail || `Failed to ingest sample PCAP (${response.status})`)
-  }
-  return response.json()
 }
 
 export async function uploadPcapFile(
@@ -51,13 +39,22 @@ export async function uploadPcapFile(
   formData.append('file', file)
   formData.append('persist', String(persist))
 
-  const response = await fetch(`${API_BASE_URL}/api/v1/ingest/pcap`, {
+  const url = getApiUrl('v1/ingest/pcap')
+  const response = await fetch(url, {
     method: 'POST',
     body: formData,
   })
+
   if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}))
-    throw new Error(errorData.detail || `Failed to upload and ingest PCAP (${response.status})`)
+    let errorDetail = `Failed to upload and ingest PCAP (HTTP ${response.status})`
+    try {
+      const errorData = await response.json()
+      if (errorData.detail) errorDetail = errorData.detail
+    } catch {
+      // ignore
+    }
+    throw new Error(errorDetail)
   }
+
   return response.json()
 }

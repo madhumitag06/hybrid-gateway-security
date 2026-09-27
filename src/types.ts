@@ -478,5 +478,20 @@ export interface EvaluationRunResponse {
   disclaimer: string
 }
 
+export interface EventListResponseSchema {
+  events: SecurityEvent[]
+  total: number
+  limit: number
+  offset: number
+}
+
+export interface SecurityEventDetailSchema extends SecurityEvent {
+  flow_features?: Record<string, any>
+  class_probabilities?: Record<string, number>
+  top_contributing_features?: Array<Record<string, any>>
+  created_at?: string
+  updated_at?: string
+}
+
 
 

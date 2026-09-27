@@ -23,6 +23,9 @@ import {
 import { getEventExplanation } from './services/analytics'
 import { AnalyticsView } from './components/AnalyticsView'
 import { EvaluationView } from './components/EvaluationView'
+import { TrafficView } from './components/TrafficView'
+import { EventsView } from './components/EventsView'
+import { PoliciesView } from './components/PoliciesView'
 import type {
   ActiveEnforcementRule,
   AwsVpcIngestionResponse,
@@ -501,7 +504,6 @@ export default function App() {
               className={activeNav === name ? 'active' : ''}
               onClick={() => {
                 setActiveNav(name)
-                if (name !== 'Dashboard') setToast(`${name} is ready to connect to its backend endpoint.`)
               }}
               key={name}
             >
@@ -571,7 +573,13 @@ export default function App() {
         </header>
 
         <div className="content">
-          {activeNav === 'Reports' ? (
+          {activeNav === 'Traffic' ? (
+            <TrafficView />
+          ) : activeNav === 'Events' ? (
+            <EventsView />
+          ) : activeNav === 'Policies' ? (
+            <PoliciesView />
+          ) : activeNav === 'Reports' ? (
             <AnalyticsView />
           ) : activeNav === 'Evaluation' ? (
             <EvaluationView />
@@ -579,7 +587,7 @@ export default function App() {
             <>
               <section className="intro">
                 <div>
-                  <h1>{activeNav === 'Dashboard' ? 'Good evening, Krishna' : activeNav}</h1>
+                  <h1>Good evening, Krishna</h1>
                   <p>Your hybrid cloud environment is secure, with real-time AI anomaly evaluation active.</p>
                 </div>
                 <div className="metrics">

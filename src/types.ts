@@ -376,4 +376,107 @@ export interface FlowExplanationResponse {
   disclaimer: string
 }
 
+// Phase 8: Evaluation & Comparative Benchmarking Types
+
+export interface PerClassMetrics {
+  class_name: string
+  tp: number
+  fp: number
+  tn: number
+  fn: number
+  precision: number
+  recall: number
+  f1_score: number
+  fpr: number
+  fnr: number
+}
+
+export interface ConfusionMatrixSchema {
+  classes: string[]
+  matrix: number[][]
+}
+
+export interface MLClassificationMetrics {
+  overall_accuracy: number
+  macro_precision: number
+  macro_recall: number
+  macro_f1: number
+  confusion_matrix: ConfusionMatrixSchema
+  per_class_metrics: PerClassMetrics[]
+}
+
+export interface PolicyDivergenceRecord {
+  scenario_id: string
+  ground_truth_class: string
+  source_ip: string
+  destination_ip: string
+  dst_port: number
+  packet_count: number
+  conn_rate: number
+  static_action: string
+  static_rule_matched?: string
+  adaptive_action: string
+  adaptive_risk_score: number
+  adaptive_confidence: number
+  adaptive_rule_matched: string
+  divergence_category: string
+  divergence_rationale: string
+  is_borderline: boolean
+  is_allowlisted: boolean
+}
+
+export interface PolicyComparisonMetrics {
+  adaptive_action_distribution: Record<string, number>
+  static_action_distribution: Record<string, number>
+  static_over_blocking_count: number
+  static_over_blocking_rate: number
+  adaptive_over_blocking_count: number
+  adaptive_over_blocking_rate: number
+  static_under_blocking_count: number
+  static_under_blocking_rate: number
+  adaptive_under_blocking_count: number
+  adaptive_under_blocking_rate: number
+  total_divergent_decisions: number
+  divergence_rate: number
+  borderline_scenarios_count: number
+  borderline_gated_to_monitor_count: number
+  borderline_gating_effectiveness: number
+}
+
+export interface LatencyDistribution {
+  mean: number
+  p50: number
+  p95: number
+  p99: number
+}
+
+export interface LatencyBreakdown {
+  total_pipeline_latency_ms: LatencyDistribution
+  ml_inference_latency_ms: LatencyDistribution
+  shap_attribution_latency_ms?: LatencyDistribution
+  policy_evaluation_latency_ms: LatencyDistribution
+  throughput_flows_per_sec: number
+  total_duration_seconds: number
+}
+
+export interface EvaluationSuiteInfo {
+  suite_name: string
+  title: string
+  description: string
+  default_sample_count: number
+  available_classes: string[]
+}
+
+export interface EvaluationRunResponse {
+  suite_name: string
+  total_flows_evaluated: number
+  evaluation_timestamp: string
+  ml_classification_metrics: MLClassificationMetrics
+  policy_comparison_metrics: PolicyComparisonMetrics
+  latency_metrics: LatencyBreakdown
+  divergent_scenarios_sample: PolicyDivergenceRecord[]
+  disclaimer: string
+}
+
+
 

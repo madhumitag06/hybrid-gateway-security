@@ -22,6 +22,7 @@ import {
 } from './services/hybrid'
 import { getEventExplanation } from './services/analytics'
 import { AnalyticsView } from './components/AnalyticsView'
+import { EvaluationView } from './components/EvaluationView'
 import type {
   ActiveEnforcementRule,
   AwsVpcIngestionResponse,
@@ -45,6 +46,7 @@ const nav = [
   ['▣', 'Events'],
   ['◇', 'Policies'],
   ['▤', 'Reports'],
+  ['⚖', 'Evaluation'],
 ]
 
 const timeline = [
@@ -571,6 +573,8 @@ export default function App() {
         <div className="content">
           {activeNav === 'Reports' ? (
             <AnalyticsView />
+          ) : activeNav === 'Evaluation' ? (
+            <EvaluationView />
           ) : (
             <>
               <section className="intro">

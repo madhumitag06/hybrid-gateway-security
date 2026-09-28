@@ -335,7 +335,7 @@ export const EvaluationView: React.FC = () => {
               <div style={{ marginTop: '12px', background: '#081726', padding: '10px 12px', borderRadius: '6px', fontSize: '12px' }}>
                 <span style={{ color: '#93c5fd' }}>Borderline Confidence Gating Effectiveness: </span>
                 <strong>{(evaluation.policy_comparison_metrics.borderline_gating_effectiveness * 100).toFixed(1)}%</strong>
-                <span style={{ display: 'block', color: '#64748b', fontSize: '11px', marginTop: '2px' }}>
+                <span style={{ display: 'block', color: '#8faec9', fontSize: '11px', marginTop: '2px' }}>
                   ({evaluation.policy_comparison_metrics.borderline_gated_to_monitor_count} of {evaluation.policy_comparison_metrics.borderline_scenarios_count} ambiguous flows safely placed into observation mode).
                 </span>
               </div>

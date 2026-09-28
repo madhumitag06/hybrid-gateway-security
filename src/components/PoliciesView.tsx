@@ -503,11 +503,11 @@ export const PoliciesView: React.FC = () => {
               Evaluate live network flow features simultaneously against the <strong>Static Rule Baseline</strong> and the <strong>Adaptive AI Policy Engine</strong> to observe divergence and context-aware policy decisions.
             </p>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+            <div className="policy-comparator-grid">
               {/* Left Column: Input Vector */}
-              <div style={{ background: '#081726', padding: '14px', borderRadius: '6px', border: '1px solid #1a3c58' }}>
+              <div style={{ background: '#081726', padding: '14px', borderRadius: '6px', border: '1px solid #1a3c58', minWidth: 0 }}>
                 <h4 style={{ margin: '0 0 12px', fontSize: '13px', color: '#58a6ff' }}>Input Flow Feature Vector</h4>
-                <div className="flow-form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <div className="flow-form-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '10px' }}>
                   <div className="flow-field">
                     <label style={{ fontSize: '11px', color: '#8faec9', display: 'block', marginBottom: '2px' }}>Dst Port</label>
                     <input
@@ -577,7 +577,7 @@ export const PoliciesView: React.FC = () => {
               </div>
 
               {/* Right Column: Comparison Result */}
-              <div>
+              <div style={{ minWidth: 0 }}>
                 {compResult ? (
                   <div className="comparison-card" style={{ background: '#091c2d', border: '1px solid #1a3c58', borderRadius: '6px', padding: '14px' }}>
                     <h4 style={{ margin: '0 0 10px', fontSize: '13px', color: '#f0f6fc' }}>Comparison Output</h4>
@@ -632,16 +632,7 @@ export const PoliciesView: React.FC = () => {
               {PHASE_5_POLICY_RULES.map((rule) => (
                 <div
                   key={rule.id}
-                  style={{
-                    background: '#091c2d',
-                    border: '1px solid #1a3c58',
-                    borderRadius: '6px',
-                    padding: '12px 16px',
-                    display: 'grid',
-                    gridTemplateColumns: '60px 1.5fr 1fr 90px 80px',
-                    alignItems: 'center',
-                    gap: '12px',
-                  }}
+                  className="policy-catalog-row"
                 >
                   <div>
                     <span style={{ fontSize: '11px', color: '#58a6ff', fontFamily: 'monospace', fontWeight: 'bold' }}>

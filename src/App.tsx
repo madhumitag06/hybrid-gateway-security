@@ -34,9 +34,12 @@ import { EvaluationView } from './components/EvaluationView'
 import { TrafficView } from './components/TrafficView'
 import { EventsView } from './components/EventsView'
 import { PoliciesView } from './components/PoliciesView'
+import { AuthView } from './components/AuthView'
+import { authService } from './services/auth'
 import type {
   ActiveEnforcementRule,
   AICopilotBriefing,
+  AuthUser,
   AwsVpcIngestionResponse,
   AwsVpcSampleFixtureInfo,
   DashboardData,
@@ -323,6 +326,10 @@ export default function App() {
   const [toast, setToast] = useState('')
   const [loading, setLoading] = useState(true)
 
+  // User Authentication State (Phase 13)
+  const [authUser, setAuthUser] = useState<AuthUser | null>(authService.getUser())
+  const [isAuthChecked, setIsAuthChecked] = useState(false)
+
   // Search Results Dropdown State
   const [searchResults, setSearchResults] = useState<SearchResults | null>(null)
   const [searching, setSearching] = useState(false)
@@ -374,6 +381,38 @@ export default function App() {
   const [aiBriefing, setAiBriefing] = useState<AICopilotBriefing | null>(null)
   const [loadingAiBriefing, setLoadingAiBriefing] = useState(false)
 
+  // Initial Auth Verification Lifecycle
+  useEffect(() => {
+    let mounted = true
+    if (authService.isAuthenticated()) {
+      authService
+        .getMe()
+        .then((user) => {
+          if (mounted) {
+            setAuthUser(user)
+            setIsAuthChecked(true)
+          }
+        })
+        .catch(() => {
+          if (mounted) {
+            setAuthUser(null)
+            setIsAuthChecked(true)
+          }
+        })
+    } else {
+      setIsAuthChecked(true)
+    }
+
+    const unsubscribe = authService.subscribe((u) => {
+      if (mounted) setAuthUser(u)
+    })
+
+    return () => {
+      mounted = false
+      unsubscribe()
+    }
+  }, [])
+
   useEffect(() => {
     if (selected) {
       setLoadingExplanation(true)
@@ -403,7 +442,10 @@ export default function App() {
       .finally(() => setLoading(false))
   }
 
+  // Load telemetry and gateway operational data once authenticated
   useEffect(() => {
+    if (!authUser) return
+
     loadDashboard(range)
 
     getPresets()
@@ -436,7 +478,7 @@ export default function App() {
     getSystemProfile()
       .then(setProfile)
       .catch(() => {})
-  }, [])
+  }, [authUser])
 
   const handleRangeChange = (newRange: string) => {
     setRange(newRange)
@@ -745,6 +787,25 @@ export default function App() {
 
   const unreadCount = notifications.filter((n) => !n.is_read).length
 
+  if (!isAuthChecked) {
+    return (
+      <div className="auth-container">
+        <div className="auth-spinner" style={{ width: '36px', height: '36px', borderWidth: '3px' }} />
+      </div>
+    )
+  }
+
+  if (!authUser) {
+    return (
+      <AuthView
+        onAuthSuccess={(user) => {
+          setAuthUser(user)
+          loadDashboard()
+        }}
+      />
+    )
+  }
+
   if (loading || !data) return <div className="loading">Loading security overview…</div>
 
   return (
@@ -784,186 +845,213 @@ export default function App() {
 
       <main>
         <header onClick={(e) => e.stopPropagation()}>
-          <div className="mobile-logo">⬡</div>
-          <div className="search-wrapper" style={{ position: 'relative', flex: 1, maxWidth: '400px' }}>
-            <label className="search">
-              ⌕{' '}
-              <input
-                value={search}
-                onChange={(event) => {
-                  const val = event.target.value
-                  setSearch(val)
-                  if (val.trim().length >= 2) {
-                    setSearching(true)
-                    toggleSearchDropdown(true)
-                    searchGateway(val)
-                      .then(setSearchResults)
-                      .catch(() => {})
-                      .finally(() => setSearching(false))
-                  } else {
-                    setSearchResults(null)
-                    toggleSearchDropdown(false)
-                  }
-                }}
-                placeholder="Search for IP, domain, event, or policy..."
-                onFocus={() => {
-                  if (search.trim().length >= 2) toggleSearchDropdown(true)
-                }}
-              />
-            </label>
+          <div className="header-left">
+            <div className="mobile-logo">⬡</div>
+            <div className="search-wrapper" style={{ position: 'relative' }}>
+              <label className="search">
+                ⌕{' '}
+                <input
+                  value={search}
+                  onChange={(event) => {
+                    const val = event.target.value
+                    setSearch(val)
+                    if (val.trim().length >= 2) {
+                      setSearching(true)
+                      toggleSearchDropdown(true)
+                      searchGateway(val)
+                        .then(setSearchResults)
+                        .catch(() => {})
+                        .finally(() => setSearching(false))
+                    } else {
+                      setSearchResults(null)
+                      toggleSearchDropdown(false)
+                    }
+                  }}
+                  placeholder="Search for IP, event, policy..."
+                  onFocus={() => {
+                    if (search.trim().length >= 2) toggleSearchDropdown(true)
+                  }}
+                />
+              </label>
 
-            {showSearchDropdown && searchResults && (
-              <div className="search-dropdown-menu">
-                <div className="search-dropdown-header">
-                  <span>Search Matches ({searchResults.total_matches})</span>
-                  <small>{searching ? 'Searching…' : `Query: "${searchResults.query}"`}</small>
-                </div>
-                {searchResults.results.length === 0 ? (
-                  <div className="search-empty-item">No events or rules match "{search}".</div>
-                ) : (
-                  searchResults.results.map((res) => (
-                    <div
-                      key={res.id}
-                      className="search-result-row"
-                      onClick={() => handleSelectSearchResult(res)}
-                    >
-                      <span className={`search-badge ${res.result_type}`}>{res.result_type}</span>
-                      <div className="search-row-text">
-                        <b>{res.title}</b>
-                        <small>{res.subtitle}</small>
-                      </div>
-                      {res.risk_score !== undefined && (
-                        <span className={`pill ${riskClass(res.risk_score)}`}>{res.risk_score}</span>
-                      )}
-                    </div>
-                  ))
-                )}
-              </div>
-            )}
-          </div>
-
-          <div
-            className={`backend-status-tag ${isLiveBackend ? 'online' : 'offline'}`}
-            title="FastAPI Backend Connection State"
-          >
-            <i /> {isLiveBackend ? 'FastAPI ML Online' : 'Fallback Offline'}
-          </div>
-          <button className="analyzer-btn btn-stable" onClick={() => { closeAllTopMenus(); setShowAnalyzer(true); }}>
-            ⚡ Test Live Flow (ML API)
-          </button>
-          <button className="analyzer-btn pcap-btn btn-stable" onClick={() => { closeAllTopMenus(); setShowIngestModal(true); }}>
-            📥 Ingest PCAP Traffic
-          </button>
-          <button className="analyzer-btn enforce-btn btn-stable" onClick={() => { closeAllTopMenus(); refreshRules(); setShowRulesModal(true); }}>
-            🛡️ Active Rules ({activeRules.length})
-          </button>
-
-          {/* Interactive Environment Selector (Supported Modes Only) */}
-          <div style={{ position: 'relative' }}>
-            <button
-              className="select"
-              onClick={toggleEnvMenu}
-              title="Execution Environment Mode"
-            >
-              {currentEnv === 'SANDBOX'
-                ? '🧪 Sandbox Lab ⌄'
-                : currentEnv === 'LOCAL'
-                ? '💻 Local Dev ⌄'
-                : currentEnv === 'AWS_FIXTURE'
-                ? '☁ AWS Fixture ⌄'
-                : '☁ Live AWS (RO) ⌄'}
-            </button>
-            {showEnvMenu && (
-              <div className="env-dropdown-menu">
-                <div className="env-item" onClick={() => { handleToggleMode('SANDBOX'); setShowEnvMenu(false); }}>
-                  <b>🧪 In-Memory Sandbox Lab</b>
-                  <small>Active in-memory quarantine filtering with auto TTL</small>
-                </div>
-                <div className="env-item" onClick={() => { handleToggleMode('DRY_RUN'); setShowEnvMenu(false); }}>
-                  <b>💻 Local Dev (Dry-Run)</b>
-                  <small>Simulation only — zero host network changes</small>
-                </div>
-                <div className="env-item" onClick={() => { setIngestTab('AWS_VPC'); setShowIngestModal(true); setShowEnvMenu(false); }}>
-                  <b>☁ AWS VPC Flow Fixtures</b>
-                  <small>Deterministic offline AWS CloudWatch log fixtures</small>
-                </div>
-                <div className="env-item" onClick={() => { setToast('Live AWS CloudWatch connected in Read-Only mode.'); setShowEnvMenu(false); }}>
-                  <b>☁ Live AWS Read-Only</b>
-                  <small>CloudWatch flow logs read-only ingest (Safety Gated)</small>
-                </div>
-              </div>
-            )}
-          </div>
-
-          <select
-            className="select range"
-            value={range}
-            onChange={(event) => handleRangeChange(event.target.value)}
-            aria-label="Time range"
-          >
-            <option>Last 1 hour</option>
-            <option>Last 24 hours</option>
-            <option>Last 7 days</option>
-            <option>Last 30 days</option>
-          </select>
-
-          {/* Persistent Notifications Bell & Dropdown */}
-          <div style={{ position: 'relative' }}>
-            <button
-              className="alert"
-              onClick={toggleNotifications}
-              title="Security Notifications"
-            >
-              ♧{unreadCount > 0 && <b>{unreadCount}</b>}
-            </button>
-
-            {showNotifications && (
-              <div className="notifications-dropdown-menu">
-                <div className="notif-header">
-                  <span>🚨 Security Notifications ({unreadCount} unread)</span>
-                  {unreadCount > 0 && (
-                    <button className="notif-clear-btn" onClick={handleMarkAllNotificationsRead}>
-                      Mark all read
-                    </button>
-                  )}
-                </div>
-                <div className="notif-list">
-                  {notifications.length === 0 ? (
-                    <div className="notif-empty">No unread security alerts.</div>
+              {showSearchDropdown && searchResults && (
+                <div className="search-dropdown-menu">
+                  <div className="search-dropdown-header">
+                    <span>Search Matches ({searchResults.total_matches})</span>
+                    <small>{searching ? 'Searching…' : `Query: "${searchResults.query}"`}</small>
+                  </div>
+                  {searchResults.results.length === 0 ? (
+                    <div className="search-empty-item">No events or rules match "{search}".</div>
                   ) : (
-                    notifications.map((n) => (
+                    searchResults.results.map((res) => (
                       <div
-                        key={n.id}
-                        className={`notif-item ${n.is_read ? 'read' : 'unread'}`}
-                        onClick={() => handleSelectNotification(n)}
+                        key={res.id}
+                        className="search-result-row"
+                        onClick={() => handleSelectSearchResult(res)}
                       >
-                        <div className="notif-top">
-                          <b>{n.title}</b>
-                          <span className={`pill ${riskClass(n.risk)}`}>{n.risk}</span>
+                        <span className={`search-badge ${res.result_type}`}>{res.result_type}</span>
+                        <div className="search-row-text">
+                          <b>{res.title}</b>
+                          <small>{res.subtitle}</small>
                         </div>
-                        <p>{n.source} → {n.destination} ({n.attack_type})</p>
-                        <small>{n.time} • Click to review incident</small>
+                        {res.risk_score !== undefined && (
+                          <span className={`pill ${riskClass(res.risk_score)}`}>{res.risk_score}</span>
+                        )}
                       </div>
                     ))
                   )}
                 </div>
-              </div>
-            )}
+              )}
+            </div>
+
+            <div
+              className={`backend-status-tag ${isLiveBackend ? 'online' : 'offline'}`}
+              title="FastAPI Backend Connection State"
+            >
+              <i /> <span>{isLiveBackend ? 'FastAPI ML Online' : 'Fallback Offline'}</span>
+            </div>
           </div>
 
-          {/* Truthful Operator Identity */}
-          <div
-            className="profile"
-            onClick={openProfileModal}
-            title="Gateway Console Identity & Operational State"
-            style={{ cursor: 'pointer' }}
-          >
-            <i>🛡️</i>
-            <span>
-              <b>SecOps Console</b>
-              <small>Local Session</small>
-            </span>
-            ⌄
+          <div className="header-actions">
+            <button className="analyzer-btn btn-stable" onClick={() => { closeAllTopMenus(); setShowAnalyzer(true); }}>
+              ⚡ Test Flow
+            </button>
+            <button className="analyzer-btn pcap-btn btn-stable" onClick={() => { closeAllTopMenus(); setShowIngestModal(true); }}>
+              📥 Ingest PCAP
+            </button>
+            <button className="analyzer-btn enforce-btn btn-stable" onClick={() => { closeAllTopMenus(); refreshRules(); setShowRulesModal(true); }}>
+              🛡️ Rules ({activeRules.length})
+            </button>
+          </div>
+
+          <div className="header-right">
+            {/* Interactive Environment Selector (Supported Modes Only) */}
+            <div style={{ position: 'relative' }}>
+              <button
+                className="select"
+                onClick={toggleEnvMenu}
+                title="Execution Environment Mode"
+              >
+                {currentEnv === 'SANDBOX'
+                  ? '🧪 Sandbox Lab ⌄'
+                  : currentEnv === 'LOCAL'
+                  ? '💻 Local Dev ⌄'
+                  : currentEnv === 'AWS_FIXTURE'
+                  ? '☁ AWS Fixture ⌄'
+                  : '☁ Live AWS (RO) ⌄'}
+              </button>
+              {showEnvMenu && (
+                <div className="env-dropdown-menu">
+                  <div className="env-item" onClick={() => { handleToggleMode('SANDBOX'); setShowEnvMenu(false); }}>
+                    <b>🧪 In-Memory Sandbox Lab</b>
+                    <small>Active in-memory quarantine filtering with auto TTL</small>
+                  </div>
+                  <div className="env-item" onClick={() => { handleToggleMode('DRY_RUN'); setShowEnvMenu(false); }}>
+                    <b>💻 Local Dev (Dry-Run)</b>
+                    <small>Simulation only — zero host network changes</small>
+                  </div>
+                  <div className="env-item" onClick={() => { setIngestTab('AWS_VPC'); setShowIngestModal(true); setShowEnvMenu(false); }}>
+                    <b>☁ AWS VPC Flow Fixtures</b>
+                    <small>Deterministic offline AWS CloudWatch log fixtures</small>
+                  </div>
+                  <div className="env-item" onClick={() => { setToast('Live AWS CloudWatch connected in Read-Only mode.'); setShowEnvMenu(false); }}>
+                    <b>☁ Live AWS Read-Only</b>
+                    <small>CloudWatch flow logs read-only ingest (Safety Gated)</small>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <select
+              className="select range"
+              value={range}
+              onChange={(event) => handleRangeChange(event.target.value)}
+              aria-label="Time range"
+            >
+              <option>Last 1 hour</option>
+              <option>Last 24 hours</option>
+              <option>Last 7 days</option>
+              <option>Last 30 days</option>
+            </select>
+
+            {/* Persistent Notifications Bell & Dropdown */}
+            <div style={{ position: 'relative' }}>
+              <button
+                className="alert"
+                onClick={toggleNotifications}
+                title="Security Notifications"
+              >
+                ♧{unreadCount > 0 && <b>{unreadCount}</b>}
+              </button>
+
+              {showNotifications && (
+                <div className="notifications-dropdown-menu">
+                  <div className="notif-header">
+                    <span>🚨 Security Notifications ({unreadCount} unread)</span>
+                    {unreadCount > 0 && (
+                      <button className="notif-clear-btn" onClick={handleMarkAllNotificationsRead}>
+                        Mark all read
+                      </button>
+                    )}
+                  </div>
+                  <div className="notif-list">
+                    {notifications.length === 0 ? (
+                      <div className="notif-empty">No unread security alerts.</div>
+                    ) : (
+                      notifications.map((n) => (
+                        <div
+                          key={n.id}
+                          className={`notif-item ${n.is_read ? 'read' : 'unread'}`}
+                          onClick={() => handleSelectNotification(n)}
+                        >
+                          <div className="notif-top">
+                            <b>{n.title}</b>
+                            <span className={`pill ${riskClass(n.risk)}`}>{n.risk}</span>
+                          </div>
+                          <p>{n.source} → {n.destination} ({n.attack_type})</p>
+                          <small>{n.time} • Click to review incident</small>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Authenticated Operator Identity */}
+            {authUser && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div
+                  className="profile"
+                  onClick={openProfileModal}
+                  title={`Authenticated Operator: ${authUser.full_name} (${authUser.email})`}
+                  style={{ cursor: 'pointer' }}
+                >
+                  <i>{authUser.role === 'ADMIN' ? '👑' : '🛡️'}</i>
+                  <span>
+                    <b>{authUser.full_name}</b>
+                    <small style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <span className={`auth-user-role-badge ${authUser.role.toLowerCase()}`}>
+                        {authUser.role}
+                      </span>
+                    </small>
+                  </span>
+                  ⌄
+                </div>
+                <button
+                  type="button"
+                  className="auth-logout-btn"
+                  onClick={async () => {
+                    await authService.logout()
+                    setAuthUser(null)
+                    setToast('Session logged out.')
+                  }}
+                  title="Log Out Session"
+                >
+                  Log Out
+                </button>
+              </div>
+            )}
           </div>
         </header>
 
@@ -1208,40 +1296,54 @@ export default function App() {
               ) : selectedExplanation ? (
                 <div className="shap-breakdown-box">
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '11px' }}>
-                    <span>Model Base Expected Prior: <b>{(selectedExplanation.expected_base_probability * 100).toFixed(1)}%</b></span>
-                    <span>Threat: <b>{selectedExplanation.attack_type}</b></span>
+                    <span>Model Base Expected Prior: <b>{selectedExplanation.expected_base_probability !== undefined ? `${(selectedExplanation.expected_base_probability * 100).toFixed(1)}%` : '50.0%'}</b></span>
+                    <span>Threat: <b>{selectedExplanation.attack_type || selected.attack_type || selected.event}</b></span>
                   </div>
 
-                  <div className="shap-bars-list">
-                    {selectedExplanation.feature_attributions.slice(0, 6).map((fa) => (
-                      <div className="shap-bar-row" key={fa.feature}>
-                        <span className="shap-feat-name">{fa.feature} ({fa.value})</span>
-                        <div className="shap-track">
-                          <div
-                            className={`shap-fill ${fa.contribution_direction}`}
-                            style={{
-                              width: `${Math.min(Math.abs(fa.shap_value) * 200, 100)}%`,
-                            }}
-                          />
+                  {selectedExplanation.feature_attributions && selectedExplanation.feature_attributions.length > 0 ? (
+                    <div className="shap-bars-list">
+                      {selectedExplanation.feature_attributions.slice(0, 6).map((fa) => (
+                        <div className="shap-bar-row" key={fa.feature}>
+                          <span className="shap-feat-name">{fa.feature} ({fa.value})</span>
+                          <div className="shap-track">
+                            <div
+                              className={`shap-fill ${fa.contribution_direction}`}
+                              style={{
+                                width: `${Math.min(Math.abs(fa.shap_value) * 200, 100)}%`,
+                              }}
+                            />
+                          </div>
+                          <span className={`shap-val-text ${fa.contribution_direction}`}>
+                            {fa.shap_value > 0 ? `+${(fa.shap_value * 100).toFixed(1)}%` : `${(fa.shap_value * 100).toFixed(1)}%`}
+                          </span>
                         </div>
-                        <span className={`shap-val-text ${fa.contribution_direction}`}>
-                          {fa.shap_value > 0 ? `+${(fa.shap_value * 100).toFixed(1)}%` : `${(fa.shap_value * 100).toFixed(1)}%`}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: '11px', color: '#8faec9', padding: '4px 0' }}>
+                      Standard baseline z-score attribution active.
+                    </div>
+                  )}
 
-                  <div className="policy-trace-box">
-                    <small>Policy Engine Reason: <strong>{selectedExplanation.policy_reasoning.policy_rule_name}</strong></small>
-                    <small style={{ display: 'block', marginTop: '2px', color: '#89b1d6' }}>
-                      Enforcement: {selectedExplanation.policy_reasoning.enforcement_status} (Sandbox Isolated)
-                    </small>
-                  </div>
-                  <div style={{ fontSize: '10px', color: '#688cae', marginTop: '6px', lineHeight: '1.3' }}>
-                    {selectedExplanation.disclaimer}
-                  </div>
+                  {selectedExplanation.policy_reasoning && (
+                    <div className="policy-trace-box">
+                      <small>Policy Engine Reason: <strong>{selectedExplanation.policy_reasoning.policy_rule_name || 'Adaptive Risk Threshold'}</strong></small>
+                      <small style={{ display: 'block', marginTop: '2px', color: '#89b1d6' }}>
+                        Enforcement: {selectedExplanation.policy_reasoning.enforcement_status || 'Simulated'} (Sandbox Isolated)
+                      </small>
+                    </div>
+                  )}
+                  {selectedExplanation.disclaimer && (
+                    <div style={{ fontSize: '10px', color: '#8faec9', marginTop: '6px', lineHeight: '1.3' }}>
+                      {selectedExplanation.disclaimer}
+                    </div>
+                  )}
                 </div>
-              ) : null}
+              ) : (
+                <div style={{ fontSize: '11px', color: '#8faec9', padding: '6px 0' }}>
+                  Standard baseline z-score attribution active.
+                </div>
+              )}
             </div>
 
             {/* AI Security Copilot Executive Briefing Section */}
@@ -1290,7 +1392,7 @@ export default function App() {
                       ))}
                     </ul>
                   </div>
-                  <small style={{ display: 'block', marginTop: '10px', fontSize: '10px', color: '#688cae', borderTop: '1px solid #142e48', paddingTop: '6px' }}>
+                  <small style={{ display: 'block', marginTop: '10px', fontSize: '10px', color: '#8faec9', borderTop: '1px solid #142e48', paddingTop: '6px' }}>
                     {aiBriefing.disclaimer}
                   </small>
                 </div>
@@ -1302,6 +1404,16 @@ export default function App() {
             </div>
 
             <div className="modal-actions" style={{ marginTop: '16px' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelected(null)
+                  setActiveNav('Events')
+                }}
+                style={{ marginRight: 'auto', background: 'transparent', borderColor: '#24486b', color: '#8ec5fc' }}
+              >
+                View in Events Ledger →
+              </button>
               <button onClick={() => updateAction('Monitor')}>Monitor</button>
               <button onClick={() => updateAction('Restrict')}>Restrict</button>
               <button className="danger-button" onClick={() => updateAction('Block')}>
@@ -1312,7 +1424,7 @@ export default function App() {
         </div>
       )}
 
-      {/* Truthful Console Operator Identity Modal */}
+      {/* Authenticated Console Operator Identity Modal */}
       {showProfileModal && (
         <div className="modal-backdrop" role="presentation" onMouseDown={() => setShowProfileModal(false)}>
           <section
@@ -1324,15 +1436,24 @@ export default function App() {
           >
             <button className="close" onClick={() => setShowProfileModal(false)}>×</button>
             <span className="eyebrow">Gateway Console Identity</span>
-            <h2>SecOps Local Console</h2>
+            <h2>SecOps Authenticated Operator</h2>
             <div className="profile-detail-card" style={{ marginTop: '12px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '16px' }}>
-                <div className="profile-large-avatar">🛡️</div>
+                <div className="profile-large-avatar">
+                  {authUser?.role === 'ADMIN' ? '👑' : '🛡️'}
+                </div>
                 <div>
-                  <h3 style={{ margin: 0, color: '#f0f6fc' }}>{profile?.full_name || 'SecOps Local Console'}</h3>
-                  <span style={{ color: '#38bdf8', fontSize: '13px' }}>{profile?.role || 'Gateway Administrator (Local Session)'}</span>
-                  <small style={{ display: 'block', color: '#8faec9', marginTop: '2px' }}>
-                    {profile?.auth_status || 'Unconfigured (Local Prototype Console)'}
+                  <h3 style={{ margin: 0, color: '#f0f6fc' }}>
+                    {authUser?.full_name || profile?.full_name || 'SecOps Operator'}
+                  </h3>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
+                    <span className={`auth-user-role-badge ${authUser?.role?.toLowerCase() || 'analyst'}`}>
+                      {authUser?.role || 'ANALYST'}
+                    </span>
+                    <span style={{ color: '#38bdf8', fontSize: '13px' }}>{authUser?.email}</span>
+                  </div>
+                  <small style={{ display: 'block', color: '#8faec9', marginTop: '4px' }}>
+                    Provider: {authUser?.auth_provider || 'LOCAL'} • Verified Database Identity
                   </small>
                 </div>
               </div>
@@ -1362,27 +1483,42 @@ export default function App() {
                 <div>✓ In-Memory Sandbox Quarantine Isolation: <b>Enabled</b></div>
                 <div>✓ AWS VPC Telemetry Integration: <b>Read-Only (Safety Gated)</b></div>
                 <div>✓ Host OS Firewall Modification: <b>Restricted (Zero Host Changes)</b></div>
-                <div>✓ Multi-User Authentication: <b>Unconfigured (Local Prototype Environment)</b></div>
+                <div>✓ Multi-User Authentication: <b style={{ color: '#42dfa0' }}>Active (JWT + PostgreSQL)</b></div>
               </div>
 
-              <div style={{ display: 'flex', gap: '8px', marginTop: '18px', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', gap: '8px', marginTop: '18px', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  <button
+                    className="chip active"
+                    onClick={() => { setShowProfileModal(false); setShowRulesModal(true); }}
+                  >
+                    🛡️ View Active Rules ({activeRules.length})
+                  </button>
+                  <button
+                    className="chip"
+                    onClick={() => { setShowProfileModal(false); setShowAnalyzer(true); }}
+                  >
+                    ⚡ Test Flow Vector
+                  </button>
+                  <button
+                    className="chip"
+                    onClick={() => { loadDashboard(); setToast('Refreshed live gateway telemetry.'); }}
+                  >
+                    🔄 Refresh Telemetry
+                  </button>
+                </div>
                 <button
-                  className="chip active"
-                  onClick={() => { setShowProfileModal(false); setShowRulesModal(true); }}
+                  type="button"
+                  className="auth-logout-btn"
+                  style={{ padding: '6px 14px' }}
+                  onClick={async () => {
+                    setShowProfileModal(false)
+                    await authService.logout()
+                    setAuthUser(null)
+                    setToast('Session logged out.')
+                  }}
                 >
-                  🛡️ View Active Rules ({activeRules.length})
-                </button>
-                <button
-                  className="chip"
-                  onClick={() => { setShowProfileModal(false); setShowAnalyzer(true); }}
-                >
-                  ⚡ Test Flow Vector
-                </button>
-                <button
-                  className="chip"
-                  onClick={() => { loadDashboard(); setToast('Refreshed live gateway telemetry.'); }}
-                >
-                  🔄 Refresh Telemetry
+                  🚪 Log Out
                 </button>
               </div>
             </div>
@@ -1951,7 +2087,7 @@ export default function App() {
                       <div className="rule-info">
                         <h4>{rule.target_ip} ({rule.action})</h4>
                         <p>{rule.reason}</p>
-                        <small style={{ fontSize: '10px', color: '#688cae' }}>
+                        <small style={{ fontSize: '10px', color: '#8faec9' }}>
                           ID: <code>{rule.rule_id}</code> | Port: {rule.target_port || 'ALL'} | Protocol: {rule.protocol}
                         </small>
                       </div>

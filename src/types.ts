@@ -610,5 +610,59 @@ export interface SecurityEventDetailSchema extends SecurityEvent {
   updated_at?: string
 }
 
+export type UserRole = 'ADMIN' | 'ANALYST' | 'USER'
+export type AuthProviderType = 'LOCAL' | 'GOOGLE'
+
+export interface AuthUser {
+  id: string
+  email: string
+  full_name: string
+  role: UserRole
+  auth_provider: AuthProviderType
+  is_active: boolean
+  is_verified: boolean
+  avatar_url?: string | null
+  last_login_at?: string | null
+  created_at?: string | null
+}
+
+export interface AuthTokens {
+  access_token: string
+  refresh_token: string
+  token_type: string
+  expires_in_seconds: number
+}
+
+export interface AuthResponse {
+  user: AuthUser
+  tokens: AuthTokens
+  message?: string
+}
+
+export interface SignUpPayload {
+  email: string
+  password: string
+  confirm_password?: string
+  full_name: string
+  role?: UserRole
+}
+
+export interface LoginPayload {
+  email: string
+  password: string
+}
+
+export interface PasswordChangePayload {
+  current_password: string
+  new_password: string
+}
+
+export interface GoogleOAuthInitResponse {
+  enabled: boolean
+  authorization_url?: string
+  client_id_configured: boolean
+  message?: string
+}
+
 
 

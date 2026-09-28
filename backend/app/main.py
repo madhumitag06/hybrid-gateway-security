@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from backend.app.api.health import router as health_router
 from backend.app.api.v1.analytics import router as analytics_router
+from backend.app.api.v1.auth import router as auth_router
 from backend.app.api.v1.dashboard import router as dashboard_router
 from backend.app.api.v1.enforcement import router as enforcement_router
 from backend.app.api.v1.evaluation import router as evaluation_router
@@ -19,6 +20,7 @@ from backend.app.api.v1.ingest import router as ingest_router
 from backend.app.api.v1.predict import router as predict_router
 from backend.app.config import settings
 from backend.app.db.session import SessionLocal, init_db
+from backend.app.services.auth_service import AuthService
 from backend.app.services.dashboard_service import DashboardService
 from backend.app.services.enforcement_service import EnforcementService
 from backend.app.services.ml_service import MLService
@@ -29,7 +31,7 @@ async def lifespan(app: FastAPI):
     """
     Application startup and shutdown lifespan context.
     Preloads Phase 1 ML model artifacts, initializes PostgreSQL database,
-    and reconciles active containment rules into the sandbox adapter.
+    bootstraps the initial admin account, and reconciles active containment rules.
     """
     print(f"[*] Starting {settings.app_name} v{settings.app_version}...")
 
@@ -47,10 +49,12 @@ async def lifespan(app: FastAPI):
         init_db()
         with SessionLocal() as db:
             DashboardService.seed_initial_data_if_empty(db)
-            # 3. Reconcile Active Containment Rules into Sandbox
+            # 3. Bootstrap Initial Admin User if needed
+            AuthService.bootstrap_admin_user_if_needed(db)
+            # 4. Reconcile Active Containment Rules into Sandbox
             EnforcementService.reconcile_from_db(db)
             db.commit()
-        print("[+] PostgreSQL database initialized and verified.")
+        print("[+] PostgreSQL database initialized, admin verified, and rules reconciled.")
     except Exception as e:
         print(f"[!] Warning: Database initialization notice: {e}")
 
@@ -78,6 +82,8 @@ app.add_middleware(
 
 # Register routes with /api prefix (for standard frontend integration)
 app.include_router(health_router, prefix="/api")
+app.include_router(auth_router, prefix="/api")
+app.include_router(auth_router, prefix="/api/v1")
 app.include_router(predict_router, prefix="/api")
 app.include_router(events_router, prefix="/api")
 app.include_router(ingest_router, prefix="/api")

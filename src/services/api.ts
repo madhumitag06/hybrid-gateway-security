@@ -36,6 +36,20 @@ export async function request<T>(
 ): Promise<T> {
   const url = getApiUrl(endpoint)
   
+  // Extract stored auth token if present
+  let authHeader: Record<string, string> = {}
+  try {
+    const rawTokens = localStorage.getItem('hgs_auth_tokens')
+    if (rawTokens) {
+      const parsed = JSON.parse(rawTokens)
+      if (parsed?.access_token) {
+        authHeader = { Authorization: `Bearer ${parsed.access_token}` }
+      }
+    }
+  } catch {
+    // ignore
+  }
+
   let response: Response
   try {
     response = await fetch(url, {
@@ -43,6 +57,7 @@ export async function request<T>(
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
+        ...authHeader,
         ...options.headers,
       },
     })

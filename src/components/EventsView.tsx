@@ -331,38 +331,40 @@ export const EventsView: React.FC = () => {
               ) : explanation ? (
                 <div className="shap-breakdown-box">
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '11px' }}>
-                    <span>Model Base Expected Prior: <b>{(explanation.expected_base_probability * 100).toFixed(1)}%</b></span>
-                    <span>Threat: <b>{explanation.attack_type}</b></span>
+                    <span>Model Base Expected Prior: <b>{explanation.expected_base_probability !== undefined ? `${(explanation.expected_base_probability * 100).toFixed(1)}%` : '50.0%'}</b></span>
+                    <span>Threat: <b>{explanation.attack_type || selected.attack_type || selected.event}</b></span>
                   </div>
 
-                  <div className="shap-bars-list">
-                    {explanation.feature_attributions.slice(0, 6).map((fa) => (
-                      <div className="shap-bar-row" key={fa.feature}>
-                        <span className="shap-bar-feat">{fa.feature} ({fa.value})</span>
-                        <div className="shap-track">
-                          <div
-                            className={`shap-fill ${fa.contribution_direction}`}
-                            style={{
-                              width: `${Math.min(Math.abs(fa.shap_value) * 200, 100)}%`,
-                            }}
-                          />
+                  {explanation.feature_attributions && explanation.feature_attributions.length > 0 ? (
+                    <div className="shap-bars-list">
+                      {explanation.feature_attributions.slice(0, 6).map((fa) => (
+                        <div className="shap-bar-row" key={fa.feature}>
+                          <span className="shap-bar-feat">{fa.feature} ({fa.value})</span>
+                          <div className="shap-track">
+                            <div
+                              className={`shap-fill ${fa.contribution_direction}`}
+                              style={{
+                                width: `${Math.min(Math.abs(fa.shap_value) * 200, 100)}%`,
+                              }}
+                            />
+                          </div>
+                          <span className={`shap-val-text ${fa.contribution_direction}`}>
+                            {fa.shap_value > 0 ? `+${(fa.shap_value * 100).toFixed(1)}%` : `${(fa.shap_value * 100).toFixed(1)}%`}
+                          </span>
                         </div>
-                        <span className={`shap-val-text ${fa.contribution_direction}`}>
-                          {fa.shap_value > 0 ? `+${(fa.shap_value * 100).toFixed(1)}%` : `${(fa.shap_value * 100).toFixed(1)}%`}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
+                  ) : null}
 
                   {explanation.policy_reasoning && (
                     <div className="policy-trace-box" style={{ marginTop: '10px' }}>
                       <h4>Policy Decision Reasoning</h4>
                       <div className="policy-trace-steps">
-                        <span className="trace-step">Model: {explanation.attack_type} ({selected.risk}/100)</span>
+                        <span className="trace-step">Model: {explanation.attack_type || 'Threat'} ({selected.risk}/100)</span>
                         <span className="trace-arrow">→</span>
-                        <span className="trace-step">Rule: {explanation.policy_reasoning.policy_rule_name}</span>
+                        <span className="trace-step">Rule: {explanation.policy_reasoning.policy_rule_name || 'Adaptive Risk Rule'}</span>
                         <span className="trace-arrow">→</span>
-                        <span className="trace-step">Action: {explanation.policy_reasoning.enacted_policy_action}</span>
+                        <span className="trace-step">Action: {explanation.policy_reasoning.enacted_policy_action || selected.action}</span>
                       </div>
                     </div>
                   )}

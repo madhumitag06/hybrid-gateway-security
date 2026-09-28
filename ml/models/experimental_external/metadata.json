@@ -1,0 +1,98 @@
+{
+  "model_type": "ExperimentalExternalRandomForest",
+  "dataset_source": "CIC-IDS2017-Benchmark-Schema",
+  "sample_counts": {
+    "total": 9793,
+    "train": 6855,
+    "val": 1469,
+    "test": 1469
+  },
+  "test_metrics": {
+    "overall": {
+      "accuracy": 0.8223,
+      "macro_precision": 0.7553,
+      "macro_recall": 0.6009,
+      "macro_f1": 0.5767,
+      "weighted_precision": 0.8321,
+      "weighted_recall": 0.8223,
+      "weighted_f1": 0.7453,
+      "total_samples": 1469
+    },
+    "per_class": {
+      "BENIGN": {
+        "precision": 0.7765,
+        "recall": 1.0,
+        "f1_score": 0.8742,
+        "support": 907
+      },
+      "PORT_SCAN": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1_score": 1.0,
+        "support": 152
+      },
+      "BRUTE_FORCE": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1_score": 1.0,
+        "support": 148
+      },
+      "TRAFFIC_SPIKE": {
+        "precision": 1.0,
+        "recall": 0.0046,
+        "f1_score": 0.0091,
+        "support": 218
+      },
+      "SUSPICIOUS_TRANSFER": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1_score": 0.0,
+        "support": 44
+      }
+    },
+    "labels": [
+      "BENIGN",
+      "PORT_SCAN",
+      "BRUTE_FORCE",
+      "TRAFFIC_SPIKE",
+      "SUSPICIOUS_TRANSFER"
+    ],
+    "confusion_matrix": [
+      [
+        907,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        152,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        148,
+        0,
+        0
+      ],
+      [
+        217,
+        0,
+        0,
+        1,
+        0
+      ],
+      [
+        44,
+        0,
+        0,
+        0,
+        0
+      ]
+    ]
+  }
+}

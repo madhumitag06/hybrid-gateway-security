@@ -17,7 +17,9 @@ WORKSPACE_ROOT = Path(os.path.abspath(".")).resolve()
 datas = [
     (str(WORKSPACE_ROOT / "ml" / "models"), "ml/models"),
     (str(WORKSPACE_ROOT / "backend" / "alembic"), "backend/alembic"),
+    (str(WORKSPACE_ROOT / "backend" / "app" / "data"), "backend/app/data"),
 ]
+datas += collect_data_files("shap")
 
 # 2. Collect Hidden Imports
 hidden_imports = [
@@ -32,6 +34,14 @@ hidden_imports = [
     "uvicorn.protocols.websockets.auto",
     "uvicorn.lifespans",
     "uvicorn.lifespans.on",
+    "fastapi",
+    "fastapi.middleware",
+    "fastapi.middleware.cors",
+    "starlette",
+    "starlette.concurrency",
+    "starlette.middleware",
+    "starlette.middleware.cors",
+    "starlette.responses",
     "pydantic",
     "pydantic_settings",
     "pydantic_settings.sources",
@@ -54,40 +64,17 @@ hidden_imports = [
     "scipy",
     "bcrypt",
     "jwt",
-    "backend",
-    "backend.app",
-    "backend.app.main",
-    "backend.app.config",
-    "backend.app.core.security",
-    "backend.app.db.session",
-    "backend.app.db.base",
-    "backend.app.models",
-    "backend.app.models.user",
-    "backend.app.models.event",
-    "backend.app.models.rule",
-    "backend.app.models.evaluation",
-    "backend.app.models.analytics",
-    "backend.app.services.auth_service",
-    "backend.app.services.ml_service",
-    "backend.app.services.enforcement_service",
-    "backend.app.services.dashboard_service",
-    "backend.app.services.policy_engine",
-    "backend.app.services.ingestion_service",
-    "backend.app.services.copilot_service",
-    "backend.app.services.aws_telemetry_client",
-    "backend.app.repositories.user_repo",
-    "backend.app.api.deps",
-    "backend.app.api.health",
-    "backend.app.api.v1.auth",
-    "backend.app.api.v1.predict",
-    "backend.app.api.v1.events",
-    "backend.app.api.v1.ingest",
-    "backend.app.api.v1.enforcement",
-    "backend.app.api.v1.hybrid",
-    "backend.app.api.v1.analytics",
-    "backend.app.api.v1.evaluation",
-    "backend.app.api.v1.dashboard",
+    "multipart",
+    "python_multipart",
 ]
+
+# Collect all backend.app, ml, and shap submodules dynamically
+hidden_imports += collect_submodules("backend.app")
+hidden_imports += collect_submodules("ml")
+hidden_imports += collect_submodules("shap")
+
+# Ensure unique entries
+hidden_imports = sorted(list(set(hidden_imports)))
 
 a = Analysis(
     [str(WORKSPACE_ROOT / "backend" / "launcher.py")],

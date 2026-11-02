@@ -60,6 +60,10 @@ class PredictionResponse(BaseModel):
         default_factory=list, description="Top anomalous feature indicators"
     )
     event_id: Optional[str] = Field(default=None, description="Persisted PostgreSQL security event identifier")
+    explanation_status: Optional[str] = Field(
+        default="CALCULATED",
+        description="Status of SHAP explanation: 'CALCULATED', 'SKIPPED_LOW_RISK', or 'UNAVAILABLE'",
+    )
 
 
 class BatchPredictionRequest(BaseModel):

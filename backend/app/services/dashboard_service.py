@@ -263,6 +263,117 @@ class DashboardService:
         return pred, event_model
 
     @classmethod
+    def record_prediction_batch(
+        cls,
+        db: Session,
+        items: List[Tuple[NetworkFlowRequest, str, str, str]],  # (flow_request, source_ip, destination_ip, protocol)
+        is_demo: bool = False,
+        batch_size: int = 100,
+        enable_shap: Optional[bool] = None,
+        shap_threshold: Optional[int] = None,
+    ) -> List[Tuple[PredictionResponse, SecurityEventModel]]:
+        """
+        Executes batched ML inference, policy evaluation, and containment with controlled
+        chunked database flushing to prevent excessive roundtrips during high-volume ingestion.
+        """
+        from backend.app.services.policy_engine import PolicyEngine
+        from backend.app.services.enforcement_service import EnforcementService
+
+        if not items:
+            return []
+
+        # 1. Prune expired rules ONCE at the start of the batch
+        EnforcementService.prune_expired(db)
+
+        # 2. Local cache for active enforcement rules within this batch
+        rule_cache: Dict[Tuple[str, Optional[int]], Any] = {}
+        results: List[Tuple[PredictionResponse, SecurityEventModel]] = []
+
+        try:
+            for idx, (flow_request, source_ip, destination_ip, protocol) in enumerate(items):
+                pred: PredictionResponse = MLService.predict(
+                    flow_request,
+                    enable_shap=enable_shap,
+                    shap_threshold=shap_threshold,
+                )
+
+                event_id = f"evt-{uuid.uuid4().hex[:8]}"
+                risk = pred.risk_score
+
+                # Evaluate Context-Aware Policy Decision
+                policy_decision = PolicyEngine.evaluate(
+                    prediction=pred,
+                    source_ip=source_ip,
+                    destination_ip=destination_ip,
+                    dst_port=flow_request.dst_port,
+                    protocol=protocol or "TCP",
+                    event_id=event_id,
+                )
+
+                action = policy_decision.policy_action
+
+                if pred.is_anomaly:
+                    feat_reasons = ", ".join([f"{c.feature} ({c.value})" for c in pred.top_contributing_features[:2]])
+                    desc = f"Classified as {pred.attack_type} with confidence {pred.confidence * 100:.1f}%. Key deviations: {feat_reasons}."
+                else:
+                    desc = "Standard baseline network activity adhering to normal flow distributions."
+
+                event_model = SecurityEventModel(
+                    id=event_id,
+                    timestamp=datetime.now(timezone.utc),
+                    source_ip=source_ip,
+                    destination_ip=destination_ip,
+                    attack_type=pred.attack_type,
+                    risk_score=risk,
+                    threat_level=pred.threat_level,
+                    confidence=pred.confidence,
+                    action_recommendation=pred.action_recommendation,
+                    current_policy_action=action,
+                    status="Pending",
+                    description=desc,
+                    is_anomaly=pred.is_anomaly,
+                    is_demo=is_demo,
+                    flow_features=flow_request.model_dump(),
+                    class_probabilities=pred.class_probabilities,
+                    top_contributing_features=[c.model_dump() for c in pred.top_contributing_features],
+                )
+
+                db.add(event_model)
+
+                # Execute containment with rule caching and without repeating prune_expired_rules
+                enforce_res, rule_model = EnforcementService.execute_decision(
+                    decision=policy_decision,
+                    db=db,
+                    actor="ml_policy_engine" if not is_demo else "demo_seed",
+                    prune_expired=False,
+                    rule_cache=rule_cache,
+                )
+
+                final_status = (
+                    "Applied"
+                    if enforce_res.status == "ACTIVE"
+                    else ("Simulated" if enforce_res.status == "SIMULATED" else ("Monitoring" if action == "Monitor" else "Allowed"))
+                )
+                event_model.status = final_status
+                pred.event_id = event_id
+
+                results.append((pred, event_model))
+
+                # Periodic batch flush to keep transaction buffer bounded
+                if (idx + 1) % batch_size == 0:
+                    db.flush()
+
+            # Final flush for remaining items
+            if len(items) % batch_size != 0:
+                db.flush()
+
+            return results
+
+        except Exception as e:
+            db.rollback()
+            raise e
+
+    @classmethod
     def get_dashboard_data(
         cls, db: Session, time_range: Optional[str] = "24h"
     ) -> DashboardDataSchema:

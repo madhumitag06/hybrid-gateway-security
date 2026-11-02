@@ -670,15 +670,19 @@ export default function App() {
   }
 
   const handleIngestSample = async (filename: string) => {
+    if (ingesting) return
     setIngesting(true)
     try {
       const res = await ingestSamplePcap(filename, true)
       setIngestResponse(res)
-      setToast(`Ingested ${res.filename}: ${res.metrics.packets_processed} pkts -> ${res.flows_evaluated} flows evaluated.`)
+      const flowMsg = res.is_sampled
+        ? `${res.flows_evaluated} evaluated of ${res.metrics.flows_generated} flows`
+        : `${res.flows_evaluated} flows evaluated`
+      setToast(`Ingested ${res.filename}: ${res.metrics.packets_processed} pkts -> ${flowMsg}.`)
       loadDashboard(range)
       refreshRules()
-    } catch (err) {
-      setToast(`PCAP Ingestion error: ${String(err)}`)
+    } catch (err: any) {
+      setToast(`PCAP Ingestion error: ${err?.message || String(err)}`)
     } finally {
       setIngesting(false)
     }
@@ -687,15 +691,19 @@ export default function App() {
   const handleUploadPcap = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
+    if (ingesting) return
     setIngesting(true)
     try {
       const res = await uploadPcapFile(file, true)
       setIngestResponse(res)
-      setToast(`Uploaded & Ingested ${res.filename}: ${res.metrics.packets_processed} pkts -> ${res.flows_evaluated} flows.`)
+      const flowMsg = res.is_sampled
+        ? `${res.flows_evaluated} evaluated of ${res.metrics.flows_generated} flows`
+        : `${res.flows_evaluated} flows`
+      setToast(`Uploaded & Ingested ${res.filename}: ${res.metrics.packets_processed} pkts -> ${flowMsg}.`)
       loadDashboard(range)
       refreshRules()
-    } catch (err) {
-      setToast(`Upload error: ${String(err)}`)
+    } catch (err: any) {
+      setToast(`Upload error: ${err?.message || String(err)}`)
     } finally {
       setIngesting(false)
       e.target.value = ''
@@ -1813,7 +1821,9 @@ export default function App() {
                     <div className="result-header">
                       <h3>Ingestion Telemetry & ML Results: {ingestResponse.filename}</h3>
                       <span className={`threat-tag ${ingestResponse.high_risk_flows_count > 0 ? 'HIGH' : 'LOW'}`}>
-                        {ingestResponse.flows_evaluated} Flows ({ingestResponse.high_risk_flows_count} High Risk)
+                        {ingestResponse.is_sampled
+                          ? `${ingestResponse.flows_evaluated} Evaluated of ${ingestResponse.metrics.flows_generated} Flows (${ingestResponse.high_risk_flows_count} High Risk)`
+                          : `${ingestResponse.flows_evaluated} Flows (${ingestResponse.high_risk_flows_count} High Risk)`}
                       </span>
                     </div>
 
@@ -1845,7 +1855,14 @@ export default function App() {
                     </div>
 
                     <div className="prob-breakdown">
-                      <h4>Aggregated Flow Classifications (Persisted to PostgreSQL)</h4>
+                      <h4>
+                        Aggregated Flow Classifications (Persisted to PostgreSQL)
+                        {ingestResponse.results_omitted_count && ingestResponse.results_omitted_count > 0 ? (
+                          <span style={{ fontSize: '0.8rem', opacity: 0.8, marginLeft: '0.5rem', fontWeight: 'normal' }}>
+                            (Top {ingestResponse.results.length} of {ingestResponse.flows_evaluated} evaluated flows shown)
+                          </span>
+                        ) : null}
+                      </h4>
                       <table className="ingest-flow-table">
                         <thead>
                           <tr>

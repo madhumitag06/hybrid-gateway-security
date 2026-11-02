@@ -71,6 +71,9 @@ def get_default_ml_artifacts_dir() -> Path:
             bundled_dir = Path(meipass) / "ml" / "models"
             if bundled_dir.is_dir():
                 return bundled_dir
+        internal_dir = Path(sys.executable).resolve().parent / "_internal" / "ml" / "models"
+        if internal_dir.is_dir():
+            return internal_dir
         exe_dir = Path(sys.executable).resolve().parent / "ml" / "models"
         if exe_dir.is_dir():
             return exe_dir
@@ -100,6 +103,12 @@ class Settings(BaseSettings):
     db_echo: bool = False
     db_pool_size: int = 10
     db_max_overflow: int = 20
+
+    # Ingestion & Evaluation Performance Optimization Configuration
+    pcap_max_evaluated_flows: int = 500  # Maximum flows for detailed ML inference and persistence
+    pcap_max_response_flows: int = 50    # Maximum flow details returned in API response results
+    shap_risk_threshold: int = 50        # Continuous risk score threshold to trigger SHAP TreeExplainer calculation
+    pcap_db_batch_size: int = 100        # Batch size for PostgreSQL persistence flushes
 
     # Allowed CORS origins (Supports JSON list or comma-separated strings)
     cors_origins: Union[List[str], str] = [

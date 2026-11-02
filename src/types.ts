@@ -185,6 +185,7 @@ export interface FlowPredictionResponse {
   is_anomaly: boolean
   class_probabilities: Record<string, number>
   top_contributing_features: ContributingFeature[]
+  explanation_status?: string
 }
 
 export interface BackendHealth {
@@ -239,6 +240,9 @@ export interface IngestionMetrics {
   persist_duration_ms: number
   total_duration_ms: number
   throughput_packets_per_sec: number
+  flows_selected_for_evaluation?: number
+  flows_skipped_limit?: number
+  events_persisted?: number
 }
 
 export interface PcapIngestionResponse {
@@ -247,8 +251,14 @@ export interface PcapIngestionResponse {
   file_size_bytes: number
   is_demo: boolean
   metrics: IngestionMetrics
+  flows_generated?: number
+  flows_selected_for_evaluation?: number
   flows_evaluated: number
+  events_persisted?: number
+  flows_skipped_limit?: number
   high_risk_flows_count: number
+  results_omitted_count?: number
+  is_sampled?: boolean
   results: IngestedFlowResult[]
 }
 

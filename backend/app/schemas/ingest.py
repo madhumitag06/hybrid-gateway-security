@@ -51,6 +51,9 @@ class IngestionMetrics(BaseModel):
     persist_duration_ms: float = Field(..., description="Wall-clock time spent persisting events to PostgreSQL (ms)")
     total_duration_ms: float = Field(..., description="Total end-to-end ingestion pipeline execution time (ms)")
     throughput_packets_per_sec: float = Field(..., description="Calculated packet processing throughput (packets/sec)")
+    flows_selected_for_evaluation: Optional[int] = Field(default=None, description="Number of representative flows selected for detailed evaluation")
+    flows_skipped_limit: Optional[int] = Field(default=None, description="Flows omitted from detailed evaluation due to max evaluation limit")
+    events_persisted: Optional[int] = Field(default=None, description="Total events persisted into PostgreSQL")
 
 
 class PcapIngestionResponse(BaseModel):
@@ -62,8 +65,14 @@ class PcapIngestionResponse(BaseModel):
     file_size_bytes: int = Field(..., description="Size of the uploaded/processed file in bytes")
     is_demo: bool = Field(default=False, description="Whether this traffic is flagged as synthetic demo data")
     metrics: IngestionMetrics
+    flows_generated: int = Field(default=0, description="Total distinct network flow sessions created across complete capture")
+    flows_selected_for_evaluation: int = Field(default=0, description="Number of flows selected for detailed evaluation")
     flows_evaluated: int = Field(..., description="Number of flows passed through ML inference")
+    events_persisted: int = Field(default=0, description="Number of events successfully persisted to PostgreSQL")
+    flows_skipped_limit: int = Field(default=0, description="Flows not evaluated due to maximum evaluation limit")
     high_risk_flows_count: int = Field(..., description="Number of flows classified as HIGH or CRITICAL risk")
+    results_omitted_count: int = Field(default=0, description="Number of evaluated flows omitted from detailed response results")
+    is_sampled: bool = Field(default=False, description="True if detailed evaluation was sampled/capped from larger flow set")
     results: List[IngestedFlowResult] = Field(default_factory=list, description="List of evaluated flow predictions")
 
 

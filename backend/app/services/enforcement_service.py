@@ -47,11 +47,25 @@ class EnforcementService:
         return cls._sandbox_adapter
 
     @classmethod
+    def prune_expired(cls, db: Optional[Session] = None) -> List[str]:
+        """
+        Prunes expired rules from both the in-memory adapter and PostgreSQL.
+        """
+        expired_ids: List[str] = []
+        if db is not None:
+            repo = EnforcementRepository(db)
+            expired_ids = repo.prune_expired_rules()
+        cls.get_adapter().prune_expired()
+        return expired_ids
+
+    @classmethod
     def execute_decision(
         cls,
         decision: PolicyDecision,
         db: Session,
         actor: str = "ml_policy_engine",
+        prune_expired: bool = True,
+        rule_cache: Optional[Dict[Tuple[str, Optional[int]], ActiveEnforcementModel]] = None,
     ) -> Tuple[EnforcementResult, Optional[ActiveEnforcementModel]]:
         """
         Execute a policy decision through the active adapter and persist the resulting rule & audit trail.
@@ -59,9 +73,10 @@ class EnforcementService:
         repo = EnforcementRepository(db)
         audit_repo = PolicyAuditRepository(db)
 
-        # 1. Prune any expired rules before evaluating new actions
-        repo.prune_expired_rules()
-        cls.get_adapter().prune_expired()
+        # 1. Prune any expired rules before evaluating new actions (can be run once for batch operations)
+        if prune_expired:
+            repo.prune_expired_rules()
+            cls.get_adapter().prune_expired()
 
         if not decision.enforcement_required or decision.policy_action == "Allow":
             # No containment rule creation required for Allow
@@ -80,10 +95,18 @@ class EnforcementService:
             )
             return result, None
 
-        # 2. Check Rule Deduplication for Target IP
-        existing_rule = repo.find_active_by_target(
-            target_ip=decision.target_ip, target_port=decision.target_port
-        )
+        # 2. Check Rule Deduplication for Target IP (with optional batch cache)
+        cache_key = (decision.target_ip, decision.target_port)
+        existing_rule: Optional[ActiveEnforcementModel] = None
+
+        if rule_cache is not None and cache_key in rule_cache:
+            existing_rule = rule_cache[cache_key]
+        else:
+            existing_rule = repo.find_active_by_target(
+                target_ip=decision.target_ip, target_port=decision.target_port
+            )
+            if rule_cache is not None and existing_rule is not None:
+                rule_cache[cache_key] = existing_rule
 
         adapter = cls.get_adapter()
 
@@ -135,6 +158,8 @@ class EnforcementService:
         )
 
         repo.create(rule_model)
+        if rule_cache is not None:
+            rule_cache[cache_key] = rule_model
 
         # 4. Log to immutable policy audit trail
         if decision.event_id:

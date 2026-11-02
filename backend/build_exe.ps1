@@ -35,12 +35,35 @@ Write-Host "[*] Spec File        : AdaptiveSecurityGateway.spec" -ForegroundColo
 $DistPath = "$WorkspaceRoot\backend\executable"
 $BuildTempPath = "$WorkspaceRoot\build"
 
-Write-Host "`n[*] Running PyInstaller build..." -ForegroundColor Yellow
-& $PyInstaller "$WorkspaceRoot\AdaptiveSecurityGateway.spec" --noconfirm --distpath $DistPath --workpath $BuildTempPath
+# Safe backup of previous executable if present
+$ExeDir = "$DistPath\AdaptiveSecurityGateway"
+$BackupDir = "$DistPath\AdaptiveSecurityGateway_backup"
+
+if (Test-Path $ExeDir) {
+    Write-Host "[*] Creating safety backup of existing executable..." -ForegroundColor Gray
+    if (Test-Path $BackupDir) { Remove-Item -Path $BackupDir -Recurse -Force }
+    Copy-Item -Path $ExeDir -Destination $BackupDir -Recurse -Force
+}
+
+try {
+    Write-Host "`n[*] Running PyInstaller build..." -ForegroundColor Yellow
+    & $PyInstaller "$WorkspaceRoot\AdaptiveSecurityGateway.spec" --noconfirm --distpath $DistPath --workpath $BuildTempPath
+} catch {
+    Write-Host "`n[!] PyInstaller encountered an error during build!" -ForegroundColor Red
+    if (Test-Path $BackupDir) {
+        Write-Host "[!] Restoring previous executable from safety backup..." -ForegroundColor Yellow
+        if (Test-Path $ExeDir) { Remove-Item -Path $ExeDir -Recurse -Force }
+        Move-Item -Path $BackupDir -Destination $ExeDir -Force
+    }
+    throw $_
+}
 
 $ExePath = "$DistPath\AdaptiveSecurityGateway\AdaptiveSecurityGateway.exe"
 
 if (Test-Path $ExePath) {
+    if (Test-Path $BackupDir) {
+        Remove-Item -Path $BackupDir -Recurse -Force
+    }
     Write-Host "`n[✓] Standalone Executable Build Succeeded!" -ForegroundColor Green
     Write-Host "[✓] Executable Location: $ExePath" -ForegroundColor Green
     

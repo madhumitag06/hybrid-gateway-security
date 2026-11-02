@@ -11,6 +11,7 @@ import tempfile
 from typing import List, Optional
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from backend.app.db.session import get_db
 from backend.app.schemas.ingest import (
@@ -109,7 +110,8 @@ async def upload_and_ingest_pcap(
                 detail="Uploaded PCAP file is empty (0 bytes).",
             )
 
-        response = IngestionService.ingest_pcap_file(
+        response = await run_in_threadpool(
+            IngestionService.ingest_pcap_file,
             filepath=temp_file_path,
             filename=safe_filename,
             persist=persist,

@@ -21,40 +21,72 @@ export async function listSamplePcaps(): Promise<SamplePcapInfo[]> {
 
 export async function ingestSamplePcap(
   filename: string,
-  persist: boolean = true
+  persist: boolean = true,
+  timeoutMs: number = 60000
 ): Promise<PcapIngestionResponse> {
-  return request<PcapIngestionResponse>(
-    `v1/ingest/samples/${encodeURIComponent(filename)}?persist=${persist}`,
-    {
-      method: 'POST',
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => {
+    controller.abort()
+  }, timeoutMs)
+
+  try {
+    return await request<PcapIngestionResponse>(
+      `v1/ingest/samples/${encodeURIComponent(filename)}?persist=${persist}`,
+      {
+        method: 'POST',
+        signal: controller.signal,
+      }
+    )
+  } catch (err: any) {
+    if (err?.name === 'AbortError' || controller.signal.aborted) {
+      throw new Error(`Sample PCAP ingestion timed out after ${Math.round(timeoutMs / 1000)}s.`)
     }
-  )
+    throw err
+  } finally {
+    clearTimeout(timeoutId)
+  }
 }
 
 export async function uploadPcapFile(
   file: File,
-  persist: boolean = true
+  persist: boolean = true,
+  timeoutMs: number = 60000
 ): Promise<PcapIngestionResponse> {
   const formData = new FormData()
   formData.append('file', file)
   formData.append('persist', String(persist))
 
-  const url = getApiUrl('v1/ingest/pcap')
-  const response = await fetch(url, {
-    method: 'POST',
-    body: formData,
-  })
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => {
+    controller.abort()
+  }, timeoutMs)
 
-  if (!response.ok) {
-    let errorDetail = `Failed to upload and ingest PCAP (HTTP ${response.status})`
-    try {
-      const errorData = await response.json()
-      if (errorData.detail) errorDetail = errorData.detail
-    } catch {
-      // ignore
+  try {
+    const url = getApiUrl('v1/ingest/pcap')
+    const response = await fetch(url, {
+      method: 'POST',
+      body: formData,
+      signal: controller.signal,
+    })
+
+    if (!response.ok) {
+      let errorDetail = `Failed to upload and ingest PCAP (HTTP ${response.status})`
+      try {
+        const errorData = await response.json()
+        if (errorData.detail) errorDetail = errorData.detail
+      } catch {
+        // ignore
+      }
+      throw new Error(errorDetail)
     }
-    throw new Error(errorDetail)
-  }
 
-  return response.json()
+    return await response.json()
+  } catch (err: any) {
+    if (err?.name === 'AbortError' || controller.signal.aborted) {
+      throw new Error(`PCAP upload and ingestion timed out after ${Math.round(timeoutMs / 1000)}s: the capture may be very large or the server is busy.`)
+    }
+    throw err
+  } finally {
+    clearTimeout(timeoutId)
+  }
 }

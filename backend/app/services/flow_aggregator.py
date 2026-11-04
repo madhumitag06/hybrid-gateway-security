@@ -27,6 +27,7 @@ class PacketRecord:
     protocol: str             # "TCP", "UDP", "ICMP", "OTHER"
     length_bytes: int         # Total wire length
     tcp_flags: Optional[int] = None
+    is_auth_failure: bool = False
 
 
 @dataclass
@@ -43,6 +44,7 @@ class FlowSession:
     last_seen: float
     packet_count: int = 0
     byte_count: int = 0
+    failed_auth_count: int = 0
     packets: List[PacketRecord] = field(default_factory=list)
 
     @property
@@ -116,12 +118,15 @@ class FlowAggregator:
                     last_seen=packet.timestamp,
                     packet_count=1,
                     byte_count=packet.length_bytes,
+                    failed_auth_count=1 if packet.is_auth_failure else 0,
                     packets=[packet],
                 )
                 self.active_sessions[key] = session
             else:
                 session.packet_count += 1
                 session.byte_count += packet.length_bytes
+                if packet.is_auth_failure:
+                    session.failed_auth_count += 1
                 session.last_seen = packet.timestamp
                 session.packets.append(packet)
         else:
@@ -135,6 +140,7 @@ class FlowAggregator:
                 last_seen=packet.timestamp,
                 packet_count=1,
                 byte_count=packet.length_bytes,
+                failed_auth_count=1 if packet.is_auth_failure else 0,
                 packets=[packet],
             )
             self.active_sessions[key] = session
@@ -192,7 +198,7 @@ class FlowAggregator:
             conn_rate=float(conn_rate),
             dst_port=safe_dst_port,
             unique_dst_ports=unique_ports,
-            failed_auth_count=0,  # Honest limitation: default to 0 for L3/L4 captures
+            failed_auth_count=max(session.failed_auth_count, 0),
         )
 
         return flow_input, source_ip, destination_ip

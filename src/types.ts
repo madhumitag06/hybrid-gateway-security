@@ -342,6 +342,16 @@ export interface PolicyComparisonResult {
   divergence_rationale: string
 }
 
+export interface HybridNodeConfig {
+  id: string
+  name: string
+  zone: string
+  subnet: string
+  ip_address: string
+  role: string
+  service_ports: number[]
+}
+
 export interface HybridTopologySummary {
   on_prem_cidrs: string[]
   aws_vpc_cidrs: string[]
@@ -349,6 +359,15 @@ export interface HybridTopologySummary {
   telemetry_mode: string
   is_cloud_read_only: boolean
   cloud_firewall_modification_enabled: boolean
+  environment_representation?: string
+  virtual_lab_subnet_onprem?: string
+  virtual_lab_subnet_cloud?: string
+  virtual_gateway_ip_onprem?: string
+  virtual_gateway_ip_cloud?: string
+  lab_enforcement_enabled?: boolean
+  onprem_nodes?: HybridNodeConfig[]
+  gateway_nodes?: HybridNodeConfig[]
+  cloud_nodes?: HybridNodeConfig[]
 }
 
 export interface AwsVpcSampleFixtureInfo {
@@ -620,7 +639,7 @@ export interface SecurityEventDetailSchema extends SecurityEvent {
   updated_at?: string
 }
 
-export type UserRole = 'ADMIN' | 'ANALYST' | 'USER'
+export type UserRole = 'ADMIN' | 'OPERATOR' | 'ANALYST' | 'AUDITOR' | 'USER'
 export type AuthProviderType = 'LOCAL' | 'GOOGLE'
 
 export interface AuthUser {
@@ -673,6 +692,3 @@ export interface GoogleOAuthInitResponse {
   client_id_configured: boolean
   message?: string
 }
-
-
-

@@ -136,6 +136,7 @@ class AwsVpcFlowParser:
             end_ts = int(parts[11]) if parts[11] != "-" else start_ts + 1
             action = parts[12]
             log_status = parts[13]
+            flow_direction = parts[14] if len(parts) >= 15 and parts[14] != "-" else None
 
             if log_status != "OK":
                 return None
@@ -155,6 +156,7 @@ class AwsVpcFlowParser:
                 end=end_ts,
                 action=action,
                 log_status=log_status,
+                flow_direction=flow_direction,
             )
         except (ValueError, IndexError):
             return None
@@ -241,23 +243,7 @@ class AwsVpcFlowParser:
             if persist and db is not None:
                 import uuid
                 event_id = f"evt-aws-{int(time.time())}-{uuid.uuid4().hex[:6]}"
-                enforce_res, _ = EnforcementService.execute_decision(
-                    decision=policy_decision,
-                    db=db,
-                    actor="aws_vpc_ingestion_pipeline",
-                )
-
-                # Determine final event status
-                if enforce_res.status in ["ACTIVE", "SIMULATED"]:
-                    final_status = (
-                        "Applied"
-                        if policy_decision.policy_action in ["Restrict", "Block"]
-                        else "Monitoring"
-                    )
-                else:
-                    final_status = (
-                        "Allowed" if policy_decision.policy_action == "Allow" else "Monitoring"
-                    )
+                policy_decision.event_id = event_id
 
                 event_model = SecurityEventModel(
                     id=event_id,
@@ -270,7 +256,7 @@ class AwsVpcFlowParser:
                     confidence=prediction.confidence,
                     action_recommendation=prediction.action_recommendation,
                     current_policy_action=policy_decision.policy_action,
-                    status=final_status,
+                    status="Monitoring",
                     description=f"AWS VPC Flow Ingestion: {policy_decision.reason}",
                     is_anomaly=prediction.is_anomaly,
                     is_demo=is_fixture,
@@ -297,6 +283,26 @@ class AwsVpcFlowParser:
 
                 repo = SecurityEventRepository(db)
                 repo.create(event_model)
+
+                enforce_res, _ = EnforcementService.execute_decision(
+                    decision=policy_decision,
+                    db=db,
+                    actor="aws_vpc_ingestion_pipeline",
+                )
+
+                # Determine final event status
+                if enforce_res.status in ["ACTIVE", "SIMULATED"]:
+                    final_status = (
+                        "Applied"
+                        if policy_decision.policy_action in ["Restrict", "Block"]
+                        else "Monitoring"
+                    )
+                else:
+                    final_status = (
+                        "Allowed" if policy_decision.policy_action == "Allow" else "Monitoring"
+                    )
+                event_model.status = final_status
+                db.flush()
                 persisted_event_id = event_id
 
             results.append(

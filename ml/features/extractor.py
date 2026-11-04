@@ -5,7 +5,7 @@ Defines network flow input schema and extracts structured numerical feature vect
 consistently for both model training and live inference.
 """
 
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Tuple, Union
 import numpy as np
 import pandas as pd
 from pydantic import BaseModel, Field, field_validator
@@ -22,6 +22,8 @@ FEATURE_NAMES = [
     "packets_per_sec",
     "avg_packet_size",
 ]
+
+Tuple_Features = Tuple[np.ndarray, Optional[np.ndarray]]
 
 
 class NetworkFlowInput(BaseModel):
@@ -110,5 +112,3 @@ class FeatureExtractor:
         y = df["label"].to_numpy() if "label" in df.columns else None
         return X, y
 
-
-Tuple_Features = tuple[np.ndarray, Optional[np.ndarray]]

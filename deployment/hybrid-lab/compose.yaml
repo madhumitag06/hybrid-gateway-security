@@ -1,0 +1,465 @@
+name: hybrid-security-lab
+
+services:
+  # ==========================================================================
+  # STORAGE PLANE: PostgreSQL Persistence (Isolated on mgmt_net)
+  # ==========================================================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: hybrid-lab-postgres
+    hostname: postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-hybrid_gateway_db}
+    volumes:
+      - hybrid_lab_pgdata:/var/lib/postgresql/data
+    networks:
+      mgmt_net:
+        ipv4_address: 10.30.10.5
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-hybrid_gateway_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  # ==========================================================================
+  # CONTROL PLANE: Adaptive AI Security Gateway Backend (FastAPI + ML + SHAP)
+  # ==========================================================================
+  gateway-api:
+    build:
+      context: ../..
+      dockerfile: deployment/hybrid-lab/gateway/Dockerfile
+    container_name: hybrid-lab-gateway-api
+    hostname: gateway-api
+    restart: unless-stopped
+    environment:
+      APP_NAME: "Adaptive Hybrid Cloud Security Gateway"
+      ENV: "hybrid-lab"
+      DATABASE_URL: "postgresql+psycopg2://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@10.30.10.5:5432/${POSTGRES_DB:-hybrid_gateway_db}"
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-hybrid-lab-jwt-secret-key-change-in-production-9f8e7d6c5b4a3210}
+      HYBRID_LAB_MODE: "true"
+      LAB_ROUTER_URL: "http://10.30.10.2:8099"
+      LAB_ENFORCEMENT_ENABLED: ${LAB_ENFORCEMENT_ENABLED:-false}
+      LAB_TELEMETRY_DIR: "/var/lib/hybrid-lab/telemetry"
+      ENFORCEMENT_MODE: ${ENFORCEMENT_MODE:-SANDBOX}
+      DEFAULT_ENFORCEMENT_MODE: ${ENFORCEMENT_MODE:-SANDBOX}
+      ENFORCEMENT_DEFAULT_TTL_SECONDS: ${ENFORCEMENT_DEFAULT_TTL_SECONDS:-300}
+      DEFAULT_RULE_TTL_SECONDS: ${ENFORCEMENT_DEFAULT_TTL_SECONDS:-300}
+      AUTH_JWT_SECRET: ${JWT_SECRET_KEY:-hybrid-lab-jwt-secret-key-change-in-production-9f8e7d6c5b4a3210}
+      SECRET_KEY: ${JWT_SECRET_KEY:-hybrid-lab-jwt-secret-key-change-in-production-9f8e7d6c5b4a3210}
+      AWS_SIMULATED_REGION: ${AWS_SIMULATED_REGION:-us-east-1}
+      AWS_REGION: ${AWS_SIMULATED_REGION:-us-east-1}
+      CORS_ORIGINS: '["http://localhost:5173","http://127.0.0.1:5173","http://localhost:8000","http://frontend"]'
+    ports:
+      - "${GATEWAY_API_PORT:-8000}:8000"
+    volumes:
+      - hybrid_lab_telemetry:/var/lib/hybrid-lab/telemetry
+    networks:
+      mgmt_net:
+        ipv4_address: 10.30.10.10
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 8
+      start_period: 15s
+
+  # ==========================================================================
+  # PRESENTATION PLANE: React Dashboard + Nginx Reverse Proxy
+  # ==========================================================================
+  frontend:
+    build:
+      context: ../..
+      dockerfile: deployment/hybrid-lab/frontend/Dockerfile
+      args:
+        VITE_API_BASE_URL: ""
+    container_name: hybrid-lab-frontend
+    hostname: frontend
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-5173}:80"
+    networks:
+      mgmt_net:
+        ipv4_address: 10.30.10.15
+    depends_on:
+      gateway-api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:80/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ==========================================================================
+  # VIRTUAL HYBRID NETWORK GATEWAY: Sole Transit Router Between On-Prem & Cloud
+  # ==========================================================================
+  lab-router:
+    build:
+      context: ./router
+      dockerfile: Dockerfile
+    container_name: hybrid-lab-router
+    hostname: lab-router
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    sysctls:
+      - net.ipv4.ip_forward=1
+      - net.ipv4.conf.all.send_redirects=0
+      - net.ipv4.conf.all.rp_filter=0
+      - net.ipv4.conf.default.rp_filter=0
+    environment:
+      ONPREM_SUBNET: ${ONPREM_SUBNET:-10.10.10.0/24}
+      CLOUD_VPC_SUBNET: ${CLOUD_VPC_SUBNET:-10.20.10.0/24}
+      MGMT_SUBNET: ${MGMT_SUBNET:-10.30.10.0/24}
+      ROUTER_ONPREM_IP: ${ROUTER_ONPREM_IP:-10.10.10.2}
+      ROUTER_CLOUD_IP: ${ROUTER_CLOUD_IP:-10.20.10.2}
+      ROUTER_MGMT_IP: ${ROUTER_MGMT_IP:-10.30.10.2}
+      ROUTER_AGENT_PORT: "8099"
+      TELEMETRY_DIR: "/var/lib/hybrid-lab/telemetry"
+    volumes:
+      - hybrid_lab_telemetry:/var/lib/hybrid-lab/telemetry
+    networks:
+      onprem_net:
+        ipv4_address: 10.10.10.2
+      cloud_vpc_net:
+        ipv4_address: 10.20.10.2
+      mgmt_net:
+        ipv4_address: 10.30.10.2
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:8099/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+  # ==========================================================================
+  # ON-PREMISES PRIVATE INFRASTRUCTURE ZONE (10.10.10.0/24 - Isolated)
+  # ==========================================================================
+  onprem-client:
+    build:
+      context: ./workloads
+      dockerfile: Dockerfile
+    container_name: hybrid-lab-onprem-client
+    hostname: onprem-client
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+    environment:
+      NODE_NAME: "onprem-client"
+      NODE_ZONE: "ON_PREMISE"
+      NODE_ROLE: "Employee Workstation / Hybrid Client"
+      REMOTE_SUBNET: "10.20.10.0/24"
+      GATEWAY_IP: "10.10.10.2"
+      HTTP_PORT: "8080"
+      ENABLE_BACKGROUND_HEARTBEAT: "true"
+      HEARTBEAT_TARGET_URL: "http://10.20.10.20:8080/api/ping"
+      HEARTBEAT_INTERVAL_SEC: "20"
+    networks:
+      onprem_net:
+        ipv4_address: 10.10.10.10
+    depends_on:
+      lab-router:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:8080/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  onprem-web:
+    build:
+      context: ./workloads
+      dockerfile: Dockerfile
+    container_name: hybrid-lab-onprem-web
+    hostname: onprem-web
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+    environment:
+      NODE_NAME: "onprem-web"
+      NODE_ZONE: "ON_PREMISE"
+      NODE_ROLE: "Internal Enterprise Portal"
+      REMOTE_SUBNET: "10.20.10.0/24"
+      GATEWAY_IP: "10.10.10.2"
+      HTTP_PORT: "8080"
+      TCP_PORTS: "8443"
+    networks:
+      onprem_net:
+        ipv4_address: 10.10.10.20
+    depends_on:
+      lab-router:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:8080/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  onprem-workload:
+    build:
+      context: ./workloads
+      dockerfile: Dockerfile
+    container_name: hybrid-lab-onprem-workload
+    hostname: onprem-workload
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+    environment:
+      NODE_NAME: "onprem-workload"
+      NODE_ZONE: "ON_PREMISE"
+      NODE_ROLE: "Private Batch & Integration Server"
+      REMOTE_SUBNET: "10.20.10.0/24"
+      GATEWAY_IP: "10.10.10.2"
+      HTTP_PORT: "8080"
+      TCP_PORTS: "2222,9000"
+    networks:
+      onprem_net:
+        ipv4_address: 10.10.10.30
+    depends_on:
+      lab-router:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:8080/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # ==========================================================================
+  # SIMULATED AWS-STYLE CLOUD VPC ZONE (10.20.10.0/24 - Isolated)
+  # ==========================================================================
+  cloud-client:
+    build:
+      context: ./workloads
+      dockerfile: Dockerfile
+    container_name: hybrid-lab-cloud-client
+    hostname: cloud-client
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+    environment:
+      NODE_NAME: "cloud-client"
+      NODE_ZONE: "AWS_VPC_SIMULATED"
+      NODE_ROLE: "Simulated VPC Worker Instance (us-east-1)"
+      REMOTE_SUBNET: "10.10.10.0/24"
+      GATEWAY_IP: "10.20.10.2"
+      HTTP_PORT: "8080"
+      ENABLE_BACKGROUND_HEARTBEAT: "true"
+      HEARTBEAT_TARGET_URL: "http://10.10.10.20:8080/api/ping"
+      HEARTBEAT_INTERVAL_SEC: "25"
+    networks:
+      cloud_vpc_net:
+        ipv4_address: 10.20.10.10
+    depends_on:
+      lab-router:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:8080/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  cloud-web:
+    build:
+      context: ./workloads
+      dockerfile: Dockerfile
+    container_name: hybrid-lab-cloud-web
+    hostname: cloud-web
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+    environment:
+      NODE_NAME: "cloud-web"
+      NODE_ZONE: "AWS_VPC_SIMULATED"
+      NODE_ROLE: "Simulated VPC Web Application (us-east-1)"
+      REMOTE_SUBNET: "10.10.10.0/24"
+      GATEWAY_IP: "10.20.10.2"
+      HTTP_PORT: "8080"
+      TCP_PORTS: "443,8443"
+    networks:
+      cloud_vpc_net:
+        ipv4_address: 10.20.10.20
+    depends_on:
+      lab-router:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:8080/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  cloud-db:
+    build:
+      context: ./workloads
+      dockerfile: Dockerfile
+    container_name: hybrid-lab-cloud-db
+    hostname: cloud-db
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+    environment:
+      NODE_NAME: "cloud-db"
+      NODE_ZONE: "AWS_VPC_SIMULATED"
+      NODE_ROLE: "Simulated VPC Private Database Service (us-east-1)"
+      REMOTE_SUBNET: "10.10.10.0/24"
+      GATEWAY_IP: "10.20.10.2"
+      HTTP_PORT: "8080"
+      TCP_PORTS: "5432,3306,6379"
+    networks:
+      cloud_vpc_net:
+        ipv4_address: 10.20.10.30
+    depends_on:
+      lab-router:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:8080/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  cloud-workload:
+    build:
+      context: ./workloads
+      dockerfile: Dockerfile
+    container_name: hybrid-lab-cloud-workload
+    hostname: cloud-workload
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+    environment:
+      NODE_NAME: "cloud-workload"
+      NODE_ZONE: "AWS_VPC_SIMULATED"
+      NODE_ROLE: "Simulated VPC Compute & Storage Service (us-east-1)"
+      REMOTE_SUBNET: "10.10.10.0/24"
+      GATEWAY_IP: "10.20.10.2"
+      HTTP_PORT: "8080"
+      TCP_PORTS: "22,2222,8443,9000"
+    networks:
+      cloud_vpc_net:
+        ipv4_address: 10.20.10.40
+    depends_on:
+      lab-router:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:8080/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # ==========================================================================
+  # TRAFFIC GENERATION ENGINE: Bounded Multi-Scenario Traffic Generator
+  # ==========================================================================
+  traffic-generator:
+    build:
+      context: ./traffic-generator
+      dockerfile: Dockerfile
+    container_name: hybrid-lab-traffic-generator
+    hostname: traffic-generator
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+    environment:
+      REMOTE_SUBNET: "10.20.10.0/24"
+      GATEWAY_IP: "10.10.10.2"
+      CLOUD_WEB_IP: "10.20.10.20"
+      CLOUD_DB_IP: "10.20.10.30"
+      CLOUD_WORKLOAD_IP: "10.20.10.40"
+      ONPREM_WEB_IP: "10.10.10.20"
+      AUTO_RUN_ON_START: ${TRAFFIC_GEN_AUTO_START:-false}
+    volumes:
+      - hybrid_lab_telemetry:/var/lib/hybrid-lab/telemetry
+    networks:
+      onprem_net:
+        ipv4_address: 10.10.10.50
+    depends_on:
+      lab-router:
+        condition: service_healthy
+      cloud-web:
+        condition: service_healthy
+      cloud-db:
+        condition: service_healthy
+      cloud-workload:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: "${TRAFFIC_GEN_CPU_LIMIT:-0.50}"
+          memory: "${TRAFFIC_GEN_MEM_LIMIT:-256M}"
+
+  # ==========================================================================
+  # TELEMETRY PLANE: PCAP Rotator + AWS VPC Flow Log Exporter + Auto-Ingester
+  # ==========================================================================
+  telemetry-sensor:
+    build:
+      context: ./telemetry
+      dockerfile: Dockerfile
+    container_name: hybrid-lab-telemetry-sensor
+    hostname: telemetry-sensor
+    restart: unless-stopped
+    environment:
+      ROUTER_AGENT_URL: "http://10.30.10.2:8099"
+      GATEWAY_API_URL: "http://10.30.10.10:8000"
+      TELEMETRY_DIR: "/var/lib/hybrid-lab/telemetry"
+      CAPTURE_ROTATION_SECONDS: ${CAPTURE_ROTATION_SECONDS:-15}
+      CAPTURE_MAX_PACKETS_PER_WINDOW: ${CAPTURE_MAX_PACKETS_PER_WINDOW:-500}
+      CAPTURE_MAX_ARCHIVED_PCAPS: ${CAPTURE_MAX_ARCHIVED_PCAPS:-20}
+      AUTO_INGEST_ENABLED: ${AUTO_INGEST_ENABLED:-true}
+      AWS_SIMULATED_ACCOUNT_ID: ${AWS_SIMULATED_ACCOUNT_ID:-123456789012}
+      AWS_SIMULATED_ENI_ONPREM: ${AWS_SIMULATED_ENI_ONPREM:-eni-0onprem10101002}
+      AWS_SIMULATED_ENI_CLOUD: ${AWS_SIMULATED_ENI_CLOUD:-eni-0cloud20102002}
+    volumes:
+      - hybrid_lab_telemetry:/var/lib/hybrid-lab/telemetry
+    networks:
+      mgmt_net:
+        ipv4_address: 10.30.10.20
+    depends_on:
+      lab-router:
+        condition: service_healthy
+      gateway-api:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: "${TELEMETRY_CPU_LIMIT:-0.50}"
+          memory: "${TELEMETRY_MEM_LIMIT:-256M}"
+
+networks:
+  onprem_net:
+    name: hybrid_lab_onprem_net
+    driver: bridge
+    internal: true
+    ipam:
+      config:
+        - subnet: ${ONPREM_SUBNET:-10.10.10.0/24}
+          gateway: 10.10.10.1
+
+  cloud_vpc_net:
+    name: hybrid_lab_cloud_vpc_net
+    driver: bridge
+    internal: true
+    ipam:
+      config:
+        - subnet: ${CLOUD_VPC_SUBNET:-10.20.10.0/24}
+          gateway: 10.20.10.1
+
+  mgmt_net:
+    name: hybrid_lab_mgmt_net
+    driver: bridge
+    ipam:
+      config:
+        - subnet: ${MGMT_SUBNET:-10.30.10.0/24}
+          gateway: 10.30.10.1
+
+volumes:
+  hybrid_lab_pgdata:
+    name: hybrid_lab_pgdata
+  hybrid_lab_telemetry:
+    name: hybrid_lab_telemetry
+

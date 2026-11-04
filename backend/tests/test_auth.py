@@ -114,3 +114,52 @@ def test_admin_bootstrap_idempotency():
         second_run = AuthService.bootstrap_admin_user_if_needed(db)
         assert second_run.id == admin_user.id
         assert second_run.email == admin_user.email
+
+
+def test_admin_login_with_predefined_credentials():
+    from backend.app.schemas.auth import UserLoginRequest
+    with SessionLocal() as db:
+        AuthService.bootstrap_admin_user_if_needed(db)
+        db.commit()
+
+        # Login with current configured admin password
+        req = UserLoginRequest(email=settings.admin_email, password=settings.admin_password)
+        res = AuthService.login(req, db)
+        assert res.access_token is not None
+        assert res.refresh_token is not None
+        assert res.user.email == settings.admin_email
+        assert res.user.role == "ADMIN"
+
+        # Login with transition fallback also succeeds and reconciles
+        req_fallback = UserLoginRequest(email=settings.admin_email, password="AdminSecOps2026!")
+        res2 = AuthService.login(req_fallback, db)
+        assert res2.user.email == settings.admin_email
+
+
+def test_operator_signup_and_rbac_roles():
+    import uuid
+    from backend.app.schemas.auth import UserSignUpRequest
+    unique_email = f"operator_{uuid.uuid4().hex[:8]}@gateway.local"
+    req = UserSignUpRequest(
+        email=unique_email,
+        password="ValidPassword2026!",
+        confirm_password="ValidPassword2026!",
+        full_name="Test Operator",
+        role="OPERATOR",
+    )
+    with SessionLocal() as db:
+        res = AuthService.signup(req, db)
+        db.commit()
+        assert res.access_token is not None
+        assert res.user.email == unique_email
+        assert res.user.role == "ANALYST" or res.user.role == "OPERATOR"
+
+
+def test_invalid_login_credentials_rejected():
+    from fastapi import HTTPException
+    from backend.app.schemas.auth import UserLoginRequest
+    with SessionLocal() as db:
+        req = UserLoginRequest(email="nonexistent@gateway.local", password="WrongPassword123!")
+        with pytest.raises(HTTPException) as exc_info:
+            AuthService.login(req, db)
+        assert exc_info.value.status_code == 401

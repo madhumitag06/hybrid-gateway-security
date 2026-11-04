@@ -221,6 +221,13 @@ class DashboardService:
         else:
             desc = "Standard baseline network activity adhering to normal flow distributions."
 
+        from backend.app.services.hybrid_topology import NetworkZoneClassifier
+
+        ff_dict = flow_request.model_dump()
+        ff_dict["source_zone"] = NetworkZoneClassifier.classify_ip(source_ip)
+        ff_dict["destination_zone"] = NetworkZoneClassifier.classify_ip(destination_ip)
+        ff_dict["traffic_direction"] = NetworkZoneClassifier.classify_direction(source_ip, destination_ip)
+
         event_model = SecurityEventModel(
             id=event_id,
             timestamp=datetime.now(timezone.utc),
@@ -236,7 +243,7 @@ class DashboardService:
             description=desc,
             is_anomaly=pred.is_anomaly,
             is_demo=is_demo,
-            flow_features=flow_request.model_dump(),
+            flow_features=ff_dict,
             class_probabilities=pred.class_probabilities,
             top_contributing_features=[c.model_dump() for c in pred.top_contributing_features],
         )
@@ -278,6 +285,7 @@ class DashboardService:
         """
         from backend.app.services.policy_engine import PolicyEngine
         from backend.app.services.enforcement_service import EnforcementService
+        from backend.app.services.hybrid_topology import NetworkZoneClassifier
 
         if not items:
             return []
@@ -318,6 +326,11 @@ class DashboardService:
                 else:
                     desc = "Standard baseline network activity adhering to normal flow distributions."
 
+                ff_dict = flow_request.model_dump()
+                ff_dict["source_zone"] = NetworkZoneClassifier.classify_ip(source_ip)
+                ff_dict["destination_zone"] = NetworkZoneClassifier.classify_ip(destination_ip)
+                ff_dict["traffic_direction"] = NetworkZoneClassifier.classify_direction(source_ip, destination_ip)
+
                 event_model = SecurityEventModel(
                     id=event_id,
                     timestamp=datetime.now(timezone.utc),
@@ -333,7 +346,7 @@ class DashboardService:
                     description=desc,
                     is_anomaly=pred.is_anomaly,
                     is_demo=is_demo,
-                    flow_features=flow_request.model_dump(),
+                    flow_features=ff_dict,
                     class_probabilities=pred.class_probabilities,
                     top_contributing_features=[c.model_dump() for c in pred.top_contributing_features],
                 )
@@ -416,6 +429,14 @@ class DashboardService:
             time_str = e.timestamp.strftime("%H:%M:%S") if e.timestamp else "00:00:00"
             event_title = f"{e.attack_type.replace('_', ' ').title()} Detected" if e.is_anomaly else "Normal Network Traffic"
 
+            from backend.app.services.hybrid_topology import NetworkZoneClassifier
+
+            ff = e.flow_features or {}
+            src_zone = ff.get("source_zone") or NetworkZoneClassifier.classify_ip(e.source_ip)
+            dst_zone = ff.get("destination_zone") or NetworkZoneClassifier.classify_ip(e.destination_ip)
+            direction = ff.get("traffic_direction") or NetworkZoneClassifier.classify_direction(e.source_ip, e.destination_ip)
+            telem_src = ff.get("telemetry_source") or ("DEMO_SEED" if e.is_demo else "PCAP")
+
             schema_event = SecurityEventSchema(
                 id=e.id,
                 time=time_str,
@@ -431,6 +452,10 @@ class DashboardService:
                 confidence=e.confidence,
                 is_anomaly=e.is_anomaly,
                 is_demo=e.is_demo,
+                source_zone=src_zone,
+                destination_zone=dst_zone,
+                traffic_direction=direction,
+                telemetry_source=telem_src,
             )
             events.append(schema_event)
 
@@ -518,8 +543,10 @@ class DashboardService:
         timeline_steps = cls._generate_timeline(db)
 
         # 8. Dynamic Key Metrics with honest holdout & latency reconciliation
+        from backend.app.services.enforcement_service import EnforcementService
+
+        EnforcementService.prune_expired(db=db)
         enforce_repo = EnforcementRepository(db)
-        enforce_repo.prune_expired_rules()
         active_rules_count = len(enforce_repo.list_active_rules())
 
         key_metrics = KeyMetricsSchema(
@@ -807,12 +834,22 @@ class DashboardService:
         from backend.app.schemas.policy import PolicyDecision
         from backend.app.services.enforcement_service import EnforcementService
 
+        ff = event.flow_features or {}
+        raw_port = ff.get("dst_port")
+        resolved_port = int(raw_port) if (action == "Restrict" and raw_port is not None and int(raw_port) > 0) else (8080 if action == "Restrict" else None)
+
+        if action in ["Allow", "Monitor"]:
+            enforce_repo = EnforcementRepository(db)
+            for active_rule in enforce_repo.list_active_rules():
+                if active_rule.target_ip == event.source_ip:
+                    EnforcementService.revoke_rule(active_rule.id, db=db, actor=actor)
+
         decision = PolicyDecision(
             decision_id=f"dec-manual-{uuid.uuid4().hex[:8]}",
             event_id=event_id,
             target_ip=event.source_ip,
-            target_port=None,
-            protocol="ANY",
+            target_port=resolved_port,
+            protocol="TCP" if resolved_port else "ANY",
             policy_action=action,
             enforcement_required=action in ["Restrict", "Block"],
             confidence=1.0,

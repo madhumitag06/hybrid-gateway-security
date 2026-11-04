@@ -5,8 +5,11 @@ Adaptive AI-Powered Security Gateway for Hybrid Cloud (Phase 3: PostgreSQL Enabl
 """
 
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+import threading
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from backend.app.api.health import router as health_router
 from backend.app.api.v1.analytics import router as analytics_router
@@ -18,7 +21,7 @@ from backend.app.api.v1.events import router as events_router
 from backend.app.api.v1.hybrid import router as hybrid_router
 from backend.app.api.v1.ingest import router as ingest_router
 from backend.app.api.v1.predict import router as predict_router
-from backend.app.config import settings
+from backend.app.config import get_frontend_dist_dir, settings
 from backend.app.db.session import SessionLocal, init_db
 from backend.app.services.auth_service import AuthService
 from backend.app.services.dashboard_service import DashboardService
@@ -58,7 +61,28 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"[!] Warning: Database initialization notice: {e}")
 
+    stop_event = threading.Event()
+
+    def _enforcement_maintenance_loop() -> None:
+        while not stop_event.wait(2.0):
+            try:
+                with SessionLocal() as bg_db:
+                    expired_ids = EnforcementService.prune_expired(db=bg_db)
+                    if expired_ids:
+                        bg_db.commit()
+                EnforcementService.get_sandbox_adapter().ensure_router_convergence()
+            except Exception:
+                pass
+
+    maintenance_thread = threading.Thread(
+        target=_enforcement_maintenance_loop,
+        name="enforcement-ttl-pruner",
+        daemon=True,
+    )
+    maintenance_thread.start()
+
     yield
+    stop_event.set()
     print("[*] Shutting down gateway backend.")
 
 
@@ -101,8 +125,7 @@ app.include_router(health_router)
 app.include_router(dashboard_router)
 
 
-@app.get("/", tags=["Root"])
-def root():
+def _get_root_info():
     return {
         "app": settings.app_name,
         "version": settings.app_version,
@@ -115,3 +138,44 @@ def root():
         "ingestion_endpoint": "/api/v1/ingest/pcap",
         "enforcement_endpoint": "/api/v1/enforcement/rules",
     }
+
+
+@app.get("/api", tags=["Root"])
+def root_api():
+    return _get_root_info()
+
+
+_dist_dir = get_frontend_dist_dir()
+if _dist_dir and (_dist_dir / "index.html").is_file():
+    print(f"[+] Serving frontend distribution from: {_dist_dir}")
+    _assets_dir = _dist_dir / "assets"
+    if _assets_dir.is_dir():
+        app.mount("/assets", StaticFiles(directory=str(_assets_dir)), name="assets")
+
+    @app.get("/", tags=["Root"])
+    def root(request: Request):
+        accept = request.headers.get("accept", "")
+        # Serve React frontend for browser navigation requests
+        if "text/html" in accept:
+            return FileResponse(_dist_dir / "index.html")
+        return _get_root_info()
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def serve_spa(full_path: str, request: Request):
+        # Do not intercept API or docs routes
+        if (
+            full_path.startswith("api/")
+            or full_path == "api"
+            or full_path.startswith("docs")
+            or full_path.startswith("redoc")
+            or full_path.startswith("openapi.json")
+        ):
+            raise HTTPException(status_code=404, detail="API route not found")
+        file_cand = _dist_dir / full_path
+        if full_path and file_cand.is_file():
+            return FileResponse(file_cand)
+        return FileResponse(_dist_dir / "index.html")
+else:
+    @app.get("/", tags=["Root"])
+    def root():
+        return _get_root_info()

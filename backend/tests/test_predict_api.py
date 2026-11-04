@@ -161,6 +161,59 @@ def test_presets_endpoint():
     assert "BENIGN_HTTPS" in data
     assert "PORT_SCAN" in data
     assert "BRUTE_FORCE_SSH" in data
+    assert "TRAFFIC_SPIKE" in data
+    assert "BORDERLINE_FLOW" in data
+    assert "SUSPICIOUS_TRANSFER" in data
+
+
+def test_predict_decimal_durations_support():
+    """Verify that various supported decimal durations succeed without precision rejection."""
+    durations = [0.08, 0.09, 0.10, 0.101, 0.25, 1.0, 120.0]
+    for dur in durations:
+        payload = {
+            "packet_count": 2,
+            "byte_count": 120,
+            "duration": dur,
+            "conn_rate": 120.0,
+            "dst_port": 8080,
+            "unique_dst_ports": 75,
+            "failed_auth_count": 0,
+            "persist": False,
+        }
+        res = client.post("/api/v1/predict", json=payload)
+        assert res.status_code == 200, f"Duration {dur} failed with status {res.status_code}: {res.text}"
+        data = res.json()
+        assert data["attack_type"] == "PORT_SCAN"
+        assert 0 <= data["risk_score"] <= 100
+
+
+def test_predict_negative_duration_rejected():
+    """Verify that negative durations are rejected by backend Pydantic validation."""
+    payload = {
+        "packet_count": 2,
+        "byte_count": 120,
+        "duration": -0.05,
+        "conn_rate": 120.0,
+        "dst_port": 8080,
+    }
+    res = client.post("/api/v1/predict", json=payload)
+    assert res.status_code == 422
+
+
+def test_all_six_scenario_presets_executable():
+    """Verify that all six standard scenarios execute inference successfully."""
+    presets_res = client.get("/api/v1/predict/presets")
+    assert presets_res.status_code == 200
+    presets = presets_res.json()
+
+    for name, flow_data in presets.items():
+        flow_data["persist"] = False
+        res = client.post("/api/v1/predict", json=flow_data)
+        assert res.status_code == 200, f"Preset {name} failed: {res.text}"
+        pred = res.json()
+        assert "attack_type" in pred
+        assert 0 <= pred["risk_score"] <= 100
+        assert 0.0 <= pred["confidence"] <= 1.0
 
 
 def test_predict_and_verify_database_persistence():

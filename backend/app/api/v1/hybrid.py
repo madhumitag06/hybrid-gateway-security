@@ -50,6 +50,65 @@ def get_telemetry_status() -> Dict[str, Any]:
 
 
 @router.get(
+    "/lab-status",
+    response_model=Dict[str, Any],
+    summary="Get Virtual Hybrid-Cloud Lab & Telemetry Status",
+    description="Returns configured hybrid lab topology, real PCAP/VPC ingestion counters, persisted event statistics, and enforcement state.",
+)
+def get_hybrid_lab_status(db: Session = Depends(get_db)) -> Dict[str, Any]:
+    from sqlalchemy import func
+    from backend.app.config import settings
+    from backend.app.models.security_event import SecurityEventModel
+    from backend.app.repositories.enforcement_repo import EnforcementRepository
+    from backend.app.services.enforcement_service import EnforcementService
+    from backend.app.services.ingestion_service import IngestionService
+    from backend.app.services.ml_service import MLService
+
+    topo = NetworkZoneClassifier.get_topology_summary()
+    ingest_status = IngestionService.get_status()
+    enforce_repo = EnforcementRepository(db)
+    enforce_repo.prune_expired_rules()
+    active_rules = enforce_repo.list_active_rules()
+
+    total_events = db.query(func.count(SecurityEventModel.id)).scalar() or 0
+    high_risk_events = (
+        db.query(func.count(SecurityEventModel.id))
+        .filter(SecurityEventModel.risk_score >= 70)
+        .scalar()
+        or 0
+    )
+
+    return {
+        "environment_type": "SIMULATED_DOCKER_HYBRID_CLOUD",
+        "topology": topo.model_dump(),
+        "gateway_intelligence": {
+            "ml_model_loaded": MLService.is_loaded(),
+            "model_type": "RandomForestClassifier",
+            "shap_explainer": "Conditional TreeExplainer (threshold >= 50)",
+            "enforcement_mode": EnforcementService.get_mode(),
+            "lab_data_plane_enforcement_opt_in": getattr(settings, "lab_enforcement_enabled", False),
+            "active_containment_rules_count": len(active_rules),
+        },
+        "telemetry_counters": {
+            "total_pcaps_ingested": ingest_status.total_pcaps_ingested,
+            "total_packets_processed": ingest_status.total_packets_processed,
+            "total_flows_generated": ingest_status.total_flows_generated,
+            "persisted_security_events": total_events,
+            "high_risk_events": high_risk_events,
+            "pcap_max_evaluated_flows": settings.pcap_max_evaluated_flows,
+            "pcap_max_response_flows": settings.pcap_max_response_flows,
+        },
+        "provenance_distinction": {
+            "topology_source": "CONFIGURED_HYBRID_TOPOLOGY",
+            "cloud_representation": "SIMULATED_AWS_VPC_ENVIRONMENT (10.20.10.0/24)",
+            "onprem_representation": "ISOLATED_PRIVATE_ENVIRONMENT (10.10.10.0/24)",
+            "transit_gateway": "DEDICATED_LINUX_ROUTER (lab-router: 10.10.10.2 <-> 10.20.10.2)",
+            "host_network_isolation": "STRICT_DOCKER_BRIDGE_ISOLATION (Zero Windows Host Firewall/Route Changes)",
+        },
+    }
+
+
+@router.get(
     "/samples",
     response_model=List[AwsVpcSampleFixtureInfo],
     summary="List Benchmark AWS VPC Flow Log Fixtures",
@@ -163,3 +222,41 @@ def ingest_sample_fixture(
         persist=persist,
         db=db,
     )
+
+
+@router.get(
+    "/scenarios",
+    response_model=List[Dict[str, Any]],
+    summary="List Hybrid-Cloud Traffic Generation Scenarios",
+    description="Returns metadata for the 6 real cross-network traffic scenarios available in the virtual hybrid lab.",
+)
+def list_hybrid_scenarios() -> List[Dict[str, Any]]:
+    from backend.app.services.hybrid_traffic_service import HybridTrafficService
+    return HybridTrafficService.list_scenarios()
+
+
+@router.post(
+    "/scenarios/{scenario_id}/run",
+    response_model=Dict[str, Any],
+    summary="Trigger Hybrid-Cloud Network Traffic Scenario",
+    description="Dispatches a real cross-boundary traffic generation scenario to the traffic-generator container and reports execution results.",
+)
+def run_hybrid_scenario(scenario_id: str) -> Dict[str, Any]:
+    from backend.app.services.hybrid_traffic_service import HybridTrafficService
+    try:
+        return HybridTrafficService.run_scenario(scenario_id)
+    except ValueError as ve:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(ve))
+    except Exception as ex:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
+
+
+@router.get(
+    "/infrastructure/health",
+    response_model=Dict[str, Any],
+    summary="Get Hybrid Lab 13-Container Infrastructure Health",
+    description="Probes the lab-router agent, database connection, and returns verified status of all 13 Docker services.",
+)
+def get_infrastructure_health() -> Dict[str, Any]:
+    from backend.app.services.hybrid_traffic_service import HybridTrafficService
+    return HybridTrafficService.get_infrastructure_health()

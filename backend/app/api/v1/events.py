@@ -23,11 +23,19 @@ router = APIRouter(prefix="/v1/events", tags=["Security Events"])
 
 
 def _map_event_to_schema(e) -> SecurityEventSchema:
+    from backend.app.services.hybrid_topology import NetworkZoneClassifier
+
     time_str = e.timestamp.strftime("%H:%M:%S") if e.timestamp else "00:00:00"
     severity_map = {"LOW": "low", "MEDIUM": "medium", "HIGH": "high"}
     severity = severity_map.get(e.threat_level, "medium")
     if e.risk_score >= 85:
         severity = "critical"
+
+    ff = e.flow_features or {}
+    src_zone = ff.get("source_zone") or NetworkZoneClassifier.classify_ip(e.source_ip)
+    dst_zone = ff.get("destination_zone") or NetworkZoneClassifier.classify_ip(e.destination_ip)
+    direction = ff.get("traffic_direction") or NetworkZoneClassifier.classify_direction(e.source_ip, e.destination_ip)
+    telem_src = ff.get("telemetry_source") or ("DEMO_SEED" if e.is_demo else "PCAP")
 
     return SecurityEventSchema(
         id=e.id,
@@ -44,6 +52,10 @@ def _map_event_to_schema(e) -> SecurityEventSchema:
         confidence=e.confidence,
         is_anomaly=e.is_anomaly,
         is_demo=e.is_demo,
+        source_zone=src_zone,
+        destination_zone=dst_zone,
+        traffic_direction=direction,
+        telemetry_source=telem_src,
     )
 
 

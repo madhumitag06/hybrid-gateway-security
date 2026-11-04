@@ -81,6 +81,35 @@ def get_default_ml_artifacts_dir() -> Path:
     return Path(__file__).resolve().parent.parent.parent / "ml" / "models"
 
 
+def get_frontend_dist_dir() -> Optional[Path]:
+    """
+    Resolves the frontend distribution directory across standalone packaged (frozen)
+    and development environments.
+    """
+    explicit = os.getenv("FRONTEND_DIST_DIR")
+    if explicit and Path(explicit).is_dir() and (Path(explicit) / "index.html").is_file():
+        return Path(explicit).resolve()
+
+    # 1. PyInstaller frozen mode (_MEIPASS or _internal)
+    if getattr(sys, "frozen", False):
+        meipass = getattr(sys, "_MEIPASS", None)
+        if meipass:
+            cand = Path(meipass) / "dist"
+            if cand.is_dir() and (cand / "index.html").is_file():
+                return cand
+        exe_dir = Path(sys.executable).resolve().parent
+        for cand in [exe_dir / "dist", exe_dir / "_internal" / "dist", exe_dir.parent / "dist"]:
+            if cand.is_dir() and (cand / "index.html").is_file():
+                return cand
+
+    # 2. Check workspace root dist
+    ws_dist = Path(__file__).resolve().parent.parent.parent / "dist"
+    if ws_dist.is_dir() and (ws_dist / "index.html").is_file():
+        return ws_dist
+
+    return None
+
+
 WORKSPACE_ROOT = get_workspace_root()
 DEFAULT_ML_ARTIFACTS_DIR = get_default_ml_artifacts_dir()
 
@@ -127,17 +156,27 @@ class Settings(BaseSettings):
         "192.168.1.1/32",
         "8.8.8.8/32",
         "1.1.1.1/32",
+        "10.10.10.2/32",
+        "10.20.10.2/32",
+        "10.30.10.0/24",
     ]
 
-    # Hybrid Cloud & AWS Telemetry Configuration (Phase 6)
-    on_prem_cidrs: Union[List[str], str] = ["192.168.0.0/16", "10.0.0.0/16"]
-    aws_vpc_cidrs: Union[List[str], str] = ["10.100.0.0/16", "172.31.0.0/16"]
+    # Hybrid Cloud & AWS Telemetry Configuration (Phase 6 & Virtual Hybrid Lab)
+    on_prem_cidrs: Union[List[str], str] = ["192.168.0.0/16", "10.0.0.0/16", "10.10.10.0/24"]
+    aws_vpc_cidrs: Union[List[str], str] = ["10.100.0.0/16", "172.31.0.0/16", "10.20.10.0/24"]
     aws_telemetry_mode: str = "AWS_FIXTURE"  # "AWS_FIXTURE" or "AWS_READ_ONLY"
     aws_region: str = "us-east-1"
     aws_access_key_id: str = ""
     aws_secret_access_key: str = ""
     aws_cloudwatch_log_group: str = "/aws/vpc/flow-logs"
     aws_vpc_flow_log_group: str = ""
+
+    # Virtual Hybrid-Cloud Docker Lab Integration (Isolated Data/Telemetry Plane)
+    hybrid_lab_mode: str = "SIMULATED_HYBRID_LAB"
+    lab_router_url: str = "http://10.30.10.2:8099"
+    lab_enforcement_enabled: bool = False  # Requires explicit opt-in; defaults to safe SANDBOX/DRY_RUN
+    lab_allowed_target_cidrs: Union[List[str], str] = ["10.10.10.0/24", "10.20.10.0/24"]
+    lab_telemetry_dir: str = "/var/lib/hybrid-lab/telemetry"
 
     # Optional Security Analyst AI Copilot Configuration (Phase 10)
     # Providers: "none" (default, deterministic synthesis), "groq", "openai"
@@ -161,7 +200,7 @@ class Settings(BaseSettings):
 
     # Default Administrator Bootstrap Credentials
     admin_email: str = "admin@gateway.local"
-    admin_password: str = "AdminSecret2026!"
+    admin_password: str = "AdminSecOps2026!"
     admin_name: str = "SecOps Administrator"
 
     # Frontend Client Configuration
@@ -172,6 +211,7 @@ class Settings(BaseSettings):
         "management_allowlist",
         "on_prem_cidrs",
         "aws_vpc_cidrs",
+        "lab_allowed_target_cidrs",
         mode="before",
     )
     @classmethod

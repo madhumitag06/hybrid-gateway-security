@@ -164,7 +164,7 @@ export const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess }) => {
     setLoginEmail('admin@gateway.local')
     setLoginPassword('AdminSecOps2026!')
     setErrorMessage(null)
-    setSuccessMessage('Loaded Default Admin Bootstrap Credentials')
+    setSuccessMessage('Loaded Default Admin Bootstrap Credentials (admin@gateway.local)')
   }
 
   return (
@@ -251,7 +251,7 @@ export const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess }) => {
                 <input
                   id="login-email"
                   type="email"
-                  placeholder="analyst@enterprise.internal"
+                  placeholder="admin@gateway.local"
                   value={loginEmail}
                   onChange={(e) => setLoginEmail(e.target.value)}
                   disabled={loading || googleLoading}

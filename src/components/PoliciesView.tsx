@@ -222,7 +222,7 @@ export const PoliciesView: React.FC = () => {
       </section>
 
       {/* Policies Contextual Sub-navigation */}
-      <div className="sub-nav-bar" style={{ marginBottom: '16px', display: 'flex', gap: '8px', borderBottom: '1px solid #1a3c58', paddingBottom: '8px' }}>
+      <div className="sub-nav-bar" style={{ marginBottom: '16px', display: 'flex', gap: '8px', borderBottom: '1px solid var(--line)', paddingBottom: '8px' }}>
         <button
           type="button"
           className={`sub-nav-btn ${activeSubTab === 'overview' ? 'active' : ''}`}
@@ -267,7 +267,7 @@ export const PoliciesView: React.FC = () => {
       )}
 
       {error && (
-        <div className="card error-banner" style={{ marginBottom: '16px', color: '#ff7f8c', borderColor: '#9b3746' }}>
+        <div className="card error-banner" style={{ marginBottom: '16px', color: 'var(--muted-red)', borderColor: 'var(--muted-red)' }}>
           <b>Policy Engine Error:</b> {error}
         </div>
       )}
@@ -280,11 +280,11 @@ export const PoliciesView: React.FC = () => {
           {/* Enforcement Mode Switcher Card */}
           <div className="card mode-toggle-bar" style={{ marginBottom: '16px' }}>
             <div>
-              <span style={{ fontSize: '12px', color: '#8faec9' }}>Authoritative Enforcement Mode</span>
-              <h3 style={{ margin: '2px 0 0', color: '#f0f6fc' }}>
+              <span style={{ fontSize: '12px', color: 'var(--muted-cream)' }}>Authoritative Enforcement Mode</span>
+              <h3 style={{ margin: '2px 0 0', color: 'var(--warm-cream)' }}>
                 {config?.active_mode === 'SANDBOX' ? '🧪 SANDBOX ISOLATION' : '🛡️ DRY_RUN (SIMULATION)'}
               </h3>
-              <small style={{ color: '#9bb2cb' }}>
+              <small style={{ color: 'var(--muted-cream)' }}>
                 {config?.active_mode === 'SANDBOX'
                   ? 'Active in-memory quarantine filtering enabled with automatic TTL expiration.'
                   : 'Audit simulation only; all traffic is logged without dropped packets.'}
@@ -313,7 +313,7 @@ export const PoliciesView: React.FC = () => {
           <div className="grid4" style={{ marginBottom: '16px' }}>
             <div className="card stat-card">
               <span className="stat-label">Active Containment Rules</span>
-              <div className="stat-value" style={{ color: activeRulesCount > 0 ? '#f39c12' : '#2ecc71' }}>
+              <div className="stat-value" style={{ color: activeRulesCount > 0 ? 'var(--pale-sand)' : 'var(--olive-green)' }}>
                 {activeRulesCount}
               </div>
               <span className="stat-sub">Managed by in-memory adapter</span>
@@ -321,7 +321,7 @@ export const PoliciesView: React.FC = () => {
 
             <div className="card stat-card">
               <span className="stat-label">Default Rule TTL</span>
-              <div className="stat-value" style={{ color: '#58a6ff' }}>
+              <div className="stat-value" style={{ color: 'var(--terracotta)' }}>
                 {config?.default_ttl_seconds ?? 300}s
               </div>
               <span className="stat-sub">Automatic expiry window</span>
@@ -329,7 +329,7 @@ export const PoliciesView: React.FC = () => {
 
             <div className="card stat-card">
               <span className="stat-label">Protected CIDRs</span>
-              <div className="stat-value" style={{ color: '#58a6ff' }}>
+              <div className="stat-value" style={{ color: 'var(--terracotta)' }}>
                 {config?.management_allowlist?.length ?? 3}
               </div>
               <span className="stat-sub">Management allowlist subnets</span>
@@ -337,7 +337,7 @@ export const PoliciesView: React.FC = () => {
 
             <div className="card stat-card">
               <span className="stat-label">Authoritative Engine</span>
-              <div className="stat-value" style={{ color: '#2ecc71', fontSize: '18px' }}>
+              <div className="stat-value" style={{ color: 'var(--olive-green)', fontSize: '18px' }}>
                 Deterministic
               </div>
               <span className="stat-sub">Zero LLM policy modification</span>
@@ -346,24 +346,24 @@ export const PoliciesView: React.FC = () => {
 
           {/* Protected CIDR Subnets Card */}
           <div className="card" style={{ marginBottom: '16px', padding: '16px' }}>
-            <h3 style={{ margin: '0 0 8px', fontSize: '14px', color: '#f0f6fc' }}>
+            <h3 style={{ margin: '0 0 8px', fontSize: '14px', color: 'var(--warm-cream)' }}>
               🔒 Protected Management Allowlist Subnets
             </h3>
-            <p style={{ fontSize: '12px', color: '#9bb2cb', margin: '0 0 12px' }}>
+            <p style={{ fontSize: '12px', color: 'var(--muted-cream)', margin: '0 0 12px' }}>
               Traffic originating from these CIDR ranges is explicitly protected by Rule 01 (MANAGEMENT_ALLOWLIST_PROTECTION)
               and cannot be blocked or quarantined by automated ML predictions.
             </p>
             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
               {config?.management_allowlist?.map((cidr) => (
-                <span key={cidr} className="chip" style={{ fontSize: '12px', padding: '4px 10px', background: '#0d2137' }}>
+                <span key={cidr} className="chip" style={{ fontSize: '12px', padding: '4px 10px', background: 'var(--panel-secondary)' }}>
                   🛡️ {cidr}
                 </span>
               )) ?? (
                 <>
-                  <span className="chip" style={{ fontSize: '12px', padding: '4px 10px', background: '#0d2137' }}>🛡️ 127.0.0.1/32</span>
-                  <span className="chip" style={{ fontSize: '12px', padding: '4px 10px', background: '#0d2137' }}>🛡️ 192.168.1.1/32</span>
-                  <span className="chip" style={{ fontSize: '12px', padding: '4px 10px', background: '#0d2137' }}>🛡️ 8.8.8.8/32</span>
-                  <span className="chip" style={{ fontSize: '12px', padding: '4px 10px', background: '#0d2137' }}>🛡️ 1.1.1.1/32</span>
+                  <span className="chip" style={{ fontSize: '12px', padding: '4px 10px', background: 'var(--panel-secondary)' }}>🛡️ 127.0.0.1/32</span>
+                  <span className="chip" style={{ fontSize: '12px', padding: '4px 10px', background: 'var(--panel-secondary)' }}>🛡️ 192.168.1.1/32</span>
+                  <span className="chip" style={{ fontSize: '12px', padding: '4px 10px', background: 'var(--panel-secondary)' }}>🛡️ 8.8.8.8/32</span>
+                  <span className="chip" style={{ fontSize: '12px', padding: '4px 10px', background: 'var(--panel-secondary)' }}>🛡️ 1.1.1.1/32</span>
                 </>
               )}
             </div>
@@ -378,21 +378,21 @@ export const PoliciesView: React.FC = () => {
               </button>
             </div>
             {rules.length === 0 ? (
-              <p style={{ color: '#8faec9', fontSize: '13px', margin: 0 }}>
+              <p style={{ color: 'var(--muted-cream)', fontSize: '13px', margin: 0 }}>
                 No active containment rules currently enforced. Gateway is operating in nominal pass-through state.
               </p>
             ) : (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '10px' }}>
                 {rules.slice(0, 4).map((r) => (
-                  <div key={r.rule_id} style={{ background: '#0a192f', border: '1px solid #1a3c58', borderRadius: '6px', padding: '10px' }}>
+                  <div key={r.rule_id} style={{ background: 'var(--panel-secondary)', border: '1px solid var(--line)', borderRadius: '6px', padding: '10px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
                       <span className={`pill ${r.action === 'Block' ? 'r87' : 'r76'}`} style={{ fontSize: '10px' }}>
                         {r.action}
                       </span>
-                      <span style={{ fontSize: '11px', color: '#8faec9' }}>⏱ {Math.max(r.remaining_ttl_seconds, 0)}s</span>
+                      <span style={{ fontSize: '11px', color: 'var(--muted-cream)' }}>⏱ {Math.max(r.remaining_ttl_seconds, 0)}s</span>
                     </div>
-                    <b style={{ color: '#f0f6fc', fontSize: '13px' }}>{r.target_ip} {r.target_port ? `:${r.target_port}` : ''}</b>
-                    <p style={{ fontSize: '11px', color: '#9bb2cb', margin: '4px 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <b style={{ color: 'var(--warm-cream)', fontSize: '13px' }}>{r.target_ip} {r.target_port ? `:${r.target_port}` : ''}</b>
+                    <p style={{ fontSize: '11px', color: 'var(--muted-cream)', margin: '4px 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {r.reason}
                     </p>
                   </div>
@@ -412,7 +412,7 @@ export const PoliciesView: React.FC = () => {
             <div className="title-line" style={{ marginBottom: '14px' }}>
               <div>
                 <h2 style={{ margin: 0 }}>Active Containment Rules ({rules.length})</h2>
-                <span style={{ fontSize: '12px', color: '#8faec9' }}>
+                <span style={{ fontSize: '12px', color: 'var(--muted-cream)' }}>
                   Live in-memory adapter containment rules with real-time TTL expiration counters.
                 </span>
               </div>
@@ -436,7 +436,7 @@ export const PoliciesView: React.FC = () => {
             </div>
 
             {loading ? (
-              <div style={{ padding: '40px', textAlign: 'center', color: '#8faec9' }}>
+              <div style={{ padding: '40px', textAlign: 'center', color: 'var(--muted-cream)' }}>
                 Loading containment rules…
               </div>
             ) : rules.length === 0 ? (
@@ -446,27 +446,27 @@ export const PoliciesView: React.FC = () => {
             ) : (
               <div className="rules-list-container" style={{ maxHeight: '600px', overflowY: 'auto' }}>
                 {rules.map((r) => (
-                  <div className="rule-card" key={r.rule_id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px', borderBottom: '1px solid #1a3c58' }}>
+                  <div className="rule-card" key={r.rule_id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px', borderBottom: '1px solid var(--line)' }}>
                     <div className="rule-info" style={{ flex: 1, paddingRight: '16px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
                         <span className={`pill ${r.action === 'Block' ? 'r87' : 'r76'}`}>
                           {r.action}
                         </span>
-                        <b style={{ color: '#f0f6fc', fontSize: '14px' }}>
+                        <b style={{ color: 'var(--warm-cream)', fontSize: '14px' }}>
                           {r.target_ip} {r.target_port ? `:${r.target_port}` : ''}
                         </b>
                         <span className="prov-badge" style={{ fontSize: '10px' }}>
                           {r.mode}
                         </span>
                       </div>
-                      <p style={{ margin: '2px 0 4px', fontSize: '12px', color: '#c9d1d9' }}>{r.reason}</p>
-                      <small style={{ color: '#8faec9', fontSize: '11px' }}>
+                      <p style={{ margin: '2px 0 4px', fontSize: '12px', color: 'var(--muted-cream)' }}>{r.reason}</p>
+                      <small style={{ color: 'var(--muted-cream)', fontSize: '11px' }}>
                         ID: <span style={{ fontFamily: 'monospace' }}>{r.rule_id}</span> • Created: {new Date(r.created_at).toLocaleTimeString()} • TTL: {r.ttl_seconds}s
                       </small>
                     </div>
 
                     <div className="rule-meta" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <div className="ttl-badge" title="Remaining TTL" style={{ background: '#091c2d', border: '1px solid #1a3c58', padding: '4px 8px', borderRadius: '4px', fontSize: '12px' }}>
+                      <div className="ttl-badge" title="Remaining TTL" style={{ background: 'var(--panel-secondary)', border: '1px solid var(--line)', padding: '4px 8px', borderRadius: '4px', fontSize: '12px' }}>
                         ⏱ {Math.max(r.remaining_ttl_seconds, 0)}s
                       </div>
                       {r.status === 'ACTIVE' || r.status === 'SIMULATED' ? (
@@ -474,12 +474,12 @@ export const PoliciesView: React.FC = () => {
                           className="rule-card revoke-btn"
                           onClick={() => handleRevoke(r.rule_id)}
                           type="button"
-                          style={{ background: '#9b3746', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}
+                          style={{ background: 'var(--muted-red)', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}
                         >
                           Revoke
                         </button>
                       ) : (
-                        <span className="prov-badge" style={{ background: '#1c2e42', color: '#8faec9' }}>
+                        <span className="prov-badge" style={{ background: 'var(--panel-secondary)', color: 'var(--muted-cream)' }}>
                           {r.status}
                         </span>
                       )}
@@ -499,17 +499,17 @@ export const PoliciesView: React.FC = () => {
         <div className="subview-comparator">
           <div className="card" style={{ padding: '16px' }}>
             <h2>⚖️ Policy Engine Comparative Benchmark</h2>
-            <p style={{ fontSize: '12px', color: '#9bb2cb', margin: '4px 0 16px' }}>
+            <p style={{ fontSize: '12px', color: 'var(--muted-cream)', margin: '4px 0 16px' }}>
               Evaluate live network flow features simultaneously against the <strong>Static Rule Baseline</strong> and the <strong>Adaptive AI Policy Engine</strong> to observe divergence and context-aware policy decisions.
             </p>
 
             <div className="policy-comparator-grid">
               {/* Left Column: Input Vector */}
-              <div style={{ background: '#081726', padding: '14px', borderRadius: '6px', border: '1px solid #1a3c58', minWidth: 0 }}>
-                <h4 style={{ margin: '0 0 12px', fontSize: '13px', color: '#58a6ff' }}>Input Flow Feature Vector</h4>
+              <div style={{ background: 'var(--panel-secondary)', padding: '14px', borderRadius: '6px', border: '1px solid var(--line)', minWidth: 0 }}>
+                <h4 style={{ margin: '0 0 12px', fontSize: '13px', color: 'var(--terracotta)' }}>Input Flow Feature Vector</h4>
                 <div className="flow-form-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '10px' }}>
                   <div className="flow-field">
-                    <label style={{ fontSize: '11px', color: '#8faec9', display: 'block', marginBottom: '2px' }}>Dst Port</label>
+                    <label style={{ fontSize: '11px', color: 'var(--muted-cream)', display: 'block', marginBottom: '2px' }}>Dst Port</label>
                     <input
                       type="number"
                       className="input"
@@ -518,7 +518,7 @@ export const PoliciesView: React.FC = () => {
                     />
                   </div>
                   <div className="flow-field">
-                    <label style={{ fontSize: '11px', color: '#8faec9', display: 'block', marginBottom: '2px' }}>Unique Ports</label>
+                    <label style={{ fontSize: '11px', color: 'var(--muted-cream)', display: 'block', marginBottom: '2px' }}>Unique Ports</label>
                     <input
                       type="number"
                       className="input"
@@ -527,7 +527,7 @@ export const PoliciesView: React.FC = () => {
                     />
                   </div>
                   <div className="flow-field">
-                    <label style={{ fontSize: '11px', color: '#8faec9', display: 'block', marginBottom: '2px' }}>Connection Rate (conn/s)</label>
+                    <label style={{ fontSize: '11px', color: 'var(--muted-cream)', display: 'block', marginBottom: '2px' }}>Connection Rate (conn/s)</label>
                     <input
                       type="number"
                       className="input"
@@ -536,7 +536,7 @@ export const PoliciesView: React.FC = () => {
                     />
                   </div>
                   <div className="flow-field">
-                    <label style={{ fontSize: '11px', color: '#8faec9', display: 'block', marginBottom: '2px' }}>Failed Auth Count</label>
+                    <label style={{ fontSize: '11px', color: 'var(--muted-cream)', display: 'block', marginBottom: '2px' }}>Failed Auth Count</label>
                     <input
                       type="number"
                       className="input"
@@ -545,7 +545,7 @@ export const PoliciesView: React.FC = () => {
                     />
                   </div>
                   <div className="flow-field">
-                    <label style={{ fontSize: '11px', color: '#8faec9', display: 'block', marginBottom: '2px' }}>Packet Count</label>
+                    <label style={{ fontSize: '11px', color: 'var(--muted-cream)', display: 'block', marginBottom: '2px' }}>Packet Count</label>
                     <input
                       type="number"
                       className="input"
@@ -554,13 +554,14 @@ export const PoliciesView: React.FC = () => {
                     />
                   </div>
                   <div className="flow-field">
-                    <label style={{ fontSize: '11px', color: '#8faec9', display: 'block', marginBottom: '2px' }}>Duration (s)</label>
+                    <label style={{ fontSize: '11px', color: 'var(--muted-cream)', display: 'block', marginBottom: '2px' }}>Duration (s)</label>
                     <input
                       type="number"
-                      step="0.01"
+                      step="any"
+                      min={0}
                       className="input"
                       value={compFlow.duration}
-                      onChange={(e) => setCompFlow({ ...compFlow, duration: parseFloat(e.target.value) || 0.1 })}
+                      onChange={(e) => setCompFlow({ ...compFlow, duration: Math.max(0, parseFloat(e.target.value) || 0) })}
                     />
                   </div>
                 </div>
@@ -579,33 +580,33 @@ export const PoliciesView: React.FC = () => {
               {/* Right Column: Comparison Result */}
               <div style={{ minWidth: 0 }}>
                 {compResult ? (
-                  <div className="comparison-card" style={{ background: '#091c2d', border: '1px solid #1a3c58', borderRadius: '6px', padding: '14px' }}>
-                    <h4 style={{ margin: '0 0 10px', fontSize: '13px', color: '#f0f6fc' }}>Comparison Output</h4>
+                  <div className="comparison-card" style={{ background: 'var(--panel-secondary)', border: '1px solid var(--line)', borderRadius: '6px', padding: '14px' }}>
+                    <h4 style={{ margin: '0 0 10px', fontSize: '13px', color: 'var(--warm-cream)' }}>Comparison Output</h4>
                     <div className="comparison-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '12px' }}>
-                      <div className="comp-box" style={{ background: '#0c1f33', padding: '10px', borderRadius: '4px', border: '1px solid #1a3c58' }}>
-                        <small style={{ color: '#8faec9', fontSize: '11px', display: 'block' }}>Traditional Static Baseline</small>
+                      <div className="comp-box" style={{ background: 'var(--panel-secondary)', padding: '10px', borderRadius: '4px', border: '1px solid var(--line)' }}>
+                        <small style={{ color: 'var(--muted-cream)', fontSize: '11px', display: 'block' }}>Traditional Static Baseline</small>
                         <b className={compResult.static_decision} style={{ fontSize: '18px', display: 'block', margin: '4px 0' }}>
                           {compResult.static_decision}
                         </b>
-                        <span style={{ fontSize: '11px', color: '#8ba4bf' }}>Rule: {compResult.static_rule_matched || 'DEFAULT_ALLOW'}</span>
+                        <span style={{ fontSize: '11px', color: 'var(--muted-cream)' }}>Rule: {compResult.static_rule_matched || 'DEFAULT_ALLOW'}</span>
                       </div>
-                      <div className="comp-box" style={{ background: '#0c1f33', padding: '10px', borderRadius: '4px', border: '1px solid #1a3c58' }}>
-                        <small style={{ color: '#8faec9', fontSize: '11px', display: 'block' }}>Adaptive AI Decision</small>
+                      <div className="comp-box" style={{ background: 'var(--panel-secondary)', padding: '10px', borderRadius: '4px', border: '1px solid var(--line)' }}>
+                        <small style={{ color: 'var(--muted-cream)', fontSize: '11px', display: 'block' }}>Adaptive AI Decision</small>
                         <b className={compResult.adaptive_decision} style={{ fontSize: '18px', display: 'block', margin: '4px 0' }}>
                           {compResult.adaptive_decision}
                         </b>
-                        <span style={{ fontSize: '11px', color: '#8ba4bf' }}>Risk: {compResult.adaptive_risk_score}/100</span>
+                        <span style={{ fontSize: '11px', color: 'var(--muted-cream)' }}>Risk: {compResult.adaptive_risk_score}/100</span>
                       </div>
                     </div>
-                    <div className="divergence-note" style={{ background: compResult.decision_divergence ? 'rgba(230, 126, 34, 0.15)' : 'rgba(46, 204, 113, 0.15)', border: `1px solid ${compResult.decision_divergence ? '#e67e22' : '#2ecc71'}`, borderRadius: '4px', padding: '10px' }}>
-                      <strong style={{ color: compResult.decision_divergence ? '#f39c12' : '#2ecc71', fontSize: '12px' }}>
+                    <div className="divergence-note" style={{ background: compResult.decision_divergence ? 'rgba(200, 117, 85, 0.15)' : 'rgba(133, 139, 89, 0.16)', border: `1px solid ${compResult.decision_divergence ? 'var(--terracotta)' : 'var(--olive-green)'}`, borderRadius: '4px', padding: '10px' }}>
+                      <strong style={{ color: compResult.decision_divergence ? 'var(--pale-sand)' : 'var(--olive-green)', fontSize: '12px' }}>
                         {compResult.decision_divergence ? '⚠️ Policy Divergence Detected' : '✓ Congruent Policy Decisions'}
                       </strong>
-                      <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#c9d1d9' }}>{compResult.divergence_rationale}</p>
+                      <p style={{ margin: '4px 0 0', fontSize: '12px', color: 'var(--muted-cream)' }}>{compResult.divergence_rationale}</p>
                     </div>
                   </div>
                 ) : (
-                  <div style={{ background: '#091c2d', border: '1px dashed #1a3c58', borderRadius: '6px', padding: '30px', textAlign: 'center', color: '#8faec9', fontSize: '13px' }}>
+                  <div style={{ background: 'var(--panel-secondary)', border: '1px dashed var(--line)', borderRadius: '6px', padding: '30px', textAlign: 'center', color: 'var(--muted-cream)', fontSize: '13px' }}>
                     Adjust the flow parameters on the left and click <b>Compare Policies</b> to evaluate the static rule baseline against the adaptive engine.
                   </div>
                 )}
@@ -623,7 +624,7 @@ export const PoliciesView: React.FC = () => {
           <div className="card" style={{ padding: '16px' }}>
             <div style={{ marginBottom: '14px' }}>
               <h2 style={{ margin: 0 }}>📜 Phase 5 Policy Rules Catalog</h2>
-              <span style={{ fontSize: '12px', color: '#8faec9' }}>
+              <span style={{ fontSize: '12px', color: 'var(--muted-cream)' }}>
                 Deterministic, hierarchical policy rules executed in strict precedence order by the PolicyEngine.
               </span>
             </div>
@@ -635,17 +636,17 @@ export const PoliciesView: React.FC = () => {
                   className="policy-catalog-row"
                 >
                   <div>
-                    <span style={{ fontSize: '11px', color: '#58a6ff', fontFamily: 'monospace', fontWeight: 'bold' }}>
+                    <span style={{ fontSize: '11px', color: 'var(--terracotta)', fontFamily: 'monospace', fontWeight: 'bold' }}>
                       #{rule.precedence}
                     </span>
                   </div>
 
                   <div>
-                    <b style={{ color: '#f0f6fc', fontSize: '13px', display: 'block' }}>{rule.name}</b>
-                    <span style={{ fontSize: '11px', color: '#9bb2cb' }}>{rule.description}</span>
+                    <b style={{ color: 'var(--warm-cream)', fontSize: '13px', display: 'block' }}>{rule.name}</b>
+                    <span style={{ fontSize: '11px', color: 'var(--muted-cream)' }}>{rule.description}</span>
                   </div>
 
-                  <div style={{ fontSize: '11px', color: '#8faec9', background: '#061320', padding: '6px 8px', borderRadius: '4px' }}>
+                  <div style={{ fontSize: '11px', color: 'var(--muted-cream)', background: 'var(--panel-secondary)', padding: '6px 8px', borderRadius: '4px' }}>
                     <strong>Trigger:</strong> {rule.trigger}
                   </div>
 
@@ -655,7 +656,7 @@ export const PoliciesView: React.FC = () => {
                     </span>
                   </div>
 
-                  <div style={{ textAlign: 'right', fontSize: '11px', color: '#8faec9' }}>
+                  <div style={{ textAlign: 'right', fontSize: '11px', color: 'var(--muted-cream)' }}>
                     ⏱ {rule.ttl}
                   </div>
                 </div>
@@ -674,7 +675,7 @@ export const PoliciesView: React.FC = () => {
             <div className="title-line" style={{ marginBottom: '14px' }}>
               <div>
                 <h2 style={{ margin: 0 }}>📋 Policy Enforcement Audit History</h2>
-                <span style={{ fontSize: '12px', color: '#8faec9' }}>
+                <span style={{ fontSize: '12px', color: 'var(--muted-cream)' }}>
                   Real PostgreSQL-persisted security policy audit log entries tracking policy evaluation and manual revocation actions.
                 </span>
               </div>
@@ -684,7 +685,7 @@ export const PoliciesView: React.FC = () => {
             </div>
 
             {auditLoading ? (
-              <div style={{ padding: '40px', textAlign: 'center', color: '#8faec9' }}>
+              <div style={{ padding: '40px', textAlign: 'center', color: 'var(--muted-cream)' }}>
                 Fetching audit records from PostgreSQL database…
               </div>
             ) : auditLogs.length === 0 ? (
@@ -695,7 +696,7 @@ export const PoliciesView: React.FC = () => {
               <div style={{ overflowX: 'auto', maxHeight: '550px', overflowY: 'auto' }}>
                 <table className="table" style={{ width: '100%', fontSize: '12px', borderCollapse: 'collapse' }}>
                   <thead>
-                    <tr style={{ background: '#0a1d30', textAlign: 'left', borderBottom: '1px solid #1a3c58' }}>
+                    <tr style={{ background: 'var(--panel-secondary)', textAlign: 'left', borderBottom: '1px solid var(--line)' }}>
                       <th style={{ padding: '8px 10px' }}>ID</th>
                       <th style={{ padding: '8px 10px' }}>Timestamp</th>
                       <th style={{ padding: '8px 10px' }}>Event ID</th>
@@ -707,20 +708,20 @@ export const PoliciesView: React.FC = () => {
                   </thead>
                   <tbody>
                     {auditLogs.map((log) => (
-                      <tr key={log.id} style={{ borderBottom: '1px solid #11263c' }}>
-                        <td style={{ padding: '8px 10px', fontFamily: 'monospace', color: '#58a6ff' }}>#{log.id}</td>
-                        <td style={{ padding: '8px 10px', color: '#8faec9' }}>{new Date(log.timestamp).toLocaleString()}</td>
-                        <td style={{ padding: '8px 10px', fontFamily: 'monospace', color: '#c9d1d9' }}>{log.event_id}</td>
+                      <tr key={log.id} style={{ borderBottom: '1px solid var(--line)' }}>
+                        <td style={{ padding: '8px 10px', fontFamily: 'monospace', color: 'var(--terracotta)' }}>#{log.id}</td>
+                        <td style={{ padding: '8px 10px', color: 'var(--muted-cream)' }}>{new Date(log.timestamp).toLocaleString()}</td>
+                        <td style={{ padding: '8px 10px', fontFamily: 'monospace', color: 'var(--muted-cream)' }}>{log.event_id}</td>
                         <td style={{ padding: '8px 10px' }}>
                           <span className={`pill ${log.requested_action === 'Block' ? 'r87' : log.requested_action === 'Restrict' ? 'r76' : 'r35'}`}>
                             {log.requested_action}
                           </span>
                         </td>
-                        <td style={{ padding: '8px 10px', color: '#8faec9' }}>{log.previous_action || '—'}</td>
+                        <td style={{ padding: '8px 10px', color: 'var(--muted-cream)' }}>{log.previous_action || '—'}</td>
                         <td style={{ padding: '8px 10px' }}>
                           <span className="prov-badge" style={{ fontSize: '10px' }}>{log.resulting_status}</span>
                         </td>
-                        <td style={{ padding: '8px 10px', color: '#f0f6fc' }}>{log.actor}</td>
+                        <td style={{ padding: '8px 10px', color: 'var(--warm-cream)' }}>{log.actor}</td>
                       </tr>
                     ))}
                   </tbody>

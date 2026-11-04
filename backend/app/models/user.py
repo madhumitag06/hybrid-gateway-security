@@ -16,7 +16,9 @@ from backend.app.db.base import Base, TimestampMixin
 
 class UserRole(str, Enum):
     ADMIN = "ADMIN"
+    OPERATOR = "OPERATOR"
     ANALYST = "ANALYST"
+    AUDITOR = "AUDITOR"
     USER = "USER"
 
 

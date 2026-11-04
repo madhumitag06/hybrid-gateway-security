@@ -119,6 +119,30 @@ def generate_traffic_spike_pcap(filepath: Path) -> int:
     return len(packets)
 
 
+def generate_suspicious_transfer_pcap(filepath: Path) -> int:
+    """
+    Generates a prolonged high-payload outbound data transfer on port 8443 across hybrid zones.
+    Matches calibrated SUSPICIOUS_TRANSFER profile (~1320-byte packets, ~10.9 pkts/s over 22s).
+    """
+    packets: List[Packet] = []
+    base_time = 1710000030.0
+    src_ip = "10.10.10.30"
+    dst_ip = "10.20.10.40"
+    src_port = 51200
+    dst_port = 8443
+
+    for i in range(240):
+        t = base_time + (i * 0.0916)  # 240 packets across ~22.0 seconds (within 30s FlowAggregator window)
+        payload = b"BULK_ENCRYPTED_ARCHIVE_STREAM_SEGMENT_" + b"Z" * 1260
+        p = IP(src=src_ip, dst=dst_ip) / TCP(sport=src_port, dport=dst_port, flags="PA", seq=1000 + (i * 1300)) / payload
+        p.time = t
+        packets.append(p)
+
+    filepath.parent.mkdir(parents=True, exist_ok=True)
+    wrpcap(str(filepath), packets)
+    return len(packets)
+
+
 def ensure_sample_pcaps() -> List[SamplePcapInfo]:
     """
     Ensures baseline demonstration PCAPs exist on disk and returns their metadata.
@@ -149,6 +173,14 @@ def ensure_sample_pcaps() -> List[SamplePcapInfo]:
             "description": "High-frequency packet stream generating sudden throughput surge towards HTTP web services.",
             "generator": generate_traffic_spike_pcap,
             "expected_threat": "TRAFFIC_SPIKE",
+        },
+        {
+            "sample_id": "sample-suspicious-transfer",
+            "name": "Suspicious Bulk Transfer",
+            "filename": "suspicious_transfer.pcap",
+            "description": "Sustained large-frame outbound payload stream on port 8443 crossing the hybrid boundary.",
+            "generator": generate_suspicious_transfer_pcap,
+            "expected_threat": "SUSPICIOUS_TRANSFER",
         },
     ]
 

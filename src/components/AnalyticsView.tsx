@@ -32,7 +32,7 @@ export const AnalyticsView: React.FC = () => {
 
   if (error || !analytics) {
     return (
-      <div className="card" style={{ padding: '24px', textAlign: 'center', color: '#ff7f8c' }}>
+      <div className="card" style={{ padding: '24px', textAlign: 'center', color: 'var(--muted-red)' }}>
         <h3>Unable to load analytics</h3>
         <p>{error || 'No analytics data available.'}</p>
       </div>
@@ -50,17 +50,17 @@ export const AnalyticsView: React.FC = () => {
         </div>
         <div className="analytics-stat-card">
           <small>Live Telemetry Events</small>
-          <b style={{ color: '#38bdf8' }}>{analytics.real_telemetry_events}</b>
+          <b style={{ color: 'var(--terracotta)' }}>{analytics.real_telemetry_events}</b>
           <span>Live CloudWatch / Socket</span>
         </div>
         <div className="analytics-stat-card">
           <small>Synthetic Fixtures & Demo Seeds</small>
-          <b style={{ color: '#ffd166' }}>{analytics.fixture_demo_events}</b>
+          <b style={{ color: 'var(--pale-sand)' }}>{analytics.fixture_demo_events}</b>
           <span>Synthetic PCAPs / AWS Fixtures / Seeds</span>
         </div>
         <div className="analytics-stat-card">
           <small>Active Containment Rules</small>
-          <b style={{ color: '#c084fc' }}>{analytics.active_sandbox_rules_count}</b>
+          <b style={{ color: 'var(--terracotta)' }}>{analytics.active_sandbox_rules_count}</b>
           <span>Sandbox Isolation Filter</span>
         </div>
       </section>
@@ -70,7 +70,7 @@ export const AnalyticsView: React.FC = () => {
         <article className="card analytics-card">
           <div className="title-line">
             <h2>Analytics Histogram Buckets (Risk Spectrum)</h2>
-            <small style={{ color: '#8faec9' }}>Standardized 20-Point Bins</small>
+            <small style={{ color: 'var(--muted-cream)' }}>Standardized 20-Point Bins</small>
           </div>
           <p className="analytics-sub">
             Distribution of continuous risk scores (0–100) across historical flows.
@@ -99,7 +99,7 @@ export const AnalyticsView: React.FC = () => {
         <article className="card analytics-card">
           <div className="title-line">
             <h2>Threat Classification Distribution</h2>
-            <small style={{ color: '#8faec9' }}>RandomForest Predictions</small>
+            <small style={{ color: 'var(--muted-cream)' }}>RandomForest Predictions</small>
           </div>
           <p className="analytics-sub">
             Proportion of evaluated network flows classified into learned threat categories.
@@ -128,7 +128,7 @@ export const AnalyticsView: React.FC = () => {
         <article className="card analytics-card">
           <div className="title-line">
             <h2>Hybrid Zone Transit Matrix</h2>
-            <small style={{ color: '#8faec9' }}>CIDR Cross-Zone Routing</small>
+            <small style={{ color: 'var(--muted-cream)' }}>CIDR Cross-Zone Routing</small>
           </div>
           <p className="analytics-sub">
             Evaluated traffic directions classified across On-Premise, AWS VPC, and External boundaries.
@@ -146,7 +146,7 @@ export const AnalyticsView: React.FC = () => {
         <article className="card analytics-card">
           <div className="title-line">
             <h2>Telemetry Provenance Ledger</h2>
-            <small style={{ color: '#8faec9' }}>Audit Provenance</small>
+            <small style={{ color: 'var(--muted-cream)' }}>Audit Provenance</small>
           </div>
           <p className="analytics-sub">
             Strict provenance segregation ensuring benchmarks are never labeled as live telemetry.
@@ -156,7 +156,7 @@ export const AnalyticsView: React.FC = () => {
               <div key={p.telemetry_source} className="provenance-item-card">
                 <div>
                   <strong>{p.telemetry_source}</strong>
-                  <small style={{ display: 'block', color: p.is_real_telemetry ? '#34d399' : '#ffd166' }}>
+                  <small style={{ display: 'block', color: p.is_real_telemetry ? 'var(--olive-green)' : 'var(--pale-sand)' }}>
                     {p.is_real_telemetry ? '● Real Capture / Telemetry' : '○ Deterministic Fixture / Demo Seed'}
                   </small>
                 </div>

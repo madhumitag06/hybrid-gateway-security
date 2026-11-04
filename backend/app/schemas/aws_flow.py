@@ -15,7 +15,7 @@ TelemetrySourceType = Literal["AWS_VPC_FLOW_LOG", "AWS_VPC_FLOW_LOG_FIXTURE", "P
 
 class VpcFlowLogRecordSchema(BaseModel):
     """
-    Standard AWS VPC Flow Log v2 Record representation.
+    Standard AWS VPC Flow Log v2 Record representation (with optional flow-direction extension).
     """
     version: int = 2
     account_id: str
@@ -31,6 +31,7 @@ class VpcFlowLogRecordSchema(BaseModel):
     end: int
     action: str  # "ACCEPT" or "REJECT"
     log_status: str  # "OK", "NODATA", "SKIPDATA"
+    flow_direction: Optional[str] = None  # Optional "ingress" or "egress"
 
 
 class AwsVpcIngestionRequest(BaseModel):

@@ -47,13 +47,13 @@ export const EvaluationView: React.FC = () => {
   return (
     <div className="analytics-container evaluation-view-container">
       {/* 1. Benchmark Execution Control Panel */}
-      <section className="card" style={{ padding: '18px 22px', border: '1px solid #234d70' }}>
+      <section className="card" style={{ padding: '18px 22px', border: '1px solid var(--line)' }}>
         <div className="title-line" style={{ marginBottom: '14px' }}>
           <div>
-            <h2 style={{ fontSize: '18px', color: '#f0f6fc' }}>
+            <h2 style={{ fontSize: '18px', color: 'var(--warm-cream)' }}>
               ⚡ Experimental Gateway Benchmark & Policy Comparative Suite
             </h2>
-            <p style={{ margin: '4px 0 0', color: '#9bb7d2', fontSize: '12px' }}>
+            <p style={{ margin: '4px 0 0', color: 'var(--muted-cream)', fontSize: '12px' }}>
               Dual-path empirical evaluation comparing the <strong>Adaptive AI Policy Engine</strong> against the <strong>Traditional Static Policy Baseline</strong> across controlled synthetic scenario suites.
             </p>
           </div>
@@ -62,7 +62,7 @@ export const EvaluationView: React.FC = () => {
               href={getExportUrl(selectedSuite, sampleCount, 'json')}
               download={`evaluation_${selectedSuite.toLowerCase()}.json`}
               className="chip"
-              style={{ textDecoration: 'none', color: '#93c5fd', border: '1px solid #2563eb' }}
+              style={{ textDecoration: 'none', color: 'var(--terracotta)', border: '1px solid var(--terracotta)' }}
             >
               ⬇ Export JSON
             </a>
@@ -70,7 +70,7 @@ export const EvaluationView: React.FC = () => {
               href={getExportUrl(selectedSuite, sampleCount, 'csv')}
               download={`evaluation_${selectedSuite.toLowerCase()}.csv`}
               className="chip"
-              style={{ textDecoration: 'none', color: '#34d399', border: '1px solid #059669' }}
+              style={{ textDecoration: 'none', color: 'var(--olive-green)', border: '1px solid var(--olive-green)' }}
             >
               ⬇ Export CSV
             </a>
@@ -79,7 +79,7 @@ export const EvaluationView: React.FC = () => {
 
         <div style={{ display: 'flex', gap: '14px', alignItems: 'center', flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            <label style={{ fontSize: '11px', color: '#8faec9' }}>Benchmark Suite</label>
+            <label style={{ fontSize: '11px', color: 'var(--muted-cream)' }}>Benchmark Suite</label>
             <select
               value={selectedSuite}
               onChange={(e) => setSelectedSuite(e.target.value)}
@@ -95,7 +95,7 @@ export const EvaluationView: React.FC = () => {
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            <label style={{ fontSize: '11px', color: '#8faec9' }}>Sample Size (N)</label>
+            <label style={{ fontSize: '11px', color: 'var(--muted-cream)' }}>Sample Size (N)</label>
             <select
               value={sampleCount}
               onChange={(e) => setSampleCount(Number(e.target.value))}
@@ -116,7 +116,7 @@ export const EvaluationView: React.FC = () => {
               checked={includeShap}
               onChange={(e) => setIncludeShap(e.target.checked)}
             />
-            <label htmlFor="includeShapToggle" style={{ fontSize: '12px', color: '#c4d7ea', cursor: 'pointer' }}>
+            <label htmlFor="includeShapToggle" style={{ fontSize: '12px', color: 'var(--warm-cream)', cursor: 'pointer' }}>
               Profile SHAP Attribution Latency
             </label>
           </div>
@@ -133,7 +133,7 @@ export const EvaluationView: React.FC = () => {
       </section>
 
       {error && (
-        <div className="card" style={{ padding: '16px', color: '#ff7f8c', textAlign: 'center' }}>
+        <div className="card" style={{ padding: '16px', color: 'var(--muted-red)', textAlign: 'center' }}>
           {error}
         </div>
       )}
@@ -144,7 +144,7 @@ export const EvaluationView: React.FC = () => {
           <section className="analytics-metrics-strip">
             <div className="analytics-stat-card">
               <small>Overall ML Accuracy</small>
-              <b style={{ color: '#42dfa0' }}>
+              <b style={{ color: 'var(--olive-green)' }}>
                 {(evaluation.ml_classification_metrics.overall_accuracy * 100).toFixed(1)}%
               </b>
               <em>Macro F1: {(evaluation.ml_classification_metrics.macro_f1 * 100).toFixed(1)}%</em>
@@ -153,11 +153,11 @@ export const EvaluationView: React.FC = () => {
             <div className="analytics-stat-card">
               <small>Over-Blocking (False Alarms)</small>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '4px' }}>
-                <span style={{ fontSize: '12px', color: '#cbd5e1' }}>
-                  Static: <strong style={{ color: '#ff8b93' }}>{(evaluation.policy_comparison_metrics.static_over_blocking_rate * 100).toFixed(1)}%</strong>
+                <span style={{ fontSize: '12px', color: 'var(--muted-cream)' }}>
+                  Static: <strong style={{ color: 'var(--muted-red)' }}>{(evaluation.policy_comparison_metrics.static_over_blocking_rate * 100).toFixed(1)}%</strong>
                 </span>
-                <span style={{ fontSize: '12px', color: '#cbd5e1' }}>
-                  Adaptive: <strong style={{ color: '#34d399' }}>{(evaluation.policy_comparison_metrics.adaptive_over_blocking_rate * 100).toFixed(1)}%</strong>
+                <span style={{ fontSize: '12px', color: 'var(--muted-cream)' }}>
+                  Adaptive: <strong style={{ color: 'var(--olive-green)' }}>{(evaluation.policy_comparison_metrics.adaptive_over_blocking_rate * 100).toFixed(1)}%</strong>
                 </span>
               </div>
               <em>Ground Truth Benign Contained</em>
@@ -166,11 +166,11 @@ export const EvaluationView: React.FC = () => {
             <div className="analytics-stat-card">
               <small>Under-Blocking (Missed Threats)</small>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '4px' }}>
-                <span style={{ fontSize: '12px', color: '#cbd5e1' }}>
-                  Static: <strong style={{ color: '#ff8b93' }}>{(evaluation.policy_comparison_metrics.static_under_blocking_rate * 100).toFixed(1)}%</strong>
+                <span style={{ fontSize: '12px', color: 'var(--muted-cream)' }}>
+                  Static: <strong style={{ color: 'var(--muted-red)' }}>{(evaluation.policy_comparison_metrics.static_under_blocking_rate * 100).toFixed(1)}%</strong>
                 </span>
-                <span style={{ fontSize: '12px', color: '#cbd5e1' }}>
-                  Adaptive: <strong style={{ color: '#34d399' }}>{(evaluation.policy_comparison_metrics.adaptive_under_blocking_rate * 100).toFixed(1)}%</strong>
+                <span style={{ fontSize: '12px', color: 'var(--muted-cream)' }}>
+                  Adaptive: <strong style={{ color: 'var(--olive-green)' }}>{(evaluation.policy_comparison_metrics.adaptive_under_blocking_rate * 100).toFixed(1)}%</strong>
                 </span>
               </div>
               <em>Ground Truth Malicious Allowed</em>
@@ -178,7 +178,7 @@ export const EvaluationView: React.FC = () => {
 
             <div className="analytics-stat-card">
               <small>Decision Divergence</small>
-              <b style={{ color: '#38bdf8' }}>
+              <b style={{ color: 'var(--terracotta)' }}>
                 {(evaluation.policy_comparison_metrics.divergence_rate * 100).toFixed(1)}%
               </b>
               <em>{evaluation.policy_comparison_metrics.total_divergent_decisions} of {evaluation.total_flows_evaluated} scenarios differed</em>
@@ -186,7 +186,7 @@ export const EvaluationView: React.FC = () => {
 
             <div className="analytics-stat-card">
               <small>Gateway Throughput</small>
-              <b style={{ color: '#ffd166' }}>
+              <b style={{ color: 'var(--pale-sand)' }}>
                 {evaluation.latency_metrics.throughput_flows_per_sec}
               </b>
               <em>flows/sec (Mean: {evaluation.latency_metrics.total_pipeline_latency_ms.mean.toFixed(2)} ms)</em>
@@ -220,17 +220,17 @@ export const EvaluationView: React.FC = () => {
                       const actualClass = evaluation.ml_classification_metrics.confusion_matrix.classes[rIdx]
                       return (
                         <tr key={actualClass}>
-                          <td style={{ textAlign: 'left', fontWeight: 'bold', color: '#93c5fd' }}>
+                          <td style={{ textAlign: 'left', fontWeight: 'bold', color: 'var(--terracotta)' }}>
                             {actualClass}
                           </td>
                           {row.map((cellVal, cIdx) => {
                             const isDiagonal = rIdx === cIdx
                             const bg = isDiagonal
-                              ? cellVal > 0 ? '#064e3b' : '#081726'
-                              : cellVal > 0 ? '#451a03' : 'transparent'
+                              ? cellVal > 0 ? 'var(--panel-secondary)' : 'var(--panel-secondary)'
+                              : cellVal > 0 ? 'var(--panel-secondary)' : 'transparent'
                             const fg = isDiagonal
-                              ? cellVal > 0 ? '#34d399' : '#64748b'
-                              : cellVal > 0 ? '#f87171' : '#64748b'
+                              ? cellVal > 0 ? 'var(--olive-green)' : 'var(--muted-cream)'
+                              : cellVal > 0 ? 'var(--muted-red)' : 'var(--muted-cream)'
                             return (
                               <td key={cIdx} style={{ background: bg, color: fg, fontWeight: isDiagonal ? 'bold' : 'normal' }}>
                                 {cellVal}
@@ -249,7 +249,7 @@ export const EvaluationView: React.FC = () => {
             <article className="card analytics-card">
               <div className="title-line">
                 <h2>Classification Efficacy (Per Class)</h2>
-                <small style={{ color: '#8faec9' }}>Standard Evaluation Metrics</small>
+                <small style={{ color: 'var(--muted-cream)' }}>Standard Evaluation Metrics</small>
               </div>
               <p className="analytics-sub">
                 Mathematical detection performance computed against known ground-truth holdout test vectors.
@@ -269,15 +269,15 @@ export const EvaluationView: React.FC = () => {
                   <tbody>
                     {evaluation.ml_classification_metrics.per_class_metrics.map((pcm) => (
                       <tr key={pcm.class_name}>
-                        <td style={{ fontWeight: 'bold', color: '#e2e8f0' }}>{pcm.class_name}</td>
-                        <td style={{ fontSize: '11px', color: '#94a3b8' }}>{pcm.tp} / {pcm.fp}</td>
-                        <td style={{ color: pcm.precision >= 0.9 ? '#34d399' : '#fbbf24' }}>
+                        <td style={{ fontWeight: 'bold', color: 'var(--warm-cream)' }}>{pcm.class_name}</td>
+                        <td style={{ fontSize: '11px', color: 'var(--muted-cream)' }}>{pcm.tp} / {pcm.fp}</td>
+                        <td style={{ color: pcm.precision >= 0.9 ? 'var(--olive-green)' : 'var(--pale-sand)' }}>
                           {(pcm.precision * 100).toFixed(1)}%
                         </td>
-                        <td style={{ color: pcm.recall >= 0.9 ? '#34d399' : '#fbbf24' }}>
+                        <td style={{ color: pcm.recall >= 0.9 ? 'var(--olive-green)' : 'var(--pale-sand)' }}>
                           {(pcm.recall * 100).toFixed(1)}%
                         </td>
-                        <td style={{ fontWeight: 'bold', color: pcm.f1_score >= 0.9 ? '#34d399' : '#fbbf24' }}>
+                        <td style={{ fontWeight: 'bold', color: pcm.f1_score >= 0.9 ? 'var(--olive-green)' : 'var(--pale-sand)' }}>
                           {(pcm.f1_score * 100).toFixed(1)}%
                         </td>
                       </tr>
@@ -294,15 +294,15 @@ export const EvaluationView: React.FC = () => {
             <article className="card analytics-card">
               <div className="title-line">
                 <h2>Policy Action Distributions & Gating</h2>
-                <small style={{ color: '#8faec9' }}>Static Baseline vs Adaptive AI</small>
+                <small style={{ color: 'var(--muted-cream)' }}>Static Baseline vs Adaptive AI</small>
               </div>
               <p className="analytics-sub">
                 Comparing containment decisions between rigid static heuristic rules and context-aware adaptive policies.
               </p>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '12px' }}>
-                <div style={{ background: '#091c2d', padding: '10px', borderRadius: '6px', border: '1px solid #1a3c58' }}>
-                  <small style={{ color: '#8faec9', textTransform: 'uppercase' }}>Traditional Static Policy</small>
+                <div style={{ background: 'var(--panel-secondary)', padding: '10px', borderRadius: '6px', border: '1px solid var(--line)' }}>
+                  <small style={{ color: 'var(--muted-cream)', textTransform: 'uppercase' }}>Traditional Static Policy</small>
                   <div style={{ marginTop: '6px', fontSize: '12px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                       <span>Allow:</span> <b>{evaluation.policy_comparison_metrics.static_action_distribution.Allow || 0}</b>
@@ -313,29 +313,29 @@ export const EvaluationView: React.FC = () => {
                   </div>
                 </div>
 
-                <div style={{ background: '#091c2d', padding: '10px', borderRadius: '6px', border: '1px solid #1a3c58' }}>
-                  <small style={{ color: '#8faec9', textTransform: 'uppercase' }}>Adaptive Policy Engine</small>
+                <div style={{ background: 'var(--panel-secondary)', padding: '10px', borderRadius: '6px', border: '1px solid var(--line)' }}>
+                  <small style={{ color: 'var(--muted-cream)', textTransform: 'uppercase' }}>Adaptive Policy Engine</small>
                   <div style={{ marginTop: '6px', fontSize: '12px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                       <span>Allow:</span> <b>{evaluation.policy_comparison_metrics.adaptive_action_distribution.Allow || 0}</b>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span>Monitor:</span> <b style={{ color: '#79bdf0' }}>{evaluation.policy_comparison_metrics.adaptive_action_distribution.Monitor || 0}</b>
+                      <span>Monitor:</span> <b style={{ color: 'var(--pale-sand)' }}>{evaluation.policy_comparison_metrics.adaptive_action_distribution.Monitor || 0}</b>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span>Restrict:</span> <b style={{ color: '#ffd166' }}>{evaluation.policy_comparison_metrics.adaptive_action_distribution.Restrict || 0}</b>
+                      <span>Restrict:</span> <b style={{ color: 'var(--pale-sand)' }}>{evaluation.policy_comparison_metrics.adaptive_action_distribution.Restrict || 0}</b>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span>Block:</span> <b style={{ color: '#ff7f8c' }}>{evaluation.policy_comparison_metrics.adaptive_action_distribution.Block || 0}</b>
+                      <span>Block:</span> <b style={{ color: 'var(--muted-red)' }}>{evaluation.policy_comparison_metrics.adaptive_action_distribution.Block || 0}</b>
                     </div>
                   </div>
                 </div>
               </div>
 
-              <div style={{ marginTop: '12px', background: '#081726', padding: '10px 12px', borderRadius: '6px', fontSize: '12px' }}>
-                <span style={{ color: '#93c5fd' }}>Borderline Confidence Gating Effectiveness: </span>
+              <div style={{ marginTop: '12px', background: 'var(--panel-secondary)', padding: '10px 12px', borderRadius: '6px', fontSize: '12px' }}>
+                <span style={{ color: 'var(--terracotta)' }}>Borderline Confidence Gating Effectiveness: </span>
                 <strong>{(evaluation.policy_comparison_metrics.borderline_gating_effectiveness * 100).toFixed(1)}%</strong>
-                <span style={{ display: 'block', color: '#8faec9', fontSize: '11px', marginTop: '2px' }}>
+                <span style={{ display: 'block', color: 'var(--muted-cream)', fontSize: '11px', marginTop: '2px' }}>
                   ({evaluation.policy_comparison_metrics.borderline_gated_to_monitor_count} of {evaluation.policy_comparison_metrics.borderline_scenarios_count} ambiguous flows safely placed into observation mode).
                 </span>
               </div>
@@ -354,7 +354,7 @@ export const EvaluationView: React.FC = () => {
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '12px' }}>
                 <div className="zone-stat-row">
                   <span>Total End-to-End Pipeline</span>
-                  <span style={{ color: '#38bdf8', fontWeight: 'bold' }}>
+                  <span style={{ color: 'var(--terracotta)', fontWeight: 'bold' }}>
                     Mean: {evaluation.latency_metrics.total_pipeline_latency_ms.mean.toFixed(2)} ms | p95: {evaluation.latency_metrics.total_pipeline_latency_ms.p95.toFixed(2)} ms
                   </span>
                 </div>
@@ -404,13 +404,13 @@ export const EvaluationView: React.FC = () => {
                 <tbody>
                   {evaluation.divergent_scenarios_sample.map((d) => (
                     <tr key={d.scenario_id}>
-                      <td style={{ fontFamily: 'monospace', fontSize: '11px', color: '#93c5fd' }}>{d.scenario_id}</td>
+                      <td style={{ fontFamily: 'monospace', fontSize: '11px', color: 'var(--terracotta)' }}>{d.scenario_id}</td>
                       <td>
                         <span className={`zone-tag ${d.ground_truth_class === 'BENIGN' ? 'ON_PREMISE' : 'INTERNET'}`}>
                           {d.ground_truth_class}
                         </span>
                       </td>
-                      <td style={{ fontSize: '11px', color: '#94a3b8' }}>
+                      <td style={{ fontSize: '11px', color: 'var(--muted-cream)' }}>
                         port:{d.dst_port} | pkts:{d.packet_count} | rate:{d.conn_rate.toFixed(1)}
                       </td>
                       <td>
@@ -419,7 +419,7 @@ export const EvaluationView: React.FC = () => {
                       <td>
                         <span className={`action ${d.adaptive_action.toLowerCase()}`}>{d.adaptive_action}</span>
                       </td>
-                      <td style={{ fontSize: '11px', color: '#cbd5e1', maxWidth: '320px' }}>
+                      <td style={{ fontSize: '11px', color: 'var(--muted-cream)', maxWidth: '320px' }}>
                         {d.divergence_rationale}
                       </td>
                     </tr>

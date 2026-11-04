@@ -1,52 +1,74 @@
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400..700;1,9..40,400..700&family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap');
 
 :root {
-  /* Bespoke Cybersecurity Art Direction Palette */
-  --obsidian-ink: #101713;
-  --warm-mineral-white: #F1F0E8;
-  --oxidized-copper: #B76E4B;
-  --oxidized-copper-hover: #c97e59;
-  --oxidized-copper-muted: rgba(183, 110, 75, 0.16);
-  --electric-chartreuse: #D4E66A;
-  --electric-chartreuse-glow: rgba(212, 230, 106, 0.2);
-  --desaturated-eucalyptus: #82988A;
-  --desaturated-eucalyptus-muted: rgba(130, 152, 138, 0.14);
-  --slate-graphite: #353E39;
-  --slate-graphite-light: #46524b;
-  --muted-clay: #C98578;
-  --muted-clay-hover: #d89689;
-  --muted-clay-muted: rgba(201, 133, 120, 0.16);
+  /* ==========================================================================
+     CANONICAL CYBERSECURITY ART-DIRECTED PALETTE
+     ========================================================================== */
+  --deep-navy-void: #171B20;    /* Main application background */
+  --dark-olive: #252B25;        /* Secondary background & surfaces */
+  --muted-charcoal: #30332D;    /* Primary cards, elevated panels, modal backgrounds */
+  --muted-stone: #49483D;       /* Borders, dividers, subtle outlines */
+  --warm-cream: #F2EBDD;        /* Main text, headings, prominent labels */
+  --muted-cream: #BDB8A9;       /* Secondary text, descriptions, helper text */
+  --terracotta: #C87555;        /* Primary accent, primary CTA buttons, active tabs */
+  --olive-green: #858B59;       /* Secondary accent, healthy / safe status indicator */
+  --pale-sand: #D8C9A7;         /* Secondary highlights, notice badges, warnings */
+  --muted-red: #B85C54;         /* Critical alerts, Block actions, destructive controls */
 
-  /* Semantic Theme Surfaces (Dark Obsidian First) */
-  --bg: #0c120f;
-  --side: #101713;
-  --panel: #141c18;
-  --panel-elevated: #19231e;
-  --panel-muted: #111814;
-  --panel-inset: #0c120f;
-  --line: rgba(130, 152, 138, 0.16);
-  --line-subtle: rgba(130, 152, 138, 0.10);
-  --line-strong: rgba(130, 152, 138, 0.28);
-  --line-focus: #B76E4B;
+  /* Interactive States & Tonal Translucencies */
+  --terracotta-hover: #D98263;
+  --terracotta-active: #B56547;
+  --terracotta-muted: rgba(200, 117, 85, 0.15);
+  --olive-green-hover: #979E66;
+  --olive-green-muted: rgba(133, 139, 89, 0.16);
+  --pale-sand-muted: rgba(216, 201, 167, 0.15);
+  --muted-red-hover: #C96B63;
+  --muted-red-muted: rgba(184, 92, 84, 0.16);
+  --muted-stone-subtle: rgba(73, 72, 61, 0.5);
+  --muted-stone-strong: #5C5A4C;
+
+  /* Semantic Theme Surfaces (Deep Navy Dominant + Muted Charcoal Cards) */
+  --bg: #171B20;                /* Deep Navy Void (Dominant App Canvas) */
+  --side: #13171B;              /* Deep Navy Darkened for Sidebar */
+  --panel: #30332D;             /* Primary Cards & Panels: Muted Charcoal */
+  --panel-elevated: #373A34;    /* Elevated Overlays & Hover Cards */
+  --panel-secondary: #252B25;   /* Secondary Surfaces: Dark Olive */
+  --panel-muted: #252B25;       /* Sub-containers & Secondary Surfaces: Dark Olive */
+  --panel-inset: #1B1F24;       /* Inset form fields & search bars */
+  --line: #49483D;              /* Muted Stone */
+  --line-subtle: rgba(73, 72, 61, 0.5);
+  --line-strong: #5C5A4C;
+  --line-focus: #C87555;        /* Terracotta focus ring */
 
   /* Typography Colors */
-  --text: #F1F0E8;
-  --text-secondary: #c2ccc5;
-  --muted: #82988A;
-  --text-dim: #55665b;
+  --text: #F2EBDD;              /* Warm Cream (Headings & Primary Text) */
+  --text-secondary: #BDB8A9;    /* Muted Cream (Descriptions & Secondary Info) */
+  --muted: #BDB8A9;             /* Muted Cream (Secondary Text - NOT Olive Green) */
+  --text-dim: #8E8A7D;          /* Inset / placeholder text */
 
-  /* Legacy Variable Harmonization */
-  --blue: #B76E4B; /* Mapped from generic blue to oxidized copper */
-  --mint: #D4E66A; /* Mapped from generic mint to electric chartreuse */
-  --amber: #B76E4B; /* Mapped from generic amber to oxidized copper */
-  --rose: #C98578; /* Mapped from generic rose to muted clay */
+  /* Compatibility Mapping for Design System Tokens */
+  --warm-mineral-white: #F2EBDD;
+  --oxidized-copper: #C87555;
+  --oxidized-copper-hover: #D98263;
+  --oxidized-copper-muted: rgba(200, 117, 85, 0.15);
+  --electric-chartreuse: #858B59;
+  --electric-chartreuse-glow: rgba(133, 139, 89, 0.25);
+  --desaturated-eucalyptus: #BDB8A9;  /* Muted Cream so icons & secondary text are NOT green */
+  --desaturated-eucalyptus-muted: rgba(189, 184, 169, 0.15);
+  --slate-graphite: #30332D;          /* Muted Charcoal */
+  --muted-clay: #B85C54;              /* Muted Red */
+  --muted-clay-hover: #C96B63;
+  --blue: #C87555;                    /* Primary Accent: Terracotta */
+  --mint: #858B59;                    /* Secondary Accent: Olive Green */
+  --amber: #D8C9A7;                   /* Highlights: Pale Sand */
+  --rose: #B85C54;                    /* Critical: Muted Red */
 
   /* Severity Semantic Tokens */
-  --severity-critical: #C98578;
-  --severity-high: #C98578;
-  --severity-medium: #B76E4B;
-  --severity-low: #82988A;
-  --severity-live: #D4E66A;
+  --severity-critical: #B85C54;
+  --severity-high: #B85C54;
+  --severity-medium: #C87555;
+  --severity-low: #858B59;
+  --severity-live: #858B59;
 
   /* Typography Font Stacks */
   --font-sans: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -57,7 +79,7 @@
   --shadow-subtle: 0 1px 3px rgba(0, 0, 0, 0.35);
   --shadow-panel: 0 4px 16px rgba(0, 0, 0, 0.45);
   --shadow-elevated: 0 12px 36px rgba(0, 0, 0, 0.6);
-  --shadow-modal: 0 24px 64px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(130, 152, 138, 0.2);
+  --shadow-modal: 0 24px 64px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(73, 72, 61, 0.5);
 
   /* Border Radii */
   --radius-xs: 3px;
@@ -125,17 +147,17 @@ button {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--slate-graphite);
+  background: var(--line);
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--desaturated-eucalyptus);
+  background: var(--line-strong);
 }
 
 /* Keyboard Focus Accessibility */
 *:focus-visible {
-  outline: 2px solid var(--oxidized-copper);
+  outline: 2px solid var(--terracotta);
   outline-offset: 2px;
 }
 

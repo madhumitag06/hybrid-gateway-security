@@ -217,19 +217,27 @@ class IngestionService:
                             src_port = int(tcp_layer.sport)
                             dst_port = int(tcp_layer.dport)
                             tcp_flags = int(tcp_layer.flags)
+                            raw_payload = bytes(tcp_layer.payload) if tcp_layer.payload else b""
+                            is_auth_fail = any(
+                                marker in raw_payload
+                                for marker in (b"AUTH_FAIL", b"401 Unauthorized", b"Permission denied")
+                            )
                         elif raw_pkt.haslayer(UDP):
                             udp_layer = raw_pkt[UDP]
                             protocol = "UDP"
                             src_port = int(udp_layer.sport)
                             dst_port = int(udp_layer.dport)
+                            is_auth_fail = False
                         elif raw_pkt.haslayer(ICMP):
                             protocol = "ICMP"
                             src_port = 0
                             dst_port = 0
+                            is_auth_fail = False
                         else:
                             protocol = "OTHER"
                             src_port = 0
                             dst_port = 0
+                            is_auth_fail = False
 
                         pkt_time = float(getattr(raw_pkt, "time", time.time()))
                         pkt_len = int(len(raw_pkt))
@@ -243,6 +251,7 @@ class IngestionService:
                             protocol=protocol,
                             length_bytes=pkt_len,
                             tcp_flags=tcp_flags,
+                            is_auth_failure=is_auth_fail,
                         )
 
                         aggregator.add_packet(record)

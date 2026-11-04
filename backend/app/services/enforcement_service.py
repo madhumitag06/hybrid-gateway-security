@@ -55,8 +55,11 @@ class EnforcementService:
         if db is not None:
             repo = EnforcementRepository(db)
             expired_ids = repo.prune_expired_rules()
-        cls.get_adapter().prune_expired()
-        return expired_ids
+        sandbox_expired = cls._sandbox_adapter.prune_expired()
+        active_adapter = cls.get_adapter()
+        if active_adapter is not cls._sandbox_adapter:
+            active_adapter.prune_expired()
+        return list(dict.fromkeys(expired_ids + sandbox_expired))
 
     @classmethod
     def execute_decision(
@@ -76,26 +79,33 @@ class EnforcementService:
         # 1. Prune any expired rules before evaluating new actions (can be run once for batch operations)
         if prune_expired:
             repo.prune_expired_rules()
-            cls.get_adapter().prune_expired()
+            cls._sandbox_adapter.prune_expired()
+            if cls.get_adapter() is not cls._sandbox_adapter:
+                cls.get_adapter().prune_expired()
 
-        if not decision.enforcement_required or decision.policy_action == "Allow":
-            # No containment rule creation required for Allow
+        if not decision.enforcement_required or decision.policy_action in ("Allow", "Monitor"):
+            # No containment rule creation required for Allow / Monitor
             now = datetime.now(timezone.utc)
             result = EnforcementResult(
                 success=True,
                 rule_id="no-rule",
                 target_ip=decision.target_ip,
                 target_port=decision.target_port,
-                action="Allow",
+                action=decision.policy_action,
                 status="ACTIVE" if cls._active_mode == "SANDBOX" else "SIMULATED",
                 mode=cls._active_mode,
-                message="Traffic allowed; no containment rule created.",
+                message=f"Traffic {decision.policy_action.lower()}ed; no containment rule created.",
                 ttl_seconds=0,
                 expires_at=now,
             )
             return result, None
 
-        # 2. Check Rule Deduplication for Target IP (with optional batch cache)
+        # Normalize effective enforcement scope: Block is always host-wide (target_port=None)
+        if decision.policy_action == "Block":
+            decision.target_port = None
+            decision.protocol = "ANY"
+
+        # 2. Check Rule Deduplication for Target IP + Effective Port (with optional batch cache)
         cache_key = (decision.target_ip, decision.target_port)
         existing_rule: Optional[ActiveEnforcementModel] = None
 
@@ -111,15 +121,32 @@ class EnforcementService:
         adapter = cls.get_adapter()
 
         if existing_rule:
+            previous_action = existing_rule.action
             # Rule already exists: extend TTL rather than creating duplicate
             extra_seconds = decision.suggested_ttl_seconds
             updated_rule = repo.extend_ttl(existing_rule.id, extra_seconds)
 
-            # If action escalated (e.g. Restrict -> Block), update action
-            if decision.policy_action == "Block" and existing_rule.action != "Block":
+            # If action escalated (e.g. Restrict -> Block) or existing rule is Block, normalize scope
+            if decision.policy_action == "Block" or existing_rule.action == "Block":
                 existing_rule.action = "Block"
-                existing_rule.reason = decision.reason
+                existing_rule.target_port = None
+                existing_rule.protocol = "ANY"
+                if decision.policy_action == "Block":
+                    existing_rule.reason = decision.reason
+                decision.policy_action = "Block"
+                decision.target_port = None
+                decision.protocol = "ANY"
                 db.flush()
+
+            now_utc = datetime.now(timezone.utc)
+            exp_dt = existing_rule.expires_at
+            if exp_dt.tzinfo is None:
+                exp_dt = exp_dt.replace(tzinfo=timezone.utc)
+            rem_ttl = max(
+                int((exp_dt - now_utc).total_seconds()),
+                decision.suggested_ttl_seconds,
+            )
+            decision.suggested_ttl_seconds = rem_ttl
 
             # Update in adapter
             enforce_res = adapter.enforce(decision, existing_rule.id)
@@ -129,7 +156,7 @@ class EnforcementService:
                 audit_repo.log_action(
                     event_id=decision.event_id,
                     requested_action=decision.policy_action,
-                    previous_action=existing_rule.action,
+                    previous_action=previous_action,
                     resulting_status="Applied" if cls._active_mode == "SANDBOX" else "Monitoring",
                     actor=actor,
                 )
@@ -160,6 +187,8 @@ class EnforcementService:
         repo.create(rule_model)
         if rule_cache is not None:
             rule_cache[cache_key] = rule_model
+            if decision.policy_action == "Block":
+                rule_cache[(decision.target_ip, None)] = rule_model
 
         # 4. Log to immutable policy audit trail
         if decision.event_id:
@@ -187,8 +216,17 @@ class EnforcementService:
         if not rule_model:
             return False, f"Rule '{rule_id}' not found in database."
 
-        # Revoke in adapter
-        cls.get_adapter().revoke(rule_id, actor=actor)
+        # Revoke in sandbox and active adapter
+        cls._sandbox_adapter.revoke(
+            rule_id,
+            actor=actor,
+            target_ip=rule_model.target_ip,
+            action=rule_model.action,
+            target_port=rule_model.target_port,
+            protocol=rule_model.protocol,
+        )
+        if cls.get_adapter() is not cls._sandbox_adapter:
+            cls.get_adapter().revoke(rule_id, actor=actor)
 
         if rule_model.event_id:
             audit_repo.log_action(
@@ -211,15 +249,32 @@ class EnforcementService:
         active_db_rules = repo.list_active_rules()
 
         sandbox = cls._sandbox_adapter
+        sandbox.clear_in_memory()
         reconciled = 0
+        now = datetime.now(timezone.utc)
 
         for r in active_db_rules:
+            exp_dt = r.expires_at
+            if exp_dt.tzinfo is None:
+                exp_dt = exp_dt.replace(tzinfo=timezone.utc)
+            rem_ttl = int((exp_dt - now).total_seconds())
+            if rem_ttl <= 0:
+                r.status = "EXPIRED"
+                r.updated_at = now
+                continue
+
+            effective_port = None if r.action == "Block" else r.target_port
+            effective_proto = "ANY" if r.action == "Block" else (r.protocol or "TCP")
+            if r.action == "Block" and r.target_port is not None:
+                r.target_port = None
+                r.protocol = "ANY"
+
             decision = PolicyDecision(
                 decision_id=f"reconciled-{r.id}",
                 event_id=r.event_id,
                 target_ip=r.target_ip,
-                target_port=r.target_port,
-                protocol=r.protocol,
+                target_port=effective_port,
+                protocol=effective_proto,
                 policy_action=r.action,  # type: ignore
                 enforcement_required=True,
                 confidence=1.0,
@@ -228,10 +283,11 @@ class EnforcementService:
                 risk_score=80 if r.action == "Block" else 50,
                 rule_name="RECONCILED_STARTUP_RULE",
                 reason=r.reason,
-                suggested_ttl_seconds=max(int((r.expires_at - datetime.now(timezone.utc)).total_seconds()), 10),
+                suggested_ttl_seconds=rem_ttl,
             )
             sandbox.enforce(decision, r.id)
             reconciled += 1
 
+        db.flush()
         print(f"[+] Reconciled {reconciled} active containment rules from PostgreSQL into Sandbox adapter.")
         return reconciled

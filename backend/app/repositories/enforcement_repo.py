@@ -41,7 +41,12 @@ class EnforcementRepository:
             stmt = stmt.where(
                 (ActiveEnforcementModel.target_port == target_port)
                 | (ActiveEnforcementModel.target_port.is_(None))
+                | (ActiveEnforcementModel.action == "Block")
             )
+        stmt = stmt.order_by(
+            (ActiveEnforcementModel.action == "Block").desc(),
+            ActiveEnforcementModel.expires_at.desc(),
+        )
 
         return self.db.scalars(stmt).first()
 

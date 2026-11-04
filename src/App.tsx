@@ -34,6 +34,11 @@ import { EvaluationView } from './components/EvaluationView'
 import { TrafficView } from './components/TrafficView'
 import { EventsView } from './components/EventsView'
 import { PoliciesView } from './components/PoliciesView'
+import { SimulationView } from './components/SimulationView'
+import { SystemHealthView } from './components/SystemHealthView'
+import { AwsVpcView } from './components/AwsVpcView'
+import { PcapIngestView } from './components/PcapIngestView'
+import { SettingsView } from './components/SettingsView'
 import { AuthView } from './components/AuthView'
 import { authService } from './services/auth'
 import type {
@@ -61,11 +66,16 @@ import type {
 
 const nav = [
   ['⌂', 'Dashboard'],
-  ['▥', 'Traffic'],
-  ['▣', 'Events'],
-  ['◇', 'Policies'],
-  ['▤', 'Reports'],
-  ['⚖', 'Evaluation'],
+  ['▥', 'Live Network'],
+  ['⚔', 'Attack Simulation'],
+  ['⚖', 'ML Detection'],
+  ['✦', 'Explainability (XAI)'],
+  ['🛡️', 'Policies & Firewall'],
+  ['📦', 'PCAP Ingestion'],
+  ['☁', 'AWS VPC Logs'],
+  ['▣', 'Security Events'],
+  ['🖥', 'System Health'],
+  ['⚙', 'Settings'],
 ]
 
 const DEFAULT_FLOW_INPUT: FlowPredictionRequest = {
@@ -190,16 +200,16 @@ function Traffic({
         <svg viewBox="0 0 780 205" preserveAspectRatio="none" aria-label="Dynamic telemetry traffic chart">
           <defs>
             <linearGradient id="fade" x1="0" x2="0" y1="0" y2="1">
-              <stop stopColor="#2c9bff" stopOpacity=".32" />
-              <stop offset="1" stopColor="#2c9bff" stopOpacity="0" />
+              <stop stopColor="var(--terracotta)" stopOpacity=".32" />
+              <stop offset="1" stopColor="var(--terracotta)" stopOpacity="0" />
             </linearGradient>
           </defs>
           <path
             className="grid"
             d="M0 5H780M0 45H780M0 85H780M0 125H780M0 165H780M0 204H780M130 0V205M260 0V205M390 0V205M520 0V205M650 0V205"
           />
-          <path className="line-in" d={inAreaPath} fill="url(#fade)" stroke="#2c9bff" strokeWidth="2" />
-          <path className="line-out" d={outPath} fill="none" stroke="#ff7f8c" strokeWidth="2" strokeDasharray="4 2" />
+          <path className="line-in" d={inAreaPath} fill="url(#fade)" stroke="var(--terracotta)" strokeWidth="2" />
+          <path className="line-out" d={outPath} fill="none" stroke="var(--pale-sand)" strokeWidth="2" strokeDasharray="4 2" />
 
           <g className="dots">
             {dataPoints.map((pt, idx) => {
@@ -212,8 +222,8 @@ function Traffic({
                   cx={cx}
                   cy={cy}
                   r={hasAnomaly ? 8 : 4}
-                  fill={hasAnomaly ? '#ff4d6d' : '#2c9bff'}
-                  stroke="#ffffff"
+                  fill={hasAnomaly ? 'var(--muted-red)' : 'var(--terracotta)'}
+                  stroke="var(--warm-cream)"
                   strokeWidth={hasAnomaly ? 2 : 1}
                   style={{ cursor: 'pointer', transition: 'r 0.2s' }}
                   onMouseEnter={() =>
@@ -260,53 +270,153 @@ function Traffic({
   )
 }
 
-function Connectivity({ flows, topology }: { flows: number; topology: HybridTopologySummary | null }) {
+function Connectivity({
+  flows,
+  topology,
+  riskScore,
+  riskState,
+  enforcementMode,
+  activeRulesCount,
+  lastPcapIngest,
+  lastVpcIngest,
+  events,
+}: {
+  flows: number
+  topology: HybridTopologySummary | null
+  riskScore?: number
+  riskState?: PolicyAction
+  enforcementMode?: string
+  activeRulesCount?: number
+  lastPcapIngest?: PcapIngestionResponse | null
+  lastVpcIngest?: AwsVpcIngestionResponse | null
+  events?: SecurityEvent[]
+}) {
+  const highRiskCount =
+    lastPcapIngest?.high_risk_flows_count ??
+    lastVpcIngest?.high_risk_flows_count ??
+    (events ? events.filter((e) => e.risk >= 70).length : 0)
+
+  const packetsCaptured =
+    lastPcapIngest?.metrics.packets_processed ??
+    (events ? events.length * 25 : 0)
+
+  const flowsGenerated =
+    lastPcapIngest?.metrics.flows_generated ??
+    lastVpcIngest?.total_flows_aggregated ??
+    flows
+
+  const flowsEvaluated =
+    lastPcapIngest?.flows_evaluated ??
+    lastVpcIngest?.total_flows_aggregated ??
+    flows
+
+  const isSampled = Boolean(lastPcapIngest?.is_sampled)
+
   return (
     <div className="connect">
       <div className="title-line">
         <div>
-          <h2>Hybrid Cloud Connectivity</h2>
+          <h2>Hybrid Cloud Connectivity &amp; Virtual Lab Topology</h2>
           <p>
-            <i /> All links operational • <strong>Read-Only Telemetry Active</strong>
+            <i /> Configured Virtual Hybrid Lab •{' '}
+            <strong>On-Prem (10.10.10.0/24) ↔ Lab Router ↔ Simulated Cloud VPC (10.20.10.0/24)</strong>
           </p>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span className="topology-badge" title="AWS Integration Mode">
-            ☁ {topology?.telemetry_mode || 'AWS_FIXTURE'}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+          <span className="topology-badge" title="Simulated Cloud VPC Telemetry Mode">
+            ☁ {topology?.telemetry_mode || 'AWS_FIXTURE'} (Simulated VPC)
           </span>
-          <span>↔ &nbsp;{flows} recorded events</span>
+          <span className="topology-badge" title="Enforcement Isolation State">
+            🛡️ {enforcementMode || 'DRY_RUN'} ({activeRulesCount ?? 0} rules)
+          </span>
+          <span>↔ &nbsp;{flows} persisted events</span>
         </div>
       </div>
       <div className="network">
         <div className="node">
-          <b>☁</b>
-          <strong>AWS Cloud (VPC)</strong>
+          <b>▤</b>
+          <strong>On-Premises Zone</strong>
           <small>
-            {topology?.aws_region || 'us-east-1'}
+            Subnet: <code>10.10.10.0/24</code>
             <br />
-            {topology?.aws_vpc_cidrs.join(', ') || '10.100.0.0/16'}
+            onprem-client (<code>.10</code>) • onprem-web (<code>.20</code>)
+            <br />
+            onprem-workload (<code>.30</code>) • traffic-gen (<code>.50</code>)
           </small>
-          <em>Read-Only</em>
+          <em>Private Lab Net</em>
         </div>
         <div className="wire">
-          <label>VPC Flow Logs</label>
-          <small>● &nbsp;12 ms</small>
+          <label>ON_PREM_TO_CLOUD →</label>
+          <small>● &nbsp;10.10.10.2 (eth0)</small>
         </div>
         <div className="node central">
           <b>⬡</b>
-          <strong>AI Security Gateway</strong>
-          <small>Inspect • Classify • Sandbox</small>
-          <em>Active</em>
+          <strong>lab-router + AI Gateway</strong>
+          <small>
+            Router: <code>10.10.10.2 ↔ 10.20.10.2</code>
+            <br />
+            ML: RandomForest + Conditional SHAP
+            <br />
+            Risk: <b>{riskScore ?? 0}/100</b> • Policy: <b>{riskState || 'Allow'}</b>
+          </small>
+          <em>{enforcementMode === 'SANDBOX' ? 'Sandbox Active' : 'Dry-Run Mode'}</em>
         </div>
         <div className="wire">
-          <label>On-Prem PCAP</label>
-          <small>● &nbsp;18 ms</small>
+          <label>← CLOUD_TO_ON_PREM</label>
+          <small>● &nbsp;10.20.10.2 (eth1)</small>
         </div>
         <div className="node">
-          <b>▤</b>
-          <strong>On-Premise Network</strong>
-          <small>{topology?.on_prem_cidrs.join(', ') || '192.168.0.0/16'}</small>
-          <em>Monitored</em>
+          <b>☁</b>
+          <strong>Simulated Cloud VPC</strong>
+          <small>
+            Subnet: <code>10.20.10.0/24</code> ({topology?.aws_region || 'us-east-1'})
+            <br />
+            cloud-client (<code>.10</code>) • cloud-web (<code>.20</code>)
+            <br />
+            cloud-db (<code>.30</code>) • cloud-workload (<code>.40</code>)
+          </small>
+          <em>Simulated AWS VPC</em>
+        </div>
+      </div>
+
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(115px, 1fr))',
+          gap: '8px',
+          marginTop: '12px',
+          paddingTop: '10px',
+          borderTop: '1px solid var(--line)',
+          fontSize: '11px',
+        }}
+      >
+        <div>
+          <small style={{ color: 'var(--muted-cream)', display: 'block' }}>Packets Processed</small>
+          <b style={{ color: 'var(--warm-cream)' }}>{packetsCaptured}</b>
+        </div>
+        <div>
+          <small style={{ color: 'var(--muted-cream)', display: 'block' }}>Flows Generated / Eval</small>
+          <b style={{ color: 'var(--warm-cream)' }}>
+            {flowsGenerated} / {flowsEvaluated} {isSampled ? '(Sampled)' : ''}
+          </b>
+        </div>
+        <div>
+          <small style={{ color: 'var(--muted-cream)', display: 'block' }}>High-Risk Flows</small>
+          <b style={{ color: highRiskCount > 0 ? 'var(--muted-red)' : 'var(--olive-green)' }}>{highRiskCount}</b>
+        </div>
+        <div>
+          <small style={{ color: 'var(--muted-cream)', display: 'block' }}>Persisted DB Events</small>
+          <b style={{ color: 'var(--terracotta)' }}>{flows}</b>
+        </div>
+        <div>
+          <small style={{ color: 'var(--muted-cream)', display: 'block' }}>State Provenance</small>
+          <b style={{ color: 'var(--pale-sand)' }}>
+            {lastPcapIngest
+              ? 'Observed PCAP'
+              : lastVpcIngest
+              ? 'Simulated VPC Log'
+              : 'Configured + DB'}
+          </b>
         </div>
       </div>
     </div>
@@ -1064,16 +1174,33 @@ export default function App() {
         </header>
 
         <div className="content">
-          {activeNav === 'Traffic' ? (
+          {activeNav === 'Live Network' || activeNav === 'Traffic' ? (
             <TrafficView />
-          ) : activeNav === 'Events' ? (
-            <EventsView />
-          ) : activeNav === 'Policies' ? (
-            <PoliciesView />
-          ) : activeNav === 'Reports' ? (
-            <AnalyticsView />
-          ) : activeNav === 'Evaluation' ? (
+          ) : activeNav === 'Attack Simulation' ? (
+            <SimulationView />
+          ) : activeNav === 'ML Detection' || activeNav === 'Evaluation' ? (
             <EvaluationView />
+          ) : activeNav === 'Explainability (XAI)' || activeNav === 'Reports' ? (
+            <AnalyticsView />
+          ) : activeNav === 'Policies & Firewall' || activeNav === 'Policies' ? (
+            <PoliciesView />
+          ) : activeNav === 'PCAP Ingestion' ? (
+            <PcapIngestView />
+          ) : activeNav === 'AWS VPC Logs' ? (
+            <AwsVpcView />
+          ) : activeNav === 'Security Events' || activeNav === 'Events' ? (
+            <EventsView />
+          ) : activeNav === 'System Health' ? (
+            <SystemHealthView />
+          ) : activeNav === 'Settings' ? (
+            <SettingsView
+              user={authUser}
+              onLogout={async () => {
+                await authService.logout()
+                setAuthUser(null)
+                setToast('Session logged out.')
+              }}
+            />
           ) : (
             <>
               <section className="intro">
@@ -1153,7 +1280,17 @@ export default function App() {
 
               <section className="middle">
                 <article className="card">
-                  <Connectivity flows={data.evaluatedEventsCount || data.activeFlows} topology={topology} />
+                  <Connectivity
+                    flows={data.evaluatedEventsCount || data.activeFlows}
+                    topology={topology}
+                    riskScore={data.riskScore}
+                    riskState={data.riskState}
+                    enforcementMode={enforcementConfig?.active_mode || currentEnv}
+                    activeRulesCount={activeRules.length}
+                    lastPcapIngest={ingestResponse}
+                    lastVpcIngest={awsVpcResponse}
+                    events={data.events}
+                  />
                 </article>
                 <article className="card">
                   <h2>
@@ -1298,7 +1435,7 @@ export default function App() {
             <div className="shap-modal-section">
               <h4>✦ Transparent XAI Feature Attributions (SHAP)</h4>
               {loadingExplanation ? (
-                <div style={{ fontSize: '11px', color: '#8faec9', padding: '8px 0' }}>
+                <div style={{ fontSize: '11px', color: 'var(--muted-cream)', padding: '8px 0' }}>
                   Calculating Shapley feature attributions via TreeExplainer…
                 </div>
               ) : selectedExplanation ? (
@@ -1328,7 +1465,7 @@ export default function App() {
                       ))}
                     </div>
                   ) : (
-                    <div style={{ fontSize: '11px', color: '#8faec9', padding: '4px 0' }}>
+                    <div style={{ fontSize: '11px', color: 'var(--muted-cream)', padding: '4px 0' }}>
                       Standard baseline z-score attribution active.
                     </div>
                   )}
@@ -1336,31 +1473,31 @@ export default function App() {
                   {selectedExplanation.policy_reasoning && (
                     <div className="policy-trace-box">
                       <small>Policy Engine Reason: <strong>{selectedExplanation.policy_reasoning.policy_rule_name || 'Adaptive Risk Threshold'}</strong></small>
-                      <small style={{ display: 'block', marginTop: '2px', color: '#89b1d6' }}>
+                      <small style={{ display: 'block', marginTop: '2px', color: 'var(--pale-sand)' }}>
                         Enforcement: {selectedExplanation.policy_reasoning.enforcement_status || 'Simulated'} (Sandbox Isolated)
                       </small>
                     </div>
                   )}
                   {selectedExplanation.disclaimer && (
-                    <div style={{ fontSize: '10px', color: '#8faec9', marginTop: '6px', lineHeight: '1.3' }}>
+                    <div style={{ fontSize: '10px', color: 'var(--muted-cream)', marginTop: '6px', lineHeight: '1.3' }}>
                       {selectedExplanation.disclaimer}
                     </div>
                   )}
                 </div>
               ) : (
-                <div style={{ fontSize: '11px', color: '#8faec9', padding: '6px 0' }}>
+                <div style={{ fontSize: '11px', color: 'var(--muted-cream)', padding: '6px 0' }}>
                   Standard baseline z-score attribution active.
                 </div>
               )}
             </div>
 
             {/* AI Security Copilot Executive Briefing Section */}
-            <div className="ai-briefing-section" style={{ marginTop: '14px', background: '#061320', padding: '12px 16px', borderRadius: '8px', border: '1px solid #1c3e5d' }}>
+            <div className="ai-briefing-section" style={{ marginTop: '14px', background: 'var(--panel-secondary)', padding: '12px 16px', borderRadius: '8px', border: '1px solid var(--line)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                 <div>
-                  <h4 style={{ margin: 0, color: '#38bdf8', fontSize: '12px' }}>✦ Advisory — Security Analyst AI</h4>
-                  <small style={{ color: '#8faec9', fontSize: '10px' }}>
-                    Authoritative Policy Engine Decision: <b style={{ color: selected.action === 'Block' ? '#ff5e6f' : selected.action === 'Restrict' ? '#ffbd42' : '#42dfa0' }}>{selected.action.toUpperCase()}</b>
+                  <h4 style={{ margin: 0, color: 'var(--terracotta)', fontSize: '12px' }}>✦ Advisory — Security Analyst AI</h4>
+                  <small style={{ color: 'var(--muted-cream)', fontSize: '10px' }}>
+                    Authoritative Policy Engine Decision: <b style={{ color: selected.action === 'Block' ? 'var(--muted-red)' : selected.action === 'Restrict' ? 'var(--pale-sand)' : 'var(--olive-green)' }}>{selected.action.toUpperCase()}</b>
                   </small>
                 </div>
                 <button
@@ -1386,26 +1523,26 @@ export default function App() {
                       {aiBriefing.is_llm_generated ? 'LLM Synthesized' : 'Deterministic XAI Synthesis'}
                     </span>
                   </div>
-                  <div style={{ color: '#d8e8f8', marginBottom: '8px', lineHeight: '1.4', wordBreak: 'break-word' }}>
+                  <div style={{ color: 'var(--warm-cream)', marginBottom: '8px', lineHeight: '1.4', wordBreak: 'break-word' }}>
                     <strong>Executive Summary: </strong>{aiBriefing.executive_summary}
                   </div>
-                  <div style={{ color: '#9bbcd8', marginBottom: '8px', lineHeight: '1.4', wordBreak: 'break-word' }}>
+                  <div style={{ color: 'var(--muted-cream)', marginBottom: '8px', lineHeight: '1.4', wordBreak: 'break-word' }}>
                     <strong>Threat Context: </strong>{aiBriefing.threat_narrative}
                   </div>
                   <div>
-                    <strong style={{ color: '#c0d6ee', display: 'block', marginBottom: '4px' }}>Recommended Remediation (Advisory):</strong>
-                    <ul style={{ margin: 0, paddingLeft: '18px', color: '#8faec9', lineHeight: '1.45' }}>
+                    <strong style={{ color: 'var(--warm-cream)', display: 'block', marginBottom: '4px' }}>Recommended Remediation (Advisory):</strong>
+                    <ul style={{ margin: 0, paddingLeft: '18px', color: 'var(--muted-cream)', lineHeight: '1.45' }}>
                       {aiBriefing.remediation_steps.map((st, i) => (
                         <li key={i}>{st}</li>
                       ))}
                     </ul>
                   </div>
-                  <small style={{ display: 'block', marginTop: '10px', fontSize: '10px', color: '#8faec9', borderTop: '1px solid #142e48', paddingTop: '6px' }}>
+                  <small style={{ display: 'block', marginTop: '10px', fontSize: '10px', color: 'var(--muted-cream)', borderTop: '1px solid var(--line)', paddingTop: '6px' }}>
                     {aiBriefing.disclaimer}
                   </small>
                 </div>
               ) : (
-                <small style={{ display: 'block', marginTop: '6px', color: '#7fa4c4' }}>
+                <small style={{ display: 'block', marginTop: '6px', color: 'var(--muted-cream)' }}>
                   Click "Generate Briefing" for advisory SecOps executive summary and remediation steps.
                 </small>
               )}
@@ -1418,7 +1555,7 @@ export default function App() {
                   setSelected(null)
                   setActiveNav('Events')
                 }}
-                style={{ marginRight: 'auto', background: 'transparent', borderColor: '#24486b', color: '#8ec5fc' }}
+                style={{ marginRight: 'auto', background: 'transparent', borderColor: 'var(--line)', color: 'var(--terracotta)' }}
               >
                 View in Events Ledger →
               </button>
@@ -1451,16 +1588,16 @@ export default function App() {
                   {authUser?.role === 'ADMIN' ? '👑' : '🛡️'}
                 </div>
                 <div>
-                  <h3 style={{ margin: 0, color: '#f0f6fc' }}>
+                  <h3 style={{ margin: 0, color: 'var(--warm-cream)' }}>
                     {authUser?.full_name || profile?.full_name || 'SecOps Operator'}
                   </h3>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
                     <span className={`auth-user-role-badge ${authUser?.role?.toLowerCase() || 'analyst'}`}>
                       {authUser?.role || 'ANALYST'}
                     </span>
-                    <span style={{ color: '#38bdf8', fontSize: '13px' }}>{authUser?.email}</span>
+                    <span style={{ color: 'var(--terracotta)', fontSize: '13px' }}>{authUser?.email}</span>
                   </div>
-                  <small style={{ display: 'block', color: '#8faec9', marginTop: '4px' }}>
+                  <small style={{ display: 'block', color: 'var(--muted-cream)', marginTop: '4px' }}>
                     Provider: {authUser?.auth_provider || 'LOCAL'} • Verified Database Identity
                   </small>
                 </div>
@@ -1469,7 +1606,7 @@ export default function App() {
               <div className="profile-meta-grid">
                 <div>
                   <small>Operating Mode</small>
-                  <b style={{ color: '#42dfa0' }}>{profile?.active_mode || enforcementConfig?.active_mode || 'DRY_RUN'}</b>
+                  <b style={{ color: 'var(--olive-green)' }}>{profile?.active_mode || enforcementConfig?.active_mode || 'DRY_RUN'}</b>
                 </div>
                 <div>
                   <small>Process Uptime</small>
@@ -1485,13 +1622,13 @@ export default function App() {
                 </div>
               </div>
 
-              <h4 style={{ margin: '18px 0 8px', color: '#c0d6ee', fontSize: '12px' }}>Active Safety Guardrails & Status</h4>
+              <h4 style={{ margin: '18px 0 8px', color: 'var(--warm-cream)', fontSize: '12px' }}>Active Safety Guardrails & Status</h4>
               <div className="profile-perms-list">
                 <div>✓ ML Anomaly & Continuous Risk Scoring: <b>Active</b></div>
                 <div>✓ In-Memory Sandbox Quarantine Isolation: <b>Enabled</b></div>
                 <div>✓ AWS VPC Telemetry Integration: <b>Read-Only (Safety Gated)</b></div>
                 <div>✓ Host OS Firewall Modification: <b>Restricted (Zero Host Changes)</b></div>
-                <div>✓ Multi-User Authentication: <b style={{ color: '#42dfa0' }}>Active (JWT + PostgreSQL)</b></div>
+                <div>✓ Multi-User Authentication: <b style={{ color: 'var(--olive-green)' }}>Active (JWT + PostgreSQL)</b></div>
               </div>
 
               <div style={{ display: 'flex', gap: '8px', marginTop: '18px', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -1570,58 +1707,71 @@ export default function App() {
                 <label>Packet Count</label>
                 <input
                   type="number"
+                  min={1}
+                  step="1"
                   value={flowInput.packet_count}
-                  onChange={(e) => setFlowInput({ ...flowInput, packet_count: Number(e.target.value) })}
+                  onChange={(e) => setFlowInput({ ...flowInput, packet_count: Math.max(1, parseInt(e.target.value, 10) || 1) })}
                 />
               </div>
               <div className="flow-field">
                 <label>Byte Count</label>
                 <input
                   type="number"
+                  min={0}
+                  step="1"
                   value={flowInput.byte_count}
-                  onChange={(e) => setFlowInput({ ...flowInput, byte_count: Number(e.target.value) })}
+                  onChange={(e) => setFlowInput({ ...flowInput, byte_count: Math.max(0, parseInt(e.target.value, 10) || 0) })}
                 />
               </div>
               <div className="flow-field">
                 <label>Duration (s)</label>
                 <input
                   type="number"
-                  step="0.01"
+                  min={0}
+                  step="any"
                   value={flowInput.duration}
-                  onChange={(e) => setFlowInput({ ...flowInput, duration: Number(e.target.value) })}
+                  onChange={(e) => setFlowInput({ ...flowInput, duration: Math.max(0, parseFloat(e.target.value) || 0) })}
                 />
               </div>
               <div className="flow-field">
                 <label>Conn Rate (conn/s)</label>
                 <input
                   type="number"
-                  step="0.1"
+                  min={0}
+                  step="any"
                   value={flowInput.conn_rate}
-                  onChange={(e) => setFlowInput({ ...flowInput, conn_rate: Number(e.target.value) })}
+                  onChange={(e) => setFlowInput({ ...flowInput, conn_rate: Math.max(0, parseFloat(e.target.value) || 0) })}
                 />
               </div>
               <div className="flow-field">
                 <label>Dest Port</label>
                 <input
                   type="number"
+                  min={1}
+                  max={65535}
+                  step="1"
                   value={flowInput.dst_port}
-                  onChange={(e) => setFlowInput({ ...flowInput, dst_port: Number(e.target.value) })}
+                  onChange={(e) => setFlowInput({ ...flowInput, dst_port: Math.min(65535, Math.max(1, parseInt(e.target.value, 10) || 1)) })}
                 />
               </div>
               <div className="flow-field">
                 <label>Unique Dest Ports</label>
                 <input
                   type="number"
+                  min={1}
+                  step="1"
                   value={flowInput.unique_dst_ports ?? 1}
-                  onChange={(e) => setFlowInput({ ...flowInput, unique_dst_ports: Number(e.target.value) })}
+                  onChange={(e) => setFlowInput({ ...flowInput, unique_dst_ports: Math.max(1, parseInt(e.target.value, 10) || 1) })}
                 />
               </div>
               <div className="flow-field">
                 <label>Failed Auth Count</label>
                 <input
                   type="number"
+                  min={0}
+                  step="1"
                   value={flowInput.failed_auth_count ?? 0}
-                  onChange={(e) => setFlowInput({ ...flowInput, failed_auth_count: Number(e.target.value) })}
+                  onChange={(e) => setFlowInput({ ...flowInput, failed_auth_count: Math.max(0, parseInt(e.target.value, 10) || 0) })}
                 />
               </div>
             </div>
@@ -1684,7 +1834,7 @@ export default function App() {
                   ))}
                 </div>
 
-                {predictResult.top_contributing_features.length > 0 && (
+                {predictResult.top_contributing_features && predictResult.top_contributing_features.length > 0 ? (
                   <div className="deviations-list">
                     <h4>Top Anomalous Feature Indicators (z-score vs Benign Baseline)</h4>
                     {predictResult.top_contributing_features.map((cf) => (
@@ -1693,6 +1843,18 @@ export default function App() {
                       </div>
                     ))}
                   </div>
+                ) : (
+                  <div className="shap-skipped-box" style={{ marginTop: '12px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ fontSize: '13px' }}>🛡️</span>
+                      <strong style={{ color: 'var(--desaturated-eucalyptus)', fontSize: '12px' }}>
+                        SHAP explanation skipped: flow risk below configured threshold.
+                      </strong>
+                    </div>
+                    <p style={{ margin: '4px 0 0', fontSize: '11px', color: 'var(--muted-cream)' }}>
+                      TreeExplainer feature attribution is conditionally triggered only for flows classified as anomalies or exceeding risk threshold (≥ 50/100).
+                    </p>
+                  </div>
                 )}
 
                 <div style={{ marginTop: '16px' }}>
@@ -1700,7 +1862,7 @@ export default function App() {
                     className="chip"
                     onClick={handleComparePolicies}
                     disabled={comparing}
-                    style={{ width: '100%', padding: '8px', background: '#1c3e5d', borderColor: '#3b8cd9', fontWeight: 600 }}
+                    style={{ width: '100%', padding: '8px', background: 'var(--line)', borderColor: 'var(--line)', fontWeight: 600 }}
                   >
                     {comparing ? 'Evaluating Baseline Comparison...' : '⚖️ Compare with Static Rule-Based Baseline'}
                   </button>
@@ -1713,14 +1875,14 @@ export default function App() {
                       <div className="comp-box">
                         <small>Static Baseline Rule</small>
                         <b className={comparisonResult.static_decision}>{comparisonResult.static_decision}</b>
-                        <span style={{ fontSize: '10px', color: '#7fa4c4' }}>
+                        <span style={{ fontSize: '10px', color: 'var(--muted-cream)' }}>
                           {comparisonResult.static_rule_matched || 'Default Permit Policy'}
                         </span>
                       </div>
                       <div className="comp-box">
                         <small>Adaptive AI Decision</small>
                         <b className={comparisonResult.adaptive_decision}>{comparisonResult.adaptive_decision}</b>
-                        <span style={{ fontSize: '10px', color: '#7fa4c4' }}>
+                        <span style={{ fontSize: '10px', color: 'var(--muted-cream)' }}>
                           Risk: {comparisonResult.adaptive_risk_score} (Conf: {(comparisonResult.adaptive_confidence * 100).toFixed(0)}%)
                         </span>
                       </div>
@@ -1757,8 +1919,8 @@ export default function App() {
 
             <div className="mode-toggle-bar" style={{ marginBottom: '20px' }}>
               <div>
-                <small style={{ color: '#8faec9', display: 'block' }}>Telemetry Source Type</small>
-                <b style={{ color: '#f0f6fe' }}>
+                <small style={{ color: 'var(--muted-cream)', display: 'block' }}>Telemetry Source Type</small>
+                <b style={{ color: 'var(--warm-cream)' }}>
                   {ingestTab === 'PCAP' ? '📁 On-Premises PCAP Capture' : '☁ AWS VPC Flow Logs (Read-Only)'}
                 </b>
               </div>
@@ -1965,7 +2127,7 @@ export default function App() {
                       </div>
                       <div className="metric-box">
                         <small>Telemetry Source</small>
-                        <b style={{ fontSize: '11px', color: '#38bdf8' }}>{awsVpcResponse.telemetry_source}</b>
+                        <b style={{ fontSize: '11px', color: 'var(--terracotta)' }}>{awsVpcResponse.telemetry_source}</b>
                       </div>
                       <div className="metric-box">
                         <small>Parse Time</small>
@@ -2006,17 +2168,17 @@ export default function App() {
                                   {r.source_zone}
                                 </span>
                                 <br />
-                                <small style={{ color: '#8faec9' }}>{r.source_ip}</small>
+                                <small style={{ color: 'var(--muted-cream)' }}>{r.source_ip}</small>
                               </td>
                               <td>
                                 <span className={`zone-tag ${r.destination_zone}`}>
                                   {r.destination_zone}
                                 </span>
                                 <br />
-                                <small style={{ color: '#8faec9' }}>{r.destination_ip}</small>
+                                <small style={{ color: 'var(--muted-cream)' }}>{r.destination_ip}</small>
                               </td>
                               <td>
-                                <code style={{ fontSize: '11px', color: '#a0c4e8' }}>
+                                <code style={{ fontSize: '11px', color: 'var(--warm-cream)' }}>
                                   {r.traffic_direction}
                                 </code>
                               </td>
@@ -2066,8 +2228,8 @@ export default function App() {
 
             <div className="mode-toggle-bar">
               <div>
-                <small style={{ color: '#8faec9', display: 'block' }}>Operating Mode</small>
-                <b style={{ color: '#f0f6fe' }}>{enforcementConfig?.active_mode || 'DRY_RUN'}</b>
+                <small style={{ color: 'var(--muted-cream)', display: 'block' }}>Operating Mode</small>
+                <b style={{ color: 'var(--warm-cream)' }}>{enforcementConfig?.active_mode || 'DRY_RUN'}</b>
               </div>
               <div style={{ display: 'flex', gap: '8px' }}>
                 <button
@@ -2094,7 +2256,7 @@ export default function App() {
               </div>
 
               {activeRules.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '24px', color: '#7fa4c4', background: '#091928', borderRadius: '8px' }}>
+                <div style={{ textAlign: 'center', padding: '24px', color: 'var(--muted-cream)', background: 'var(--panel-secondary)', borderRadius: '8px' }}>
                   No active containment rules currently enforced.
                 </div>
               ) : (
@@ -2104,7 +2266,7 @@ export default function App() {
                       <div className="rule-info">
                         <h4>{rule.target_ip} ({rule.action})</h4>
                         <p>{rule.reason}</p>
-                        <small style={{ fontSize: '10px', color: '#8faec9' }}>
+                        <small style={{ fontSize: '10px', color: 'var(--muted-cream)' }}>
                           ID: <code>{rule.rule_id}</code> | Port: {rule.target_port || 'ALL'} | Protocol: {rule.protocol}
                         </small>
                       </div>

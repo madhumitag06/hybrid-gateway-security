@@ -30,6 +30,10 @@ class SecurityEventSchema(BaseModel):
     confidence: Optional[float] = None
     is_anomaly: Optional[bool] = None
     is_demo: Optional[bool] = False
+    source_zone: Optional[str] = None
+    destination_zone: Optional[str] = None
+    traffic_direction: Optional[str] = None
+    telemetry_source: Optional[str] = None
 
 
 class SecurityEventDetailSchema(SecurityEventSchema):

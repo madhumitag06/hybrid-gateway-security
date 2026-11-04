@@ -15,6 +15,7 @@ WORKSPACE_ROOT = Path(os.path.abspath(".")).resolve()
 
 # 1. Collect Data Files
 datas = [
+    (str(WORKSPACE_ROOT / "dist"), "dist"),
     (str(WORKSPACE_ROOT / "ml" / "models"), "ml/models"),
     (str(WORKSPACE_ROOT / "backend" / "alembic"), "backend/alembic"),
     (str(WORKSPACE_ROOT / "backend" / "app" / "data"), "backend/app/data"),
@@ -37,11 +38,13 @@ hidden_imports = [
     "fastapi",
     "fastapi.middleware",
     "fastapi.middleware.cors",
+    "fastapi.staticfiles",
     "starlette",
     "starlette.concurrency",
     "starlette.middleware",
     "starlette.middleware.cors",
     "starlette.responses",
+    "starlette.staticfiles",
     "pydantic",
     "pydantic_settings",
     "pydantic_settings.sources",
@@ -51,6 +54,7 @@ hidden_imports = [
     "sqlalchemy.dialects.postgresql",
     "psycopg",
     "psycopg_binary",
+    "httpx",
     "scapy",
     "scapy.layers.inet",
     "scapy.layers.l2",

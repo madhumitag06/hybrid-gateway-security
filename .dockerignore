@@ -1,0 +1,133 @@
+# =============================================================================
+# Root .dockerignore — Isolate Docker build contexts from host environment
+# =============================================================================
+
+# Python virtual environments (never copy host/Windows venvs into containers)
+.venv
+.venv/**
+**/.venv
+**/.venv/**
+ml/.venv
+ml/.venv/**
+backend/ml
+backend/ml/**
+venv
+venv/**
+**/venv
+**/venv/**
+env
+env/**
+**/env
+**/env/**
+ENV
+**/Lib/site-packages
+**/site-packages
+
+# Python bytecode, caches, and test/typecheck artifacts
+__pycache__
+**/__pycache__
+**/__pycache__/**
+*.py[cod]
+**/*.py[cod]
+*$py.class
+*.so
+*.pyd
+**/*.pyd
+.pytest_cache
+**/.pytest_cache
+.mypy_cache
+**/.mypy_cache
+.ruff_cache
+**/.ruff_cache
+.coverage
+htmlcov
+
+# Standalone Windows packaged executable & PyInstaller build artifacts
+backend/executable
+backend/executable/**
+backend/build_exe.ps1
+backend/launcher.py
+build
+build/**
+dist
+dist/**
+*.exe
+**/*.exe
+*.spec
+**/*.spec
+
+# Experimental / offline evaluation datasets and non-runtime test suites
+ml/models/experimental_external
+ml/models/experimental_external/**
+ml/tests
+ml/tests/**
+backend/tests
+backend/tests/**
+
+# Node.js host dependencies & build outputs
+node_modules
+node_modules/**
+**/node_modules
+.npm
+.eslintcache
+
+# Git, IDE, OS, documentation, and local scratch files
+.git
+.git/**
+.gitignore
+.vscode
+.idea
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+docs
+docs/**
+scratch
+scratch/**
+*.log
+**/*.log
+*.pcap
+**/*.pcap
+
+# Local environment overrides (passed via compose environment instead)
+.env
+.env.*
+!**/.env.example
+
+# Explicitly ensure required Gateway API, ML, Frontend, and Hybrid Lab files are included
+!backend/requirements.txt
+!backend/alembic.ini
+!backend/alembic/**
+!backend/app/**
+!ml/requirements.txt
+!ml/MODEL_CARD.md
+!ml/data/**
+!ml/evaluation/**
+!ml/features/**
+!ml/models/__init__.py
+!ml/models/predict.py
+!ml/models/train.py
+!ml/models/model.joblib
+!ml/models/scaler.joblib
+!ml/models/label_encoder.joblib
+!ml/models/metadata.json
+!package.json
+!package-lock.json
+!tsconfig.json
+!tsconfig.app.json
+!tsconfig.node.json
+!vite.config.ts
+!index.html
+!src/**
+!public/**
+!deployment/hybrid-lab/**
+
+# Re-apply exclusions inside explicitly allowed trees (prevent __pycache__ / .pyc leakage)
+**/__pycache__
+**/__pycache__/**
+**/*.py[cod]
+**/.venv
+**/.venv/**
+**/.pytest_cache
+

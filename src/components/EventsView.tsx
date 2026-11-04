@@ -195,7 +195,7 @@ export const EventsView: React.FC = () => {
       </div>
 
       {error && (
-        <div className="card error-banner" style={{ marginBottom: '16px', color: '#ff7f8c', borderColor: '#9b3746' }}>
+        <div className="card error-banner" style={{ marginBottom: '16px', color: 'var(--muted-red)', borderColor: 'var(--muted-red)' }}>
           <b>Query Error:</b> {error}
         </div>
       )}
@@ -204,13 +204,13 @@ export const EventsView: React.FC = () => {
       <div className="card" style={{ padding: '16px' }}>
         <div className="title-line" style={{ marginBottom: '12px' }}>
           <h2>Persisted Security Events ({total} total)</h2>
-          <div style={{ fontSize: '12px', color: '#8faec9' }}>
+          <div style={{ fontSize: '12px', color: 'var(--muted-cream)' }}>
             Page {page + 1} of {totalPages}
           </div>
         </div>
 
         {loading ? (
-          <div style={{ padding: '30px', textAlign: 'center', color: '#8faec9' }}>
+          <div style={{ padding: '30px', textAlign: 'center', color: 'var(--muted-cream)' }}>
             Loading security events from PostgreSQL…
           </div>
         ) : events.length === 0 ? (
@@ -267,7 +267,7 @@ export const EventsView: React.FC = () => {
           >
             ← Previous Page
           </button>
-          <span style={{ fontSize: '12px', color: '#8faec9' }}>
+          <span style={{ fontSize: '12px', color: 'var(--muted-cream)' }}>
             Showing {events.length > 0 ? page * limit + 1 : 0} – {Math.min((page + 1) * limit, total)} of {total}
           </span>
           <button
@@ -325,7 +325,7 @@ export const EventsView: React.FC = () => {
             <div className="shap-modal-section">
               <h4>✦ Transparent XAI Feature Attributions (SHAP)</h4>
               {loadingExplanation ? (
-                <div style={{ fontSize: '11px', color: '#8faec9', padding: '8px 0' }}>
+                <div style={{ fontSize: '11px', color: 'var(--muted-cream)', padding: '8px 0' }}>
                   Calculating Shapley feature attributions via TreeExplainer…
                 </div>
               ) : explanation ? (
@@ -370,7 +370,7 @@ export const EventsView: React.FC = () => {
                   )}
                 </div>
               ) : (
-                <p style={{ fontSize: '12px', color: '#9bb2cb' }}>
+                <p style={{ fontSize: '12px', color: 'var(--muted-cream)' }}>
                   Standard baseline z-score attribution active.
                 </p>
               )}

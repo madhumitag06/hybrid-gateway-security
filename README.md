@@ -223,12 +223,20 @@ docker compose up -d
 
 ### Step 6: Run Automated Tests
 ```powershell
-# Run the complete 133-test backend, ML, explainability, and auth test suite:
+# Run the complete 173-test backend, ML, explainability, hardening, and auth test suite:
 .\ml\.venv\Scripts\pytest.exe -q
 
 # Run the frontend production build verification:
 npm run build
 ```
+
+### Step 7: Build and Synchronize Standalone Windows Executable
+Whenever frontend or backend source files are modified, rebuild the verified standalone Windows executable via the 17-point automated build pipeline:
+```powershell
+powershell -ExecutionPolicy Bypass -File backend/build_exe.ps1
+```
+The output binary will be verified and located at:
+`backend/executable/AdaptiveSecurityGateway/AdaptiveSecurityGateway.exe`
 
 ---
 

@@ -231,7 +231,14 @@ def test_role_based_admin_authorization_guards():
     admin_data = admin_res.json()
     assert "users" in admin_data
     assert admin_data["total_users"] >= 1
-    assert any(u["email"] == settings.admin_email or u["role"] == "ADMIN" for u in admin_data["users"])
+    assert len(admin_data["users"]) > 0
+    # Verify admin identity
+    me_res = client.get(
+        "/api/v1/auth/me",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert me_res.status_code == 200
+    assert me_res.json()["role"] == "ADMIN"
 
 
 def test_password_change_flow():
@@ -447,5 +454,43 @@ def test_authoritative_security_pipeline_unaltered_by_auth():
     )
     assert allowlist_decision.policy_action == "Allow"
     assert allowlist_decision.enforcement_required is False
+
+
+def test_configured_admin_credentials_api_login():
+    """
+    Test 13 — Verifies that configured administrator credentials (test10@gmail.com / test@123)
+    authenticate successfully through both /api/v1/auth/login and /api/auth/login.
+    """
+    # 1. Test /api/v1/auth/login
+    res_v1 = client.post(
+        "/api/v1/auth/login",
+        json={"email": "test10@gmail.com", "password": "test@123"},
+    )
+    assert res_v1.status_code == 200
+    data_v1 = res_v1.json()
+    assert data_v1["user"]["email"] == "test10@gmail.com"
+    assert data_v1["user"]["role"] == "ADMIN"
+    assert "access_token" in data_v1
+
+    # 2. Test /api/auth/login (direct frontend endpoint)
+    res_api = client.post(
+        "/api/auth/login",
+        json={"email": "test10@gmail.com", "password": "test@123"},
+    )
+    assert res_api.status_code == 200
+    data_api = res_api.json()
+    assert data_api["user"]["email"] == "test10@gmail.com"
+    assert data_api["user"]["role"] == "ADMIN"
+    assert "access_token" in data_api
+
+    # 3. Access admin-guarded endpoint with the token
+    token = data_v1["access_token"]
+    admin_check = client.get(
+        "/api/v1/auth/admin/users",
+        headers={"Authorization": f"Bearer {token}"},
+        params={"limit": 10},
+    )
+    assert admin_check.status_code == 200
+    assert "users" in admin_check.json()
 
 

@@ -20,6 +20,8 @@ datas = [
     (str(WORKSPACE_ROOT / "backend" / "alembic"), "backend/alembic"),
     (str(WORKSPACE_ROOT / "backend" / "app" / "data"), "backend/app/data"),
 ]
+if (WORKSPACE_ROOT / ".env").is_file():
+    datas.append((str(WORKSPACE_ROOT / ".env"), "."))
 datas += collect_data_files("shap")
 
 # 2. Collect Hidden Imports

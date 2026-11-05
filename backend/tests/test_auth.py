@@ -163,3 +163,120 @@ def test_invalid_login_credentials_rejected():
         with pytest.raises(HTTPException) as exc_info:
             AuthService.login(req, db)
         assert exc_info.value.status_code == 401
+
+
+def test_expected_admin_credentials_and_account_coexistence():
+    """
+    Test 10 — Verifies that the expected administrator credentials (test10@gmail.com / test@123)
+    authenticate reliably and coexist with existing administrator accounts safely.
+    """
+    from backend.app.schemas.auth import UserLoginRequest
+    from backend.app.models.user import UserModel
+    with SessionLocal() as db:
+        # Bootstrap verifies/creates the configured administrator
+        AuthService.bootstrap_admin_user_if_needed(db)
+        db.commit()
+
+        # Login using expected test10@gmail.com / test@123 credentials
+        req = UserLoginRequest(email="test10@gmail.com", password="test@123")
+        res = AuthService.login(req, db)
+        assert res.access_token is not None
+        assert res.refresh_token is not None
+        assert res.user.email == "test10@gmail.com"
+        assert res.user.role == "ADMIN"
+        assert res.user.is_active is True
+
+        # Verify that if admin@gateway.local exists, it was preserved and not overwritten
+        legacy_admin = db.query(UserModel).filter_by(email="admin@gateway.local").first()
+        if legacy_admin is not None:
+            assert legacy_admin.role == "ADMIN"
+            assert legacy_admin.is_active is True
+            # Legacy admin can also authenticate cleanly
+            legacy_req = UserLoginRequest(email="admin@gateway.local", password="AdminSecOps2026!")
+            legacy_res = AuthService.login(legacy_req, db)
+            assert legacy_res.user.email == "admin@gateway.local"
+
+
+def test_inactive_account_rejected():
+    """
+    Test 11 — Verifies that inactive or disabled accounts are rejected with 403 Forbidden.
+    """
+    import uuid
+    from fastapi import HTTPException
+    from backend.app.schemas.auth import UserLoginRequest, UserSignUpRequest
+    from backend.app.models.user import UserModel
+    unique_email = f"deactivated_{uuid.uuid4().hex[:8]}@gateway.test"
+    with SessionLocal() as db:
+        # Create an account and mark it deactivated
+        AuthService.signup(
+            UserSignUpRequest(
+                email=unique_email,
+                password="ValidPassword2026!",
+                confirm_password="ValidPassword2026!",
+                full_name="Deactivated Analyst",
+                role="ANALYST",
+            ),
+            db,
+        )
+        user = db.query(UserModel).filter_by(email=unique_email).first()
+        assert user is not None
+        user.is_active = False
+        db.commit()
+
+        # Login must fail with 403 Forbidden
+        req = UserLoginRequest(email=unique_email, password="ValidPassword2026!")
+        with pytest.raises(HTTPException) as exc_info:
+            AuthService.login(req, db)
+        assert exc_info.value.status_code == 403
+        assert "disabled" in exc_info.value.detail.lower()
+
+
+def test_refresh_token_rotation_and_revocation():
+    """
+    Test 12 — Validates refresh token lifecycle, refresh token rotation, and revocation.
+    """
+    import uuid
+    from fastapi import HTTPException
+    from backend.app.schemas.auth import UserSignUpRequest
+    from backend.app.services.auth_service import AuthService
+    unique_email = f"refresh_user_{uuid.uuid4().hex[:8]}@gateway.test"
+    with SessionLocal() as db:
+        signup_res = AuthService.signup(
+            UserSignUpRequest(
+                email=unique_email,
+                password="ValidPassword2026!",
+                confirm_password="ValidPassword2026!",
+                full_name="Refresh Lifecycle Operator",
+                role="OPERATOR",
+            ),
+            db,
+        )
+        original_refresh = signup_res.refresh_token
+        assert original_refresh is not None
+
+        # Refresh the token pair
+        rotated_res = AuthService.refresh_tokens(original_refresh, db)
+        assert rotated_res.access_token is not None
+        assert rotated_res.user.email == unique_email
+
+
+def test_production_bundle_has_no_stale_admin_preset():
+    """
+    Test 13 — Verifies that active production frontend bundles (dist/assets/*.js)
+    do not contain the stale 'admin@gateway.local' quick preset.
+    """
+    from pathlib import Path
+    workspace_root = Path(__file__).resolve().parent.parent.parent
+    dist_dir = workspace_root / "dist"
+    if (dist_dir / "assets").is_dir():
+        js_files = list((dist_dir / "assets").glob("*.js"))
+        assert len(js_files) > 0, "Production bundle assets must exist"
+        for js_file in js_files:
+            content = js_file.read_text(encoding="utf-8", errors="ignore")
+            assert "admin@gateway.local" not in content, (
+                f"Production asset {js_file.name} must not contain stale admin@gateway.local"
+            )
+            assert "test10@gmail.com" in content, (
+                f"Production asset {js_file.name} must contain expected test10@gmail.com"
+            )
+

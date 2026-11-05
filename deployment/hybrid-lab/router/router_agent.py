@@ -51,10 +51,19 @@ _active_rules: Dict[str, Dict[str, Any]] = {}
 
 
 def is_valid_lab_target(ip_str: str) -> bool:
-    if not ip_str or ip_str in PROTECTED_IPS:
+    if not ip_str or ip_str.strip() in PROTECTED_IPS:
         return False
     try:
         addr = ipaddress.ip_address(ip_str.strip())
+        if addr.is_loopback or addr.is_multicast or addr.is_unspecified or addr.is_reserved:
+            return False
+        # Disallow subnet network and broadcast addresses
+        for net in ALLOWED_LAB_NETS:
+            if addr == net.network_address or addr == net.broadcast_address:
+                return False
+        # Disallow any address in management plane
+        if addr in ipaddress.ip_network("10.30.10.0/24"):
+            return False
         return any(addr in net for net in ALLOWED_LAB_NETS)
     except ValueError:
         return False
@@ -63,8 +72,13 @@ def is_valid_lab_target(ip_str: str) -> bool:
 def _build_rule_spec(target_ip: str, action: str, target_port: Optional[Any]) -> List[str]:
     spec = ["-s", target_ip.strip()]
     if action == "Restrict":
-        effective_port = int(target_port) if target_port is not None and int(target_port) > 0 else 8080
-        spec.extend(["-p", "tcp", "--dport", str(effective_port)])
+        try:
+            port_val = int(target_port) if target_port is not None else 8080
+            if port_val < 1 or port_val > 65535:
+                port_val = 8080
+        except (ValueError, TypeError):
+            port_val = 8080
+        spec.extend(["-p", "tcp", "--dport", str(port_val)])
     spec.extend(["-j", "DROP"])
     return spec
 

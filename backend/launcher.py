@@ -57,7 +57,11 @@ def main():
     args = parse_args()
 
     if args.env_file:
-        os.environ["ENV_FILE"] = str(Path(args.env_file).resolve())
+        env_resolved = str(Path(args.env_file).resolve())
+        os.environ["ENV_FILE"] = env_resolved
+        # Re-instantiate settings with explicit env file override
+        import backend.app.config
+        backend.app.config.settings = backend.app.config.Settings()
 
     # In packaged production executable, reload must be disabled
     is_frozen = getattr(sys, "frozen", False)
@@ -76,14 +80,31 @@ def main():
     print(f"[*] ML Artifacts: {settings.ml_artifacts_dir}")
     print("==================================================================")
 
-    uvicorn.run(
-        app,
-        host=args.host,
-        port=args.port,
-        reload=reload_enabled,
-        log_level="info",
-        access_log=True,
-    )
+    try:
+        uvicorn.run(
+            app,
+            host=args.host,
+            port=args.port,
+            reload=reload_enabled,
+            log_level="info",
+            access_log=True,
+        )
+    except OSError as e:
+        err_msg = str(e).lower()
+        if "10048" in err_msg or "already in use" in err_msg or "address already in use" in err_msg:
+            fallback_port = 8080 if args.port == 8000 else args.port + 1
+            print(f"[!] Notice: Port {args.port} is occupied by another process or container.")
+            print(f"[*] Launching on fallback port {fallback_port} (http://{args.host}:{fallback_port})...")
+            uvicorn.run(
+                app,
+                host=args.host,
+                port=fallback_port,
+                reload=reload_enabled,
+                log_level="info",
+                access_log=True,
+            )
+        else:
+            raise
 
 
 if __name__ == "__main__":

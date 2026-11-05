@@ -136,12 +136,18 @@ try {
 }
 
 # Step 13, 14, 15: Validate Built Executable and Asset Synchronization
-Write-Host "`n[13/17 - 15/17] Validating built executable and bundled assets..." -ForegroundColor Yellow
+Write-Host "`n[13/17 - 15/17] Validating built executable, configuration and bundled assets..." -ForegroundColor Yellow
 $ExePath = "$DistPath\AdaptiveSecurityGateway\AdaptiveSecurityGateway.exe"
 
 if (-not (Test-Path $ExePath)) {
     Write-Error "[FAIL] Executable not found at $ExePath."
     exit 1
+}
+
+# Synchronize .env configuration directly into the standalone distribution folder
+if (Test-Path "$WorkspaceRoot\.env") {
+    Copy-Item -Path "$WorkspaceRoot\.env" -Destination "$DistPath\AdaptiveSecurityGateway\.env" -Force
+    Write-Host "  -> Active .env configuration synchronized alongside executable." -ForegroundColor Green
 }
 
 $ExeItem = Get-Item -Path $ExePath
@@ -158,11 +164,20 @@ if (-not $BundledCss -or $BundledCss.Name -ne $LatestCssName) {
     exit 1
 }
 
+# Verify that no stale admin@gateway.local credentials remain in the bundled JS
+$BundledJsContent = Get-Content -Path $BundledJs.FullName -Raw
+if ($BundledJsContent -like "*admin@gateway.local*") {
+    Write-Error "[FAIL] Bundled JavaScript contains stale 'admin@gateway.local' preset!"
+    exit 1
+}
+Write-Host "  -> Bundled JS Credentials Clean (No stale admin@gateway.local)" -ForegroundColor Green
+
 $ExeMb = [math]::Round($ExeItem.Length / 1048576, 2)
 Write-Host "  -> Executable Size : $ExeMb MB ($($ExeItem.Length) bytes)" -ForegroundColor Green
 Write-Host "  -> Last Modified   : $($ExeItem.LastWriteTime)" -ForegroundColor Green
 Write-Host "  -> Bundled JS Asset: $($BundledJs.Name) (MATCHED)" -ForegroundColor Green
 Write-Host "  -> Bundled CSS Asset: $($BundledCss.Name) (MATCHED)" -ForegroundColor Green
+Write-Host "  -> Active Config   : $DistPath\AdaptiveSecurityGateway\.env (VERIFIED)" -ForegroundColor Green
 
 # Step 16: Verify Packaged Application Metadata via CLI
 Write-Host "`n[16/17] Verifying packaged application CLI startup metadata..." -ForegroundColor Yellow

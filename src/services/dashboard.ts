@@ -158,7 +158,7 @@ export async function searchGateway(query: string, signal?: AbortSignal): Promis
 export async function getSystemProfile(signal?: AbortSignal): Promise<SystemProfile> {
   try {
     return await request<SystemProfile>('system/profile', { signal })
-  } catch (err) {
+  } catch {
     return {
       username: 'secops_admin',
       full_name: 'SecOps Local Console',

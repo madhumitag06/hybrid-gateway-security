@@ -19,17 +19,6 @@ export const EvaluationView: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(false)
   const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
-    fetchEvaluationSuites()
-      .then((data) => {
-        setSuites(data)
-      })
-      .catch((err) => console.error('Failed to load suites:', err))
-
-    // Automatically trigger initial default benchmark
-    handleRunBenchmark('FULL_BENCHMARK', 200, true)
-  }, [])
-
   const handleRunBenchmark = (suite = selectedSuite, count = sampleCount, shap = includeShap) => {
     setLoading(true)
     setError(null)
@@ -43,6 +32,17 @@ export const EvaluationView: React.FC = () => {
         setLoading(false)
       })
   }
+
+  useEffect(() => {
+    fetchEvaluationSuites()
+      .then((data) => {
+        setSuites(data)
+      })
+      .catch((err) => console.error('Failed to load suites:', err))
+
+    // Automatically trigger initial default benchmark
+    handleRunBenchmark('FULL_BENCHMARK', 200, true)
+  }, [])
 
   return (
     <div className="analytics-container evaluation-view-container">

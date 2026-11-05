@@ -175,3 +175,42 @@ def test_secret_safety_no_leakage():
     })
     assert s.auth_jwt_secret == "test_jwt_secret_entropy_12345"
     assert s.admin_password == "AdminSecretPassword123!"
+
+
+def test_frozen_mode_env_discovery(monkeypatch):
+    """
+    Test 8 — Frozen executable mode: Verifies that get_env_file_path() successfully walks
+    ancestor directories of a deeply nested executable to discover the workspace .env.
+    """
+    import sys
+    from pathlib import Path
+    from backend.app.config import get_env_file_path, get_workspace_root
+
+    # Simulate deeply nested standalone executable path
+    simulated_exe = (
+        Path(__file__).resolve().parent.parent.parent
+        / "backend"
+        / "executable"
+        / "AdaptiveSecurityGateway"
+        / "AdaptiveSecurityGateway.exe"
+    )
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "executable", str(simulated_exe), raising=False)
+
+    resolved_env = get_env_file_path()
+    assert resolved_env is not None
+    assert Path(resolved_env).is_file()
+    assert Path(resolved_env).name == ".env"
+
+    root = get_workspace_root()
+    assert (root / "backend").is_dir()
+    assert (root / "ml").is_dir()
+
+
+def test_default_admin_credentials():
+    """
+    Test 9 — Validates that default Settings provides test10@gmail.com and test@123.
+    """
+    s = Settings(_env_file=None)
+    assert s.admin_email == "test10@gmail.com"
+    assert s.admin_password == "test@123"

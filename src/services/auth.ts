@@ -179,9 +179,20 @@ class AuthService {
       body: JSON.stringify(payload),
     })
 
-    const data = await response.json()
+    let data: any
+    try {
+      data = await response.json()
+    } catch {
+      throw new Error(`Server returned status ${response.status} (${response.statusText || 'Network error'})`)
+    }
     if (!response.ok) {
-      throw new Error(data.detail || 'Sign up failed. Please check your credentials.')
+      const detailMsg =
+        typeof data?.detail === 'string'
+          ? data.detail
+          : Array.isArray(data?.detail)
+            ? data.detail.map((d: any) => d.msg || JSON.stringify(d)).join(', ')
+            : data?.message || 'Sign up failed. Please check your credentials.'
+      throw new Error(detailMsg)
     }
 
     const { tokens, user } = this.extractSessionFromResponse(data)
@@ -200,9 +211,20 @@ class AuthService {
       body: JSON.stringify(payload),
     })
 
-    const data = await response.json()
+    let data: any
+    try {
+      data = await response.json()
+    } catch {
+      throw new Error(`Server returned status ${response.status} (${response.statusText || 'Network error'})`)
+    }
     if (!response.ok) {
-      throw new Error(data.detail || 'Invalid email or password.')
+      const detailMsg =
+        typeof data?.detail === 'string'
+          ? data.detail
+          : Array.isArray(data?.detail)
+            ? data.detail.map((d: any) => d.msg || JSON.stringify(d)).join(', ')
+            : data?.message || 'Invalid email or password.'
+      throw new Error(detailMsg)
     }
 
     const { tokens, user } = this.extractSessionFromResponse(data)

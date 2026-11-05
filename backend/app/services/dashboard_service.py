@@ -227,6 +227,11 @@ class DashboardService:
         ff_dict["source_zone"] = NetworkZoneClassifier.classify_ip(source_ip)
         ff_dict["destination_zone"] = NetworkZoneClassifier.classify_ip(destination_ip)
         ff_dict["traffic_direction"] = NetworkZoneClassifier.classify_direction(source_ip, destination_ip)
+        ff_dict["explanation_status"] = pred.explanation_status
+        ff_dict["policy_decision"] = policy_decision.policy_action
+        ff_dict["enforcement_required"] = policy_decision.enforcement_required
+        ff_dict["rule_name"] = policy_decision.rule_name
+        ff_dict["policy_reason"] = policy_decision.reason
 
         event_model = SecurityEventModel(
             id=event_id,
@@ -258,12 +263,23 @@ class DashboardService:
             actor="ml_policy_engine" if not is_demo else "demo_seed",
         )
 
-        final_status = (
-            "Applied"
-            if enforce_res.status == "ACTIVE"
-            else ("Simulated" if enforce_res.status == "SIMULATED" else ("Monitoring" if action == "Monitor" else "Allowed"))
-        )
+        is_synced = bool(enforce_res.metadata and enforce_res.metadata.get("lab_router_synced"))
+        if enforce_res.status == "ACTIVE":
+            final_status = "Enforced" if is_synced else "Applied"
+        elif enforce_res.status == "SIMULATED":
+            final_status = "Simulated"
+        elif action == "Monitor":
+            final_status = "Monitoring"
+        else:
+            final_status = "Allowed"
         event_model.status = final_status
+
+        # Augment flow_features with lifecycle trace
+        ff_dict["router_synced"] = is_synced
+        ff_dict["router_sync_note"] = enforce_res.metadata.get("lab_router_note") if enforce_res.metadata else None
+        if rule_model:
+            ff_dict["rule_id"] = rule_model.id
+        event_model.flow_features = dict(ff_dict)
         db.flush()
 
         pred.event_id = event_id
@@ -330,6 +346,11 @@ class DashboardService:
                 ff_dict["source_zone"] = NetworkZoneClassifier.classify_ip(source_ip)
                 ff_dict["destination_zone"] = NetworkZoneClassifier.classify_ip(destination_ip)
                 ff_dict["traffic_direction"] = NetworkZoneClassifier.classify_direction(source_ip, destination_ip)
+                ff_dict["explanation_status"] = pred.explanation_status
+                ff_dict["policy_decision"] = policy_decision.policy_action
+                ff_dict["enforcement_required"] = policy_decision.enforcement_required
+                ff_dict["rule_name"] = policy_decision.rule_name
+                ff_dict["policy_reason"] = policy_decision.reason
 
                 event_model = SecurityEventModel(
                     id=event_id,
@@ -362,12 +383,22 @@ class DashboardService:
                     rule_cache=rule_cache,
                 )
 
-                final_status = (
-                    "Applied"
-                    if enforce_res.status == "ACTIVE"
-                    else ("Simulated" if enforce_res.status == "SIMULATED" else ("Monitoring" if action == "Monitor" else "Allowed"))
-                )
+                is_synced = bool(enforce_res.metadata and enforce_res.metadata.get("lab_router_synced"))
+                if enforce_res.status == "ACTIVE":
+                    final_status = "Enforced" if is_synced else "Applied"
+                elif enforce_res.status == "SIMULATED":
+                    final_status = "Simulated"
+                elif action == "Monitor":
+                    final_status = "Monitoring"
+                else:
+                    final_status = "Allowed"
                 event_model.status = final_status
+
+                ff_dict["router_synced"] = is_synced
+                ff_dict["router_sync_note"] = enforce_res.metadata.get("lab_router_note") if enforce_res.metadata else None
+                if rule_model:
+                    ff_dict["rule_id"] = rule_model.id
+                event_model.flow_features = dict(ff_dict)
                 pred.event_id = event_id
 
                 results.append((pred, event_model))

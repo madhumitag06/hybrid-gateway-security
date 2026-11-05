@@ -161,10 +161,10 @@ export const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess }) => {
   }
 
   const handleQuickAdminFill = () => {
-    setLoginEmail('admin@gateway.local')
-    setLoginPassword('AdminSecOps2026!')
+    setLoginEmail('test10@gmail.com')
+    setLoginPassword('test@123')
     setErrorMessage(null)
-    setSuccessMessage('Loaded Default Admin Bootstrap Credentials (admin@gateway.local)')
+    setSuccessMessage('Loaded Administrator Credentials (test10@gmail.com)')
   }
 
   return (
@@ -251,7 +251,7 @@ export const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess }) => {
                 <input
                   id="login-email"
                   type="email"
-                  placeholder="admin@gateway.local"
+                  placeholder="test10@gmail.com"
                   value={loginEmail}
                   onChange={(e) => setLoginEmail(e.target.value)}
                   disabled={loading || googleLoading}
@@ -313,7 +313,7 @@ export const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess }) => {
                 title="Populates initial bootstrap administrator credentials for rapid testing"
               >
                 <span>👑 Quick Admin Access Preset</span>
-                <small>(admin@gateway.local)</small>
+                <small>(test10@gmail.com)</small>
               </button>
             </div>
 
@@ -391,7 +391,7 @@ export const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess }) => {
                 <input
                   id="signup-email"
                   type="email"
-                  placeholder="jane.analyst@gateway.local"
+                  placeholder="jane.analyst@securitygateway.io"
                   value={signupEmail}
                   onChange={(e) => setSignupEmail(e.target.value)}
                   disabled={loading}

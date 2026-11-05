@@ -20,8 +20,8 @@ def get_workspace_root() -> Path:
     """
     if getattr(sys, "frozen", False):
         exe_path = Path(sys.executable).resolve()
-        for p in [exe_path.parent, exe_path.parent.parent, exe_path.parent.parent.parent]:
-            if (p / ".env").is_file() or (p / "backend").is_dir() or (p / "ml").is_dir():
+        for p in [exe_path.parent] + list(exe_path.parents):
+            if (p / "backend").is_dir() and (p / "ml").is_dir():
                 return p
         return exe_path.parent
     return Path(__file__).resolve().parent.parent.parent
@@ -32,8 +32,11 @@ def get_env_file_path() -> Optional[str]:
     Discovers the appropriate .env file based on explicit override or environment search order:
     1. ENV_FILE environment variable
     2. Current working directory .env
-    3. Executable and parent directories .env (if frozen)
-    4. Workspace root .env
+    3. Executable directory .env (alongside AdaptiveSecurityGateway.exe)
+    4. Any parent ancestor directory of the executable containing .env (up to workspace root)
+    5. Bundled _MEIPASS .env (if frozen)
+    6. Workspace root .env based on module path and its ancestors
+    7. Default fallback to .env
     """
     explicit = os.getenv("ENV_FILE")
     if explicit and Path(explicit).is_file():
@@ -45,14 +48,20 @@ def get_env_file_path() -> Optional[str]:
         
     if getattr(sys, "frozen", False):
         exe_path = Path(sys.executable).resolve()
-        for p in [exe_path.parent, exe_path.parent.parent, exe_path.parent.parent.parent]:
+        for p in [exe_path.parent] + list(exe_path.parents):
             candidate = p / ".env"
             if candidate.is_file():
                 return str(candidate.resolve())
+        meipass = getattr(sys, "_MEIPASS", None)
+        if meipass:
+            cand = Path(meipass) / ".env"
+            if cand.is_file():
+                return str(cand.resolve())
             
-    ws_env = Path(__file__).resolve().parent.parent.parent / ".env"
-    if ws_env.is_file():
-        return str(ws_env.resolve())
+    for p in [Path(__file__).resolve().parent] + list(Path(__file__).resolve().parents):
+        candidate = p / ".env"
+        if candidate.is_file():
+            return str(candidate.resolve())
         
     return ".env"
 
@@ -199,8 +208,8 @@ class Settings(BaseSettings):
     google_redirect_uri: str = "http://localhost:5173/auth/google/callback"
 
     # Default Administrator Bootstrap Credentials
-    admin_email: str = "admin@gateway.local"
-    admin_password: str = "AdminSecOps2026!"
+    admin_email: str = "test10@gmail.com"
+    admin_password: str = "test@123"
     admin_name: str = "SecOps Administrator"
 
     # Frontend Client Configuration

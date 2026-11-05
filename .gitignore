@@ -52,3 +52,8 @@ backend/executable/*.exe
 
 # Scratch scripts and temporary test files
 scratch/
+
+# PCAP Captures and network dumps
+*.pcap
+*.pcapng
+backend/app/data/sample_pcaps/suspicious_transfer.pcap

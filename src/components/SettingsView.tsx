@@ -130,7 +130,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ user, onLogout }) =>
             <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--line-subtle)', paddingBottom: '8px' }}>
               <span style={{ color: 'var(--muted-cream)' }}>Email Address:</span>
               <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--warm-cream)' }}>
-                {user?.email || 'admin@gateway.local'}
+                {user?.email || 'test10@gmail.com'}
               </span>
             </div>
 

@@ -290,18 +290,31 @@ class AwsVpcFlowParser:
                     actor="aws_vpc_ingestion_pipeline",
                 )
 
-                # Determine final event status
+                # Determine final event status and audit trace
+                is_synced = bool(enforce_res.metadata and enforce_res.metadata.get("lab_router_synced"))
                 if enforce_res.status in ["ACTIVE", "SIMULATED"]:
-                    final_status = (
-                        "Applied"
-                        if policy_decision.policy_action in ["Restrict", "Block"]
-                        else "Monitoring"
-                    )
+                    if is_synced:
+                        final_status = "Enforced"
+                    elif enforce_res.status == "SIMULATED":
+                        final_status = "Simulated"
+                    else:
+                        final_status = (
+                            "Applied"
+                            if policy_decision.policy_action in ["Restrict", "Block"]
+                            else "Monitoring"
+                        )
                 else:
                     final_status = (
                         "Allowed" if policy_decision.policy_action == "Allow" else "Monitoring"
                     )
                 event_model.status = final_status
+
+                if isinstance(event_model.flow_features, dict):
+                    updated_ff = dict(event_model.flow_features)
+                    updated_ff["router_synced"] = is_synced
+                    updated_ff["rule_id"] = enforce_res.rule_id
+                    event_model.flow_features = updated_ff
+
                 db.flush()
                 persisted_event_id = event_id
 

@@ -4,8 +4,9 @@ Prediction API Schemas
 Pydantic models for single and batch network flow inference requests and responses.
 """
 
-from typing import Dict, List, Literal, Optional
-from pydantic import BaseModel, Field
+from typing import Any, Dict, List, Literal, Optional
+import numpy as np
+from pydantic import BaseModel, Field, field_validator
 
 SeverityLevel = Literal["LOW", "MEDIUM", "HIGH"]
 PolicyAction = Literal["Allow", "Monitor", "Restrict", "Block"]
@@ -16,11 +17,11 @@ class NetworkFlowRequest(BaseModel):
     Input schema for network flow prediction requests.
     """
 
-    packet_count: int = Field(..., ge=0, description="Total packet count in the flow window")
-    byte_count: int = Field(..., ge=0, description="Total bytes transferred")
-    duration: float = Field(..., ge=0.0, description="Duration in seconds")
-    conn_rate: float = Field(..., ge=0.0, description="Connection rate (connections/second)")
-    dst_port: int = Field(..., ge=1, le=65535, description="Destination service port")
+    packet_count: int = Field(default=1, ge=0, description="Total packet count in the flow window")
+    byte_count: int = Field(default=64, ge=0, description="Total bytes transferred")
+    duration: float = Field(default=0.001, ge=0.0, description="Duration in seconds")
+    conn_rate: float = Field(default=1.0, ge=0.0, description="Connection rate (connections/second)")
+    dst_port: int = Field(default=80, ge=1, le=65535, description="Destination service port")
     unique_dst_ports: int = Field(default=1, ge=1, description="Count of unique destination ports targeted")
     failed_auth_count: int = Field(default=0, ge=0, description="Count of failed authentication attempts")
     bytes_per_sec: Optional[float] = Field(default=None, ge=0.0, description="Throughput (bytes/sec)")
@@ -29,6 +30,15 @@ class NetworkFlowRequest(BaseModel):
     source_ip: Optional[str] = Field(default="192.168.1.100", description="Source IP address")
     destination_ip: Optional[str] = Field(default="10.100.1.10", description="Destination IP address")
     persist: Optional[bool] = Field(default=True, description="Whether to persist this prediction into PostgreSQL")
+
+    @field_validator("duration", "conn_rate", "bytes_per_sec", "packets_per_sec", "avg_packet_size")
+    @classmethod
+    def validate_finite_floats(cls, v: Optional[float]) -> Optional[float]:
+        if v is None:
+            return None
+        if np.isnan(v) or np.isinf(v):
+            raise ValueError("Float value must be finite and cannot be NaN or Inf.")
+        return v
 
 
 class ContributingFeatureSchema(BaseModel):

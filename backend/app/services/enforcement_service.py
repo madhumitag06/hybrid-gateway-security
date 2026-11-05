@@ -151,13 +151,24 @@ class EnforcementService:
             # Update in adapter
             enforce_res = adapter.enforce(decision, existing_rule.id)
 
+            # Determine precise resulting status (Enforced in router vs Applied in sandbox)
+            is_synced = bool(enforce_res.metadata and enforce_res.metadata.get("lab_router_synced"))
+            if enforce_res.status == "ACTIVE":
+                resulting_status = "Enforced" if is_synced else "Applied"
+            elif enforce_res.status == "SIMULATED":
+                resulting_status = "Simulated"
+            elif decision.policy_action == "Monitor":
+                resulting_status = "Monitoring"
+            else:
+                resulting_status = "Allowed"
+
             # Audit log entry for TTL extension / modification
             if decision.event_id:
                 audit_repo.log_action(
                     event_id=decision.event_id,
                     requested_action=decision.policy_action,
                     previous_action=previous_action,
-                    resulting_status="Applied" if cls._active_mode == "SANDBOX" else "Monitoring",
+                    resulting_status=resulting_status,
                     actor=actor,
                 )
 
@@ -192,11 +203,21 @@ class EnforcementService:
 
         # 4. Log to immutable policy audit trail
         if decision.event_id:
+            is_synced = bool(enforce_res.metadata and enforce_res.metadata.get("lab_router_synced"))
+            if enforce_res.status == "ACTIVE":
+                resulting_status = "Enforced" if is_synced else "Applied"
+            elif enforce_res.status == "SIMULATED":
+                resulting_status = "Simulated"
+            elif decision.policy_action == "Monitor":
+                resulting_status = "Monitoring"
+            else:
+                resulting_status = "Allowed"
+
             audit_repo.log_action(
                 event_id=decision.event_id,
                 requested_action=decision.policy_action,
                 previous_action=None,
-                resulting_status="Applied" if cls._active_mode == "SANDBOX" else "Monitoring",
+                resulting_status=resulting_status,
                 actor=actor,
             )
 

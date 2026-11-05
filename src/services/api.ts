@@ -7,11 +7,17 @@
 
 // Fallback to relative /api or configured environment base URL
 const ENV_URL = import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL
-const API_BASE_URL = ENV_URL ? ENV_URL.replace(/\/$/, '') : 'http://localhost:8000'
+const API_BASE_URL = ENV_URL ? ENV_URL.replace(/\/$/, '') : ''
 
 export function getApiUrl(endpoint: string): string {
   const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`
   
+  // When no explicit external API base URL is provided, use clean relative URLs
+  // which resolve against the current origin (supporting both standalone EXE and Docker Nginx)
+  if (!API_BASE_URL) {
+    return cleanEndpoint.startsWith('/api') ? cleanEndpoint : `/api${cleanEndpoint}`
+  }
+
   // If endpoint already starts with /api and API_BASE_URL ends with /api, avoid duplication
   if (API_BASE_URL.endsWith('/api') && cleanEndpoint.startsWith('/api/')) {
     return `${API_BASE_URL.slice(0, -4)}${cleanEndpoint}`

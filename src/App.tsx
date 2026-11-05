@@ -40,6 +40,7 @@ import { AwsVpcView } from './components/AwsVpcView'
 import { PcapIngestView } from './components/PcapIngestView'
 import { SettingsView } from './components/SettingsView'
 import { AuthView } from './components/AuthView'
+import { ErrorBoundary } from './components/ErrorBoundary'
 import { authService } from './services/auth'
 import type {
   ActiveEnforcementRule,
@@ -1174,224 +1175,226 @@ export default function App() {
         </header>
 
         <div className="content">
-          {activeNav === 'Live Network' || activeNav === 'Traffic' ? (
-            <TrafficView />
-          ) : activeNav === 'Attack Simulation' ? (
-            <SimulationView />
-          ) : activeNav === 'ML Detection' || activeNav === 'Evaluation' ? (
-            <EvaluationView />
-          ) : activeNav === 'Explainability (XAI)' || activeNav === 'Reports' ? (
-            <AnalyticsView />
-          ) : activeNav === 'Policies & Firewall' || activeNav === 'Policies' ? (
-            <PoliciesView />
-          ) : activeNav === 'PCAP Ingestion' ? (
-            <PcapIngestView />
-          ) : activeNav === 'AWS VPC Logs' ? (
-            <AwsVpcView />
-          ) : activeNav === 'Security Events' || activeNav === 'Events' ? (
-            <EventsView />
-          ) : activeNav === 'System Health' ? (
-            <SystemHealthView />
-          ) : activeNav === 'Settings' ? (
-            <SettingsView
-              user={authUser}
-              onLogout={async () => {
-                await authService.logout()
-                setAuthUser(null)
-                setToast('Session logged out.')
-              }}
-            />
-          ) : (
-            <>
-              <section className="intro">
-                <div>
-                  <h1>SecOps Gateway Console</h1>
-                  <p>Hybrid cloud security inspection active with real-time AI anomaly evaluation and sandbox isolation.</p>
-                </div>
-                <div className="metrics">
-                  <Metric icon="♢" label="Process Uptime" value={data.processUptime || data.uptime || 'Active'} />
-                  <Metric icon="⌁" label="Evaluated Events" value={String(data.evaluatedEventsCount || data.activeFlows)} note={`Persisted in ${range}`} />
-                  <Metric icon="◴" label="ML Latency" value={data.inferenceLatency || '1.8 ms'} note="SHAP: ~20.6 ms" />
-                  <Metric icon="●" label="Gateway Status" value={data.connectionHealth || 'Healthy'} note={data.connectionNote || 'FastAPI ↔ DB ↔ Model'} green />
-                </div>
-              </section>
-
-              <section className="top">
-                <article className="card risk">
-                  <h2>
-                    Current Risk Score <small>ⓘ</small>
-                  </h2>
-                  <div className="risk-body">
-                    <div className="gauge">
-                      <span>
-                        <b>{data.riskScore}</b>
-                        <small>/ 100</small>
-                        <em>{data.riskState.toUpperCase()}</em>
-                      </span>
-                    </div>
-                    <div>
-                      <h3>⬡　{data.riskScore >= 70 ? 'Elevated risk detected' : 'Normal Operating Baseline'}</h3>
-                      <p>
-                        {data.riskScore >= 70
-                          ? 'Unusual traffic patterns and anomalous flow vectors detected by trained ML model.'
-                          : 'Observed network flow distributions adhere to learned benign baseline behaviors.'}
-                      </p>
-                      <button className="primary" onClick={openTopIncident}>
-                        Review incident <span>→</span>
-                      </button>
-                    </div>
-                  </div>
-                </article>
-
-                <article className="card reason-card">
-                  <h2>Top Risk Reasons (Explainable AI)</h2>
-                  {data.reasons.map((reason) => (
-                    <div className="reason" key={reason.label}>
-                      <span>{reason.label}</span>
-                      <div>
-                        <i className={reason.tone} style={{ width: `${Math.min(reason.value, 100)}%` }} />
-                      </div>
-                      <b>{reason.value}%</b>
-                    </div>
-                  ))}
-                </article>
-
-                <article className="card ai">
-                  <h2>✦　AI Recommendation</h2>
-                  <div className="recommend">
-                    <i>⬡</i>
-                    <section>
-                      <h3>{data.riskScore >= 70 ? 'Restrict and investigate' : 'Maintain standard monitoring'}</h3>
-                      <small>
-                        Policy Engine Recommendation: <b>{data.riskState}</b>
-                      </small>
-                      <p>
-                        {data.riskScore >= 70
-                          ? 'Elevated threat probability detected across active flows. Recommend applying policy restriction.'
-                          : 'All evaluated flows remain within normal Gaussian bounds. Continuing standard gateway inspection.'}
-                      </p>
-                      <button className="primary" onClick={openTopIncident}>
-                        Review incident <span>→</span>
-                      </button>
-                    </section>
-                  </div>
-                </article>
-              </section>
-
-              <section className="middle">
-                <article className="card">
-                  <Connectivity
-                    flows={data.evaluatedEventsCount || data.activeFlows}
-                    topology={topology}
-                    riskScore={data.riskScore}
-                    riskState={data.riskState}
-                    enforcementMode={enforcementConfig?.active_mode || currentEnv}
-                    activeRulesCount={activeRules.length}
-                    lastPcapIngest={ingestResponse}
-                    lastVpcIngest={awsVpcResponse}
-                    events={data.events}
-                  />
-                </article>
-                <article className="card">
-                  <h2>
-                    Evaluated Flow Ingestion Telemetry <small>({range})</small>
-                  </h2>
-                  <Traffic points={data.trafficPoints} range={range} />
-                </article>
-              </section>
-
-              <section className="bottom">
-                <article className="card events">
-                  <div className="title-line">
-                    <h2>Recent Security Events (ML Evaluated)</h2>
-                    <button onClick={() => setSearch('')}>Clear filters　→</button>
-                  </div>
-                  <div className="table">
-                    <div className="row head">
-                      <span>Time</span>
-                      <span>Event</span>
-                      <span>Source</span>
-                      <span>Destination</span>
-                      <span>Risk</span>
-                      <span>Action</span>
-                      <span>Status</span>
-                    </div>
-                    {filtered.map((event) => (
-                      <button className="row event-row" onClick={() => setSelected(event)} key={event.id}>
-                        <span>
-                          <i className={`dot ${riskClass(event.risk)}`} />
-                          {event.time}
-                        </span>
-                        <span>{event.event}</span>
-                        <span>{event.source}</span>
-                        <span>{event.destination}</span>
-                        <span>
-                          <b className={`pill ${riskClass(event.risk)}`}>{event.risk}</b>
-                        </span>
-                        <span>
-                          <b className={`action ${event.action.toLowerCase()}`}>{event.action}</b>
-                        </span>
-                        <span>
-                          <i className={`status ${event.status.toLowerCase()}`} />
-                          {event.status}
-                        </span>
-                      </button>
-                    ))}
-                    {filtered.length === 0 && <p className="empty">No security events match “{search}”.</p>}
-                  </div>
-                </article>
-
-                <article className="card timeline">
-                  <h2>Automated Response Timeline</h2>
-                  {(data.timeline && data.timeline.length > 0 ? data.timeline : [
-                    { time: '14:32:09', title: 'Containment Restrict Enforced', sub: 'Applied restrict policy to 192.168.1.77', icon: '✹' },
-                    { time: '14:28:15', title: 'Containment Block Enforced', sub: 'Applied block policy to 203.0.113.24', icon: '♟' },
-                    { time: '14:12:41', title: 'Policy Action: Monitor', sub: 'Applied monitor policy to 198.51.100.9', icon: '◈' },
-                    { time: '13:47:22', title: 'Gateway Inspection Online', sub: 'FastAPI ML engine active', icon: '✓' },
-                  ]).map((item, idx) => (
-                    <div className="step" key={item.id || item.time + idx}>
-                      <i>{item.icon}</i>
-                      <div>
-                        <span>{item.time}</span>
-                        <b>{item.title}</b>
-                        <small>{item.sub}</small>
-                      </div>
-                    </div>
-                  ))}
-                </article>
-
-                <article className="card key">
-                  <h2>Key Metrics</h2>
+          <ErrorBoundary key={activeNav} fallbackTitle={`Unable to display ${activeNav}`}>
+            {activeNav === 'Live Network' || activeNav === 'Traffic' ? (
+              <TrafficView />
+            ) : activeNav === 'Attack Simulation' ? (
+              <SimulationView />
+            ) : activeNav === 'ML Detection' || activeNav === 'Evaluation' ? (
+              <EvaluationView />
+            ) : activeNav === 'Explainability (XAI)' || activeNav === 'Reports' ? (
+              <AnalyticsView />
+            ) : activeNav === 'Policies & Firewall' || activeNav === 'Policies' ? (
+              <PoliciesView />
+            ) : activeNav === 'PCAP Ingestion' ? (
+              <PcapIngestView />
+            ) : activeNav === 'AWS VPC Logs' ? (
+              <AwsVpcView />
+            ) : activeNav === 'Security Events' || activeNav === 'Events' ? (
+              <EventsView />
+            ) : activeNav === 'System Health' ? (
+              <SystemHealthView />
+            ) : activeNav === 'Settings' ? (
+              <SettingsView
+                user={authUser}
+                onLogout={async () => {
+                  await authService.logout()
+                  setAuthUser(null)
+                  setToast('Session logged out.')
+                }}
+              />
+            ) : (
+              <>
+                <section className="intro">
                   <div>
-                    <Metric
-                      icon="⌘"
-                      label="Holdout Detection Rate"
-                      value={data.keyMetrics?.detection_rate || '98.5%'}
-                      note={data.keyMetrics?.detection_note || 'Holdout Benchmark (N=200)'}
-                    />
-                    <Metric
-                      icon="♢"
-                      label="Holdout False Positives"
-                      value={data.keyMetrics?.false_positives || '0.0%'}
-                      note={data.keyMetrics?.fp_note || 'Holdout Validation Suite'}
-                    />
-                    <Metric
-                      icon="◴"
-                      label="ML Inference Latency"
-                      value={data.keyMetrics?.ml_latency || '1.8 ms (Inference)'}
-                      note={data.keyMetrics?.latency_note || 'SHAP Explainer: ~20.6 ms'}
-                    />
-                    <Metric
-                      icon="▣"
-                      label="Active Policies"
-                      value={String(data.keyMetrics?.active_policies ?? activeRules.length)}
-                      note={data.keyMetrics?.policies_note || `${activeRules.length} in sandbox`}
-                    />
+                    <h1>SecOps Gateway Console</h1>
+                    <p>Hybrid cloud security inspection active with real-time AI anomaly evaluation and sandbox isolation.</p>
                   </div>
-                </article>
-              </section>
-            </>
-          )}
+                  <div className="metrics">
+                    <Metric icon="♢" label="Process Uptime" value={data.processUptime || data.uptime || 'Active'} />
+                    <Metric icon="⌁" label="Evaluated Events" value={String(data.evaluatedEventsCount || data.activeFlows)} note={`Persisted in ${range}`} />
+                    <Metric icon="◴" label="ML Latency" value={data.inferenceLatency || '1.8 ms'} note="SHAP: ~20.6 ms" />
+                    <Metric icon="●" label="Gateway Status" value={data.connectionHealth || 'Healthy'} note={data.connectionNote || 'FastAPI ↔ DB ↔ Model'} green />
+                  </div>
+                </section>
+
+                <section className="top">
+                  <article className="card risk">
+                    <h2>
+                      Current Risk Score <small>ⓘ</small>
+                    </h2>
+                    <div className="risk-body">
+                      <div className="gauge">
+                        <span>
+                          <b>{data.riskScore}</b>
+                          <small>/ 100</small>
+                          <em>{data.riskState.toUpperCase()}</em>
+                        </span>
+                      </div>
+                      <div>
+                        <h3>⬡　{data.riskScore >= 70 ? 'Elevated risk detected' : 'Normal Operating Baseline'}</h3>
+                        <p>
+                          {data.riskScore >= 70
+                            ? 'Unusual traffic patterns and anomalous flow vectors detected by trained ML model.'
+                            : 'Observed network flow distributions adhere to learned benign baseline behaviors.'}
+                        </p>
+                        <button className="primary" onClick={openTopIncident}>
+                          Review incident <span>→</span>
+                        </button>
+                      </div>
+                    </div>
+                  </article>
+
+                  <article className="card reason-card">
+                    <h2>Top Risk Reasons (Explainable AI)</h2>
+                    {data.reasons.map((reason) => (
+                      <div className="reason" key={reason.label}>
+                        <span>{reason.label}</span>
+                        <div>
+                          <i className={reason.tone} style={{ width: `${Math.min(reason.value, 100)}%` }} />
+                        </div>
+                        <b>{reason.value}%</b>
+                      </div>
+                    ))}
+                  </article>
+
+                  <article className="card ai">
+                    <h2>✦　AI Recommendation</h2>
+                    <div className="recommend">
+                      <i>⬡</i>
+                      <section>
+                        <h3>{data.riskScore >= 70 ? 'Restrict and investigate' : 'Maintain standard monitoring'}</h3>
+                        <small>
+                          Policy Engine Recommendation: <b>{data.riskState}</b>
+                        </small>
+                        <p>
+                          {data.riskScore >= 70
+                            ? 'Elevated threat probability detected across active flows. Recommend applying policy restriction.'
+                            : 'All evaluated flows remain within normal Gaussian bounds. Continuing standard gateway inspection.'}
+                        </p>
+                        <button className="primary" onClick={openTopIncident}>
+                          Review incident <span>→</span>
+                        </button>
+                      </section>
+                    </div>
+                  </article>
+                </section>
+
+                <section className="middle">
+                  <article className="card">
+                    <Connectivity
+                      flows={data.evaluatedEventsCount || data.activeFlows}
+                      topology={topology}
+                      riskScore={data.riskScore}
+                      riskState={data.riskState}
+                      enforcementMode={enforcementConfig?.active_mode || currentEnv}
+                      activeRulesCount={activeRules.length}
+                      lastPcapIngest={ingestResponse}
+                      lastVpcIngest={awsVpcResponse}
+                      events={data.events}
+                    />
+                  </article>
+                  <article className="card">
+                    <h2>
+                      Evaluated Flow Ingestion Telemetry <small>({range})</small>
+                    </h2>
+                    <Traffic points={data.trafficPoints} range={range} />
+                  </article>
+                </section>
+
+                <section className="bottom">
+                  <article className="card events">
+                    <div className="title-line">
+                      <h2>Recent Security Events (ML Evaluated)</h2>
+                      <button onClick={() => setSearch('')}>Clear filters　→</button>
+                    </div>
+                    <div className="table">
+                      <div className="row head">
+                        <span>Time</span>
+                        <span>Event</span>
+                        <span>Source</span>
+                        <span>Destination</span>
+                        <span>Risk</span>
+                        <span>Action</span>
+                        <span>Status</span>
+                      </div>
+                      {filtered.map((event) => (
+                        <button className="row event-row" onClick={() => setSelected(event)} key={event.id}>
+                          <span>
+                            <i className={`dot ${riskClass(event.risk)}`} />
+                            {event.time}
+                          </span>
+                          <span>{event.event}</span>
+                          <span>{event.source}</span>
+                          <span>{event.destination}</span>
+                          <span>
+                            <b className={`pill ${riskClass(event.risk)}`}>{event.risk}</b>
+                          </span>
+                          <span>
+                            <b className={`action ${event.action.toLowerCase()}`}>{event.action}</b>
+                          </span>
+                          <span>
+                            <i className={`status ${event.status.toLowerCase()}`} />
+                            {event.status}
+                          </span>
+                        </button>
+                      ))}
+                      {filtered.length === 0 && <p className="empty">No security events match “{search}”.</p>}
+                    </div>
+                  </article>
+
+                  <article className="card timeline">
+                    <h2>Automated Response Timeline</h2>
+                    {(data.timeline && data.timeline.length > 0 ? data.timeline : [
+                      { time: '14:32:09', title: 'Containment Restrict Enforced', sub: 'Applied restrict policy to 192.168.1.77', icon: '✹' },
+                      { time: '14:28:15', title: 'Containment Block Enforced', sub: 'Applied block policy to 203.0.113.24', icon: '♟' },
+                      { time: '14:12:41', title: 'Policy Action: Monitor', sub: 'Applied monitor policy to 198.51.100.9', icon: '◈' },
+                      { time: '13:47:22', title: 'Gateway Inspection Online', sub: 'FastAPI ML engine active', icon: '✓' },
+                    ]).map((item, idx) => (
+                      <div className="step" key={item.id || item.time + idx}>
+                        <i>{item.icon}</i>
+                        <div>
+                          <span>{item.time}</span>
+                          <b>{item.title}</b>
+                          <small>{item.sub}</small>
+                        </div>
+                      </div>
+                    ))}
+                  </article>
+
+                  <article className="card key">
+                    <h2>Key Metrics</h2>
+                    <div>
+                      <Metric
+                        icon="⌘"
+                        label="Holdout Detection Rate"
+                        value={data.keyMetrics?.detection_rate || '98.5%'}
+                        note={data.keyMetrics?.detection_note || 'Holdout Benchmark (N=200)'}
+                      />
+                      <Metric
+                        icon="♢"
+                        label="Holdout False Positives"
+                        value={data.keyMetrics?.false_positives || '0.0%'}
+                        note={data.keyMetrics?.fp_note || 'Holdout Validation Suite'}
+                      />
+                      <Metric
+                        icon="◴"
+                        label="ML Inference Latency"
+                        value={data.keyMetrics?.ml_latency || '1.8 ms (Inference)'}
+                        note={data.keyMetrics?.latency_note || 'SHAP Explainer: ~20.6 ms'}
+                      />
+                      <Metric
+                        icon="▣"
+                        label="Active Policies"
+                        value={String(data.keyMetrics?.active_policies ?? activeRules.length)}
+                        note={data.keyMetrics?.policies_note || `${activeRules.length} in sandbox`}
+                      />
+                    </div>
+                  </article>
+                </section>
+              </>
+            )}
+          </ErrorBoundary>
         </div>
       </main>
 

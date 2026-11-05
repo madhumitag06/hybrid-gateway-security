@@ -174,7 +174,8 @@ Prior to staging, all files were audited against repository safety policies:
 
 ## 6. Commit Details
 
-- **Commit SHA:** `a628976a711a193cd5eca0c1019e0bbbef7f54b7`
+- **Implementation Commit SHA:** `a628976a711a193cd5eca0c1019e0bbbef7f54b7`
+- **Synchronization Report Commit SHA:** `91252469446d338be642fe41b3fe940422c544ce`
 - **Author:** secops-admin
 - **Commit Subject:** `feat: promote XGBoost V2, persistent PCAP ingestion, adaptive ML pipeline, and hybrid gateway integration`
 - **Summary of Changes:** 107 files changed, 24,089 insertions(+), 135 deletions(-)
@@ -188,13 +189,15 @@ Prior to staging, all files were audited against repository safety policies:
   ```text
   To https://github.com/madhumitag06/hybrid-gateway-security.git
      2ec570d..a628976  main -> main
+     a628976..9125246  main -> main
   ```
 - **Post-Push Remote Verification:**
-  - `git rev-parse HEAD`: `a628976a711a193cd5eca0c1019e0bbbef7f54b7`
-  - `git rev-parse origin/main`: `a628976a711a193cd5eca0c1019e0bbbef7f54b7`
+  - `git rev-parse HEAD`: `91252469446d338be642fe41b3fe940422c544ce`
+  - `git rev-parse origin/main`: `91252469446d338be642fe41b3fe940422c544ce`
   - Local `main` and `origin/main` are identical.
 - **Working Tree State:** `nothing to commit, working tree clean`
-- **Remote Commit URL:** https://github.com/madhumitag06/hybrid-gateway-security/commit/a628976a711a193cd5eca0c1019e0bbbef7f54b7
+- **Remote Implementation Commit URL:** https://github.com/madhumitag06/hybrid-gateway-security/commit/a628976a711a193cd5eca0c1019e0bbbef7f54b7
+- **Remote Synchronization Report URL:** https://github.com/madhumitag06/hybrid-gateway-security/commit/91252469446d338be642fe41b3fe940422c544ce
 
 ---
 

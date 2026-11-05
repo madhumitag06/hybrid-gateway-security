@@ -24,6 +24,7 @@ def test_health_endpoint():
     data = response.json()
     assert data["status"] == "healthy"
     assert data["model_loaded"] is True
-    assert data["model_type"] == "RandomForestClassifier"
+    assert data["model_type"] in ["XGBClassifier", "RandomForestClassifier"]
+    assert "active_model_version" in data
     assert "BENIGN" in data["classes"]
     assert "PORT_SCAN" in data["classes"]

@@ -11,7 +11,11 @@ import {
   listSamplePcaps,
   ingestSamplePcap,
   uploadPcapFile,
+  getLatestIngestion,
+  getIngestionHistory,
+  getIngestionDetails,
 } from '../services/ingestion'
+import { getAdaptiveTelemetry } from '../services/adaptive'
 import type { IngestionStatusResponse, PcapIngestionResponse, SamplePcapInfo } from '../types'
 
 export const PcapIngestView: React.FC = () => {
@@ -23,6 +27,61 @@ export const PcapIngestView: React.FC = () => {
   const [ingestResponse, setIngestResponse] = useState<PcapIngestionResponse | null>(null)
   const [toast, setToast] = useState<string | null>(null)
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const [activeModelInfo, setActiveModelInfo] = useState<{ active: string; standby: string | null }>({
+    active: 'XGBoost V2',
+    standby: 'Random Forest V1',
+  })
+  const [historyList, setHistoryList] = useState<any[]>([])
+  const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null)
+  const [showHistory, setShowHistory] = useState(false)
+
+  const reloadHistoryAndLatest = async () => {
+    try {
+      const [histRes, latestRes, telemetryRes] = await Promise.all([
+        getIngestionHistory(1, 10).catch(() => ({ total: 0, ingestions: [] })),
+        getLatestIngestion().catch(() => ({ status: 'none', ingestion: null })),
+        getAdaptiveTelemetry().catch(() => null),
+      ])
+
+      if (histRes?.ingestions) {
+        setHistoryList(histRes.ingestions)
+      }
+
+      if (telemetryRes) {
+        setActiveModelInfo({
+          active: telemetryRes.active_model_version || 'XGBoost V2',
+          standby: telemetryRes.standby_model_version || 'Random Forest V1',
+        })
+      }
+
+      if (latestRes?.status === 'success' && latestRes?.ingestion) {
+        const ing = latestRes.ingestion
+        setSelectedHistoryId(ing.id)
+        setIngestResponse({
+          source_type: 'PERSISTED_PCAP',
+          filename: ing.filename,
+          file_size_bytes: ing.file_size_bytes || 0,
+          is_demo: false,
+          metrics: ing.metrics || {
+            packets_read: ing.packets_processed || 0,
+            packets_processed: ing.packets_processed || 0,
+            packets_skipped: 0,
+            flows_generated: ing.flows_generated || 0,
+            parse_duration_ms: 0,
+            inference_duration_ms: 0,
+            persist_duration_ms: 0,
+            total_duration_ms: ing.duration_ms || 0,
+            throughput_packets_per_sec: 0,
+          },
+          flows_evaluated: ing.flows_evaluated || 0,
+          high_risk_flows_count: ing.high_risk_flows_count || 0,
+          results: ing.summary_results || [],
+        })
+      }
+    } catch (err) {
+      console.warn('Failed to load persisted PCAP history/latest:', err)
+    }
+  }
 
   useEffect(() => {
     let mounted = true
@@ -38,10 +97,44 @@ export const PcapIngestView: React.FC = () => {
         console.error('Error loading ingestion data:', err)
         if (mounted) setLoading(false)
       })
+
+    reloadHistoryAndLatest()
+
     return () => {
       mounted = false
     }
   }, [])
+
+  const handleSelectHistoryItem = async (histItem: any) => {
+    try {
+      setSelectedHistoryId(histItem.id)
+      const details = await getIngestionDetails(histItem.id)
+      const ing = details?.ingestion || histItem
+      setIngestResponse({
+        source_type: 'PERSISTED_PCAP',
+        filename: ing.filename,
+        file_size_bytes: ing.file_size_bytes || 0,
+        is_demo: false,
+        metrics: ing.metrics || {
+          packets_read: ing.packets_processed || 0,
+          packets_processed: ing.packets_processed || 0,
+          packets_skipped: 0,
+          flows_generated: ing.flows_generated || 0,
+          parse_duration_ms: 0,
+          inference_duration_ms: 0,
+          persist_duration_ms: 0,
+          total_duration_ms: ing.duration_ms || 0,
+          throughput_packets_per_sec: 0,
+        },
+        flows_evaluated: ing.flows_evaluated || 0,
+        high_risk_flows_count: ing.high_risk_flows_count || 0,
+        results: ing.summary_results || [],
+      })
+      setToast(`Loaded persisted ingestion record for '${ing.filename}'.`)
+    } catch (err: any) {
+      setToast(`Failed to load historical record: ${err.message || String(err)}`)
+    }
+  }
 
   const handleUploadSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -56,8 +149,9 @@ export const PcapIngestView: React.FC = () => {
       setUploadProgress(100)
       setIngestResponse(res)
       setToast(
-        `PCAP processed in ${res.metrics.total_duration_ms} ms: ${res.metrics.packets_processed} packets, ${res.metrics.flows_generated} flows evaluated (${res.high_risk_flows_count} high risk).`
+        `PCAP processed in ${res.metrics.total_duration_ms} ms: ${res.metrics.packets_processed} packets, ${res.metrics.flows_generated} flows evaluated (${res.high_risk_flows_count} high risk). Persisted to database.`
       )
+      reloadHistoryAndLatest()
     } catch (err: any) {
       setToast(`PCAP Ingestion error: ${err.message || String(err)}`)
     } finally {
@@ -76,8 +170,9 @@ export const PcapIngestView: React.FC = () => {
       setUploadProgress(100)
       setIngestResponse(res)
       setToast(
-        `Benchmark '${filename}' completed: ${res.metrics.packets_processed} packets, ${res.flows_evaluated} flows evaluated.`
+        `Benchmark '${filename}' completed: ${res.metrics.packets_processed} packets, ${res.flows_evaluated} flows evaluated. Persisted to database.`
       )
+      reloadHistoryAndLatest()
     } catch (err: any) {
       setToast(`Sample PCAP error: ${err.message || String(err)}`)
     } finally {
@@ -93,16 +188,32 @@ export const PcapIngestView: React.FC = () => {
           <h1>📦 Telemetry & PCAP Ingestion</h1>
           <p>
             Upload raw packet captures (.pcap / .pcapng) or select standard benchmark captures to extract flow vectors,
-            run Random Forest ML threat detection, and evaluate containment policies.
+            run authoritative <strong>{activeModelInfo.active}</strong> threat detection (with <strong>{activeModelInfo.standby || 'Random Forest'}</strong> standby rollback),
+            and evaluate containment policies. All ingestion runs and flow feedback are continuously persisted.
           </p>
         </div>
-        {status && (
-          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+          <span
+            className="topology-badge"
+            title="Active Model Registry Status"
+            style={{ borderColor: 'var(--terracotta)', color: 'var(--terracotta)' }}
+          >
+            🛡️ Model: <strong>{activeModelInfo.active}</strong>
+          </span>
+          {status && (
             <span className="topology-badge" title="Ingestion Engine Status">
               Processed: {status.total_pcaps_ingested} PCAPs • {status.total_packets_processed} pkts
             </span>
-          </div>
-        )}
+          )}
+          <button
+            type="button"
+            className="chip"
+            onClick={() => setShowHistory(!showHistory)}
+            style={{ fontSize: '11px', padding: '4px 8px' }}
+          >
+            📜 Ingestion History ({historyList.length})
+          </button>
+        </div>
       </section>
 
       {toast && (
@@ -237,6 +348,85 @@ export const PcapIngestView: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Persisted PCAP History Panel */}
+      {showHistory && (
+        <section className="card" style={{ padding: '14px 16px', background: 'var(--panel)', border: '1px solid var(--line-strong)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+            <h3 style={{ margin: 0, fontSize: '13px', color: 'var(--warm-cream)' }}>
+              📜 Persisted Ingestion History ({historyList.length} captures in PostgreSQL)
+            </h3>
+            <button
+              type="button"
+              className="chip"
+              onClick={reloadHistoryAndLatest}
+              style={{ fontSize: '10.5px', padding: '3px 8px' }}
+            >
+              ↻ Refresh
+            </button>
+          </div>
+          {historyList.length === 0 ? (
+            <p style={{ color: 'var(--muted-cream)', fontSize: '11px', margin: 0 }}>
+              No persisted ingestions found. Upload a file or run a benchmark capture above.
+            </p>
+          ) : (
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px', textAlign: 'left' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid var(--line-strong)', color: 'var(--muted-cream)' }}>
+                    <th style={{ padding: '6px 8px' }}>Filename</th>
+                    <th style={{ padding: '6px 8px' }}>Date</th>
+                    <th style={{ padding: '6px 8px' }}>Packets</th>
+                    <th style={{ padding: '6px 8px' }}>Flows</th>
+                    <th style={{ padding: '6px 8px' }}>High Risk</th>
+                    <th style={{ padding: '6px 8px' }}>Duration</th>
+                    <th style={{ padding: '6px 8px' }}>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {historyList.map((item) => (
+                    <tr
+                      key={item.id}
+                      style={{
+                        borderBottom: '1px solid var(--line-subtle)',
+                        background: selectedHistoryId === item.id ? 'var(--panel-elevated)' : 'transparent',
+                      }}
+                    >
+                      <td style={{ padding: '6px 8px', fontFamily: 'var(--font-mono)', color: 'var(--warm-cream)' }}>
+                        {item.filename}
+                      </td>
+                      <td style={{ padding: '6px 8px', color: 'var(--muted-cream)' }}>
+                        {item.created_at ? new Date(item.created_at).toLocaleString() : 'N/A'}
+                      </td>
+                      <td style={{ padding: '6px 8px' }}>{item.packets_processed}</td>
+                      <td style={{ padding: '6px 8px' }}>{item.flows_evaluated}</td>
+                      <td style={{ padding: '6px 8px' }}>
+                        <span
+                          className={`threat-tag ${item.high_risk_flows_count > 0 ? 'HIGH' : 'LOW'}`}
+                          style={{ fontSize: '9px', padding: '2px 5px' }}
+                        >
+                          {item.high_risk_flows_count}
+                        </span>
+                      </td>
+                      <td style={{ padding: '6px 8px', color: 'var(--muted-cream)' }}>{item.duration_ms} ms</td>
+                      <td style={{ padding: '6px 8px' }}>
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          onClick={() => handleSelectHistoryItem(item)}
+                          style={{ fontSize: '10px', padding: '2px 6px' }}
+                        >
+                          {selectedHistoryId === item.id ? 'Active' : 'Load'}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      )}
 
       {/* Evaluated Flows Results Table */}
       {ingestResponse && (

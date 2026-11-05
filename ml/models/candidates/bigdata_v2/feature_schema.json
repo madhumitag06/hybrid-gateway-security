@@ -1,0 +1,15 @@
+{
+  "version": "v2",
+  "feature_names": [
+    "packet_count",
+    "byte_count",
+    "duration",
+    "conn_rate",
+    "dst_port",
+    "unique_dst_ports",
+    "bytes_per_sec",
+    "packets_per_sec",
+    "avg_packet_size"
+  ],
+  "count": 9
+}

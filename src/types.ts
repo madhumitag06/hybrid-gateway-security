@@ -186,6 +186,7 @@ export interface FlowPredictionResponse {
   class_probabilities: Record<string, number>
   top_contributing_features: ContributingFeature[]
   explanation_status?: string
+  model_version?: string
 }
 
 export interface BackendHealth {
@@ -547,6 +548,9 @@ export interface MLClassificationMetrics {
   macro_precision: number
   macro_recall: number
   macro_f1: number
+  weighted_f1?: number
+  overall_fpr?: number
+  overall_fnr?: number
   confusion_matrix: ConfusionMatrixSchema
   per_class_metrics: PerClassMetrics[]
 }
@@ -617,6 +621,13 @@ export interface EvaluationRunResponse {
   suite_name: string
   total_flows_evaluated: number
   evaluation_timestamp: string
+  model_version?: string
+  model_name?: string
+  model_algorithm?: string
+  active_role?: string
+  dataset_type?: string
+  is_single_class_suite?: boolean
+  represented_classes?: string[]
   ml_classification_metrics: MLClassificationMetrics
   policy_comparison_metrics: PolicyComparisonMetrics
   latency_metrics: LatencyBreakdown

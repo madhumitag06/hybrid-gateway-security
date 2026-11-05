@@ -57,3 +57,10 @@ scratch/
 *.pcap
 *.pcapng
 backend/app/data/sample_pcaps/suspicious_transfer.pcap
+
+# Big Data Training Datasets & Ephemeral Candidate Artifacts
+data/
+ml/models/candidates/*
+!ml/models/candidates/bigdata_v2/
+*.parquet
+pnpm-lock.yaml

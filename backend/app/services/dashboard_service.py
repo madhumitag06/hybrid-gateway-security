@@ -283,6 +283,23 @@ class DashboardService:
         db.flush()
 
         pred.event_id = event_id
+
+        # Phase 3: Shadow Mode Evaluation (Advisory, Non-enforcing)
+        try:
+            from backend.app.services.shadow_service import ShadowService
+            shadow_eval = ShadowService.evaluate_shadow_flow(
+                flow_request=flow_request,
+                prod_pred=pred,
+                flow_id=event_id,
+                source_ip=source_ip,
+                destination_ip=destination_ip,
+                protocol="TCP",
+            )
+            if shadow_eval is not None:
+                ShadowService.persist_shadow_record(db=db, eval_result=shadow_eval)
+        except Exception:
+            pass
+
         return pred, event_model
 
     @classmethod
@@ -410,6 +427,28 @@ class DashboardService:
             # Final flush for remaining items
             if len(items) % batch_size != 0:
                 db.flush()
+
+            # Phase 3: Shadow Mode Batch Evaluation (Advisory, Non-enforcing)
+            try:
+                from backend.app.services.shadow_service import ShadowService
+                if ShadowService.is_available():
+                    shadow_evals = []
+                    for idx, (flow_req, s_ip, d_ip, proto) in enumerate(items):
+                        p_pred, _ = results[idx]
+                        sh_eval = ShadowService.evaluate_shadow_flow(
+                            flow_request=flow_req,
+                            prod_pred=p_pred,
+                            flow_id=p_pred.event_id,
+                            source_ip=s_ip,
+                            destination_ip=d_ip,
+                            protocol=proto or "TCP",
+                        )
+                        if sh_eval:
+                            shadow_evals.append(sh_eval)
+                    if shadow_evals:
+                        ShadowService.persist_shadow_batch(db=db, eval_results=shadow_evals)
+            except Exception:
+                pass
 
             return results
 
@@ -605,6 +644,16 @@ class DashboardService:
 
         unread_count = len([n for n in high_risk_notifications if not n.is_read])
 
+        # Resolve active model details dynamically from MLService
+        from backend.app.services.ml_service import MLService
+        reg_status = MLService.get_registry_status()
+        act_details = reg_status.get("active_model_details", {})
+        act_name = act_details.get("name", "Big Data XGBoost V2")
+        act_algo = act_details.get("algorithm", "XGBClassifier")
+        act_feats = act_details.get("feature_count", 9)
+        model_status_label = f"{act_name} active ({act_algo}, {act_feats} features)"
+        connection_note_label = f"FastAPI ↔ PostgreSQL ↔ {act_algo}"
+
         return DashboardDataSchema(
             riskScore=overall_risk,
             riskState=risk_state,
@@ -612,7 +661,7 @@ class DashboardService:
             evaluatedEventsCount=evaluated_events_count,
             events=events,
             reasons=reasons_list,
-            modelStatus="Trained RandomForestClassifier active (Phase 1)",
+            modelStatus=model_status_label,
             isSimulatedFlowBuffer=False,
             databaseBackend="PostgreSQL (Persistent Storage)",
             processUptime=uptime_str,
@@ -622,7 +671,7 @@ class DashboardService:
             pipelineLatency="22.4 ms (End-to-End with SHAP)",
             avgLatency="1.8 ms",
             connectionHealth="Healthy",
-            connectionNote="FastAPI ↔ PostgreSQL ↔ RandomForest",
+            connectionNote=connection_note_label,
             timeRange=range_label,
             trafficVolumeUnit="Recorded Flow Telemetry Volume (Events / Time Bucket)",
             trafficPoints=traffic_points,
@@ -1021,6 +1070,13 @@ class DashboardService:
             {"id": "LIVE_AWS_READ_ONLY", "name": "Live AWS Read-Only", "status": "CONFIGURED", "desc": "Read-only CloudWatch / VPC Flow telemetry."},
         ]
 
+        from backend.app.services.ml_service import MLService
+        reg_status = MLService.get_registry_status()
+        act_details = reg_status.get("active_model_details", {})
+        act_algo = act_details.get("algorithm", "XGBClassifier")
+        act_name = act_details.get("name", "Big Data XGBoost V2")
+        act_feats = act_details.get("feature_count", 9)
+
         return SystemProfileSchema(
             username="secops_admin",
             full_name="SecOps Local Console",
@@ -1034,5 +1090,5 @@ class DashboardService:
             uptime_formatted=uptime_str,
             process_start_time=APP_START_TIME.isoformat(),
             database_status="Connected (PostgreSQL on port 5434)",
-            ml_model_status="Online (RandomForestClassifier)",
+            ml_model_status=f"Online ({act_name} - {act_algo}, {act_feats} features)",
         )

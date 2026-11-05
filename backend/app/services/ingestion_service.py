@@ -10,8 +10,10 @@ import os
 from pathlib import Path
 import platform
 import time
-from typing import List, Optional
+from typing import Any, Dict, List, Optional, Tuple
+import uuid
 from fastapi import HTTPException, status
+from sqlalchemy import desc, func, select
 from sqlalchemy.orm import Session
 
 from scapy.layers.inet import IP, TCP, UDP, ICMP
@@ -177,6 +179,27 @@ class IngestionService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Uploaded PCAP file is empty (0 bytes).",
             )
+
+        ingest_id = f"ingest-{uuid.uuid4().hex[:12]}"
+        ingest_rec = None
+        if db is not None:
+            try:
+                from backend.app.models.pcap_ingestion import PcapIngestionModel
+                ingest_rec = PcapIngestionModel(
+                    id=ingest_id,
+                    filename=filename,
+                    file_type="SAMPLE" if "sample" in filename.lower() else "PCAP",
+                    file_size_bytes=file_size_bytes,
+                    uploaded_at=datetime.now(timezone.utc),
+                    processing_started_at=datetime.now(timezone.utc),
+                    status="PROCESSING",
+                    model_version=MLService.get_active_version(),
+                )
+                db.add(ingest_rec)
+                db.commit()
+            except Exception:
+                db.rollback()
+                ingest_rec = None
 
         start_total = time.perf_counter()
         aggregator = FlowAggregator(inactivity_timeout=10.0, max_flow_duration=30.0)
@@ -405,6 +428,91 @@ class IngestionService:
             events_persisted=events_persisted,
         )
 
+        # Update persistent PcapIngestionModel and AdaptiveFlowFeedbackModel
+        if ingest_rec is not None and db is not None:
+            try:
+                attack_dist: Dict[str, int] = {}
+                benign_cnt = 0
+                susp_cnt = 0
+                for r in flow_results:
+                    at = r.prediction.attack_type
+                    attack_dist[at] = attack_dist.get(at, 0) + 1
+                    if at == "BENIGN":
+                        benign_cnt += 1
+                    else:
+                        susp_cnt += 1
+
+                summary_payload = [
+                    {
+                        "flow_id": r.flow_id,
+                        "src_ip": r.flow_features.source_ip,
+                        "dst_ip": r.flow_features.destination_ip,
+                        "protocol": r.flow_features.protocol,
+                        "dst_port": r.flow_features.dst_port,
+                        "packet_count": r.flow_features.packet_count,
+                        "byte_count": r.flow_features.byte_count,
+                        "duration": r.flow_features.duration,
+                        "attack_type": r.prediction.attack_type,
+                        "confidence": r.prediction.confidence,
+                        "risk_score": r.prediction.risk_score,
+                        "threat_level": r.prediction.threat_level,
+                        "action": r.prediction.action_recommendation,
+                        "event_id": r.persisted_event_id,
+                    }
+                    for r in bounded_results
+                ]
+
+                ingest_rec.status = "COMPLETED"
+                ingest_rec.processing_completed_at = datetime.now(timezone.utc)
+                ingest_rec.total_packets = packets_processed
+                ingest_rec.total_flows = total_flows_count
+                ingest_rec.flows_evaluated = len(flow_results)
+                ingest_rec.benign_count = benign_cnt
+                ingest_rec.suspicious_count = susp_cnt
+                ingest_rec.high_risk_count = high_risk_count
+                ingest_rec.attack_distribution = attack_dist
+                ingest_rec.metrics = metrics.model_dump()
+                ingest_rec.summary_results = summary_payload
+                db.commit()
+
+                # Populate adaptive learning feedback records (Stage A)
+                from backend.app.models.adaptive_learning import AdaptiveFlowFeedbackModel
+                fb_objs = []
+                for r in flow_results:
+                    feat_dict = {
+                        "packet_count": r.flow_features.packet_count,
+                        "byte_count": r.flow_features.byte_count,
+                        "duration": r.flow_features.duration,
+                        "conn_rate": r.flow_features.conn_rate,
+                        "dst_port": r.flow_features.dst_port,
+                        "unique_dst_ports": r.flow_features.unique_dst_ports,
+                        "bytes_per_sec": r.flow_features.byte_count / max(r.flow_features.duration, 0.001),
+                        "packets_per_sec": r.flow_features.packet_count / max(r.flow_features.duration, 0.001),
+                        "avg_packet_size": r.flow_features.byte_count / max(r.flow_features.packet_count, 1),
+                    }
+                    fb = AdaptiveFlowFeedbackModel(
+                        id=f"fb-{uuid.uuid4().hex[:12]}",
+                        ingestion_id=ingest_id,
+                        flow_id=r.flow_id,
+                        timestamp=datetime.now(timezone.utc),
+                        source_ip=r.flow_features.source_ip,
+                        destination_ip=r.flow_features.destination_ip,
+                        dst_port=r.flow_features.dst_port,
+                        protocol=r.flow_features.protocol,
+                        flow_features=feat_dict,
+                        predicted_class=r.prediction.attack_type,
+                        prediction_confidence=r.prediction.confidence,
+                        model_version=MLService.get_active_version(),
+                        verified_label=None,
+                        feedback_status="UNVERIFIED",
+                        is_training_eligible=False,
+                    )
+                    fb_objs.append(fb)
+                db.bulk_save_objects(fb_objs)
+                db.commit()
+            except Exception:
+                db.rollback()
+
         return PcapIngestionResponse(
             source_type="PCAP_INGESTION",
             filename=filename,
@@ -421,3 +529,36 @@ class IngestionService:
             is_sampled=is_sampled,
             results=bounded_results,
         )
+
+    @classmethod
+    def get_history(cls, db: Session, page: int = 1, page_size: int = 20) -> Dict[str, Any]:
+        from backend.app.models.pcap_ingestion import PcapIngestionModel
+        total = db.scalar(select(func.count(PcapIngestionModel.id))) or 0
+        items = db.scalars(
+            select(PcapIngestionModel)
+            .order_by(desc(PcapIngestionModel.uploaded_at))
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+        ).all()
+        return {
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "ingestions": [i.to_dict() for i in items],
+        }
+
+    @classmethod
+    def get_ingestion_by_id(cls, db: Session, ingestion_id: str) -> Optional[Dict[str, Any]]:
+        from backend.app.models.pcap_ingestion import PcapIngestionModel
+        item = db.scalar(select(PcapIngestionModel).where(PcapIngestionModel.id == ingestion_id))
+        return item.to_dict() if item else None
+
+    @classmethod
+    def get_latest_ingestion(cls, db: Session) -> Optional[Dict[str, Any]]:
+        from backend.app.models.pcap_ingestion import PcapIngestionModel
+        item = db.scalar(
+            select(PcapIngestionModel)
+            .order_by(desc(PcapIngestionModel.uploaded_at))
+            .limit(1)
+        )
+        return item.to_dict() if item else None

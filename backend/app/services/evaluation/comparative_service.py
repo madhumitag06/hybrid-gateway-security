@@ -332,10 +332,24 @@ class ComparativeEvaluationService:
             total_duration_seconds=round(total_duration, 3),
         )
 
+        reg_status = MLService.get_registry_status()
+        act_ver = MLService.get_active_version()
+        act_details = reg_status.get("active_model_details", {})
+
+        unique_gt = sorted(list(set(ground_truth_labels)))
+        is_single = len(unique_gt) == 1
+
         return EvaluationRunResponse(
             suite_name=request.suite_name,
             total_flows_evaluated=len(scenarios),
             evaluation_timestamp=datetime.now(timezone.utc),
+            model_version=act_ver,
+            model_name=act_details.get("name", "Big Data XGBoost V2"),
+            model_algorithm=act_details.get("algorithm", "XGBClassifier"),
+            active_role=act_details.get("role", "ACTIVE_PRIMARY"),
+            dataset_type="Representative Multi-Dataset Benchmark",
+            is_single_class_suite=is_single,
+            represented_classes=unique_gt,
             ml_classification_metrics=ml_metrics,
             policy_comparison_metrics=pol_metrics,
             latency_metrics=latency_breakdown,
@@ -405,11 +419,31 @@ class ComparativeEvaluationService:
         macro_r = round(float(np.mean(recalls)), 4)
         macro_f1 = round(float(np.mean(f1s)), 4)
 
+        total_support = sum(m.tp + m.fn for m in per_class_list)
+        if total_support > 0:
+            weighted_f1 = round(sum(m.f1_score * (m.tp + m.fn) for m in per_class_list) / float(total_support), 4)
+        else:
+            weighted_f1 = macro_f1
+
+        # Overall FPR (false alarms on benign traffic: actual benign classified as attack)
+        benign_idx = class_to_idx.get("BENIGN", 0)
+        total_actual_benign = sum(matrix[benign_idx])
+        benign_fps = sum(matrix[benign_idx][c] for c in range(n_classes) if c != benign_idx)
+        overall_fpr = round(benign_fps / float(max(total_actual_benign, 1)), 4)
+
+        # Overall FNR (missed threats: actual attacks classified as benign)
+        total_actual_attacks = sum(sum(matrix[r]) for r in range(n_classes) if r != benign_idx)
+        missed_attacks = sum(matrix[r][benign_idx] for r in range(n_classes) if r != benign_idx)
+        overall_fnr = round(missed_attacks / float(max(total_actual_attacks, 1)), 4)
+
         return MLClassificationMetrics(
             overall_accuracy=overall_acc,
             macro_precision=macro_p,
             macro_recall=macro_r,
             macro_f1=macro_f1,
+            weighted_f1=weighted_f1,
+            overall_fpr=overall_fpr,
+            overall_fnr=overall_fnr,
             confusion_matrix=ConfusionMatrixSchema(classes=CLASSES, matrix=matrix),
             per_class_metrics=per_class_list,
         )

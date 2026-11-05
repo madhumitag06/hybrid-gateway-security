@@ -1,0 +1,81 @@
+{
+  "version": "v2",
+  "timestamp_utc": "2026-11-05T19:42:07.840718+00:00",
+  "total_cleaned_records": 6499075,
+  "feature_schema": [
+    "packet_count",
+    "byte_count",
+    "duration",
+    "conn_rate",
+    "dst_port",
+    "unique_dst_ports",
+    "bytes_per_sec",
+    "packets_per_sec",
+    "avg_packet_size"
+  ],
+  "feature_count": 9,
+  "target_classes": [
+    "BENIGN",
+    "PORT_SCAN",
+    "BRUTE_FORCE",
+    "TRAFFIC_SPIKE",
+    "SUSPICIOUS_TRANSFER"
+  ],
+  "source_breakdown": {
+    "UNSW-NB15": 1365612,
+    "CIC-IDS2017": 1784328,
+    "CSE-CIC-IDS2018": 1685808,
+    "CIC-DDoS2019": 1663327
+  },
+  "overall_class_distribution": {
+    "BENIGN": 4215991,
+    "PORT_SCAN": 99503,
+    "BRUTE_FORCE": 96521,
+    "TRAFFIC_SPIKE": 2055251,
+    "SUSPICIOUS_TRANSFER": 31809
+  },
+  "splits": {
+    "train": {
+      "records": 4549345,
+      "file": "train.parquet",
+      "file_size_bytes": 152774618,
+      "file_size_mb": 145.7,
+      "sha256": "4f537ff01cc26d0596bb6b66cb55c79c5255dd7f8f2c2466898b945e9aa8284d",
+      "class_distribution": {
+        "BENIGN": 2951191,
+        "PORT_SCAN": 69651,
+        "BRUTE_FORCE": 67564,
+        "TRAFFIC_SPIKE": 1438674,
+        "SUSPICIOUS_TRANSFER": 22265
+      }
+    },
+    "val": {
+      "records": 974855,
+      "file": "val.parquet",
+      "file_size_bytes": 34149716,
+      "file_size_mb": 32.57,
+      "sha256": "f70243da3a080f2e03e9aa75962707c3705bf51c9579320d21e95f959da4c541",
+      "class_distribution": {
+        "BENIGN": 632398,
+        "PORT_SCAN": 14923,
+        "BRUTE_FORCE": 14477,
+        "TRAFFIC_SPIKE": 308286,
+        "SUSPICIOUS_TRANSFER": 4771
+      }
+    },
+    "test": {
+      "records": 974875,
+      "file": "test.parquet",
+      "file_size_bytes": 34139345,
+      "file_size_mb": 32.56,
+      "sha256": "57f1e8f3bd2068e32ae4a9db3808ef5951ecfa8711a34b107be01e312176a50c",
+      "class_distribution": {
+        "BENIGN": 632402,
+        "PORT_SCAN": 14929,
+        "BRUTE_FORCE": 14480,
+        "TRAFFIC_SPIKE": 308291,
+        "SUSPICIOUS_TRANSFER": 4773
+      }
+    }
+  }
+}

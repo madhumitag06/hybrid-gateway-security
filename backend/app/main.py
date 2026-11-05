@@ -21,6 +21,8 @@ from backend.app.api.v1.events import router as events_router
 from backend.app.api.v1.hybrid import router as hybrid_router
 from backend.app.api.v1.ingest import router as ingest_router
 from backend.app.api.v1.predict import router as predict_router
+from backend.app.api.v1.shadow import router as shadow_router
+from backend.app.api.v1.adaptive import router as adaptive_router
 from backend.app.config import get_frontend_dist_dir, settings
 from backend.app.db.session import SessionLocal, init_db
 from backend.app.services.auth_service import AuthService
@@ -38,13 +40,78 @@ async def lifespan(app: FastAPI):
     """
     print(f"[*] Starting {settings.app_name} v{settings.app_version}...")
 
-    # 1. Preload Phase 1 ML Model Artifacts
+    # 1. Model Registry & Native Runtime Diagnostics
+    print("==================================================================")
+    print(" MODEL REGISTRY & THREAT INFERENCE DIAGNOSTICS")
+    print("==================================================================")
+    xgb_available = False
     try:
-        predictor = MLService.get_predictor()
-        print(f"[+] Successfully loaded Phase 1 ML model artifacts from {settings.ml_artifacts_dir}")
-        print(f"    Classes: {predictor.classes}")
+        import xgboost
+        from xgboost import libpath
+        found_libs = libpath.find_lib_path()
+        print(f"[+] Native XGBoost library located: {found_libs[0] if found_libs else 'default'}")
+        print(f"    XGBoost runtime version: {xgboost.__version__}")
+        xgb_available = True
     except Exception as e:
-        print(f"[!] Warning: Failed to preload ML model artifacts: {e}")
+        print(f"[!] Warning: Native XGBoost library discovery failed: {e}")
+        print("    Candidate XGBoost V2 model will be marked DEGRADED.")
+
+    active_ver = MLService.get_active_version()
+    print(f"[*] Configured active model version: '{active_ver}'")
+
+    if active_ver == "candidate_xgboost_v2" and not xgb_available:
+        print("[!] Warning: Active model is set to XGBoost V2 but native library is unavailable.")
+        print("[!] Falling back automatically to Standby Random Forest baseline.")
+        MLService.promote_model("production_rf", reason="Automatic fallback: native XGBoost library unavailable")
+        active_ver = "production_rf"
+
+    try:
+        active_pred = MLService.get_predictor()
+        reg_status = MLService.get_registry_status()
+        act_details = reg_status["active_model_details"]
+        print(f"[+] Active Model: {act_details['name']} ({act_details['model_version']})")
+        print(f"    Algorithm: {act_details['algorithm']}, Schema: {act_details['schema_version']} ({act_details['feature_count']} features)")
+        print(f"    Classes: {active_pred.classes}")
+    except Exception as e:
+        print(f"[!] Warning: Failed to initialize active model '{active_ver}': {e}")
+        if active_ver != "production_rf":
+            print("[*] Attempting emergency fallback to production Random Forest...")
+            try:
+                MLService.promote_model("production_rf", reason="Emergency fallback on startup failure")
+                active_pred = MLService.get_predictor()
+                print(f"[+] Fallback successful: Random Forest Baseline is active ({len(active_pred.feature_schema)} features).")
+            except Exception as e2:
+                print(f"[X] Critical: Fallback to Random Forest also failed: {e2}")
+
+    standby_ver = MLService.get_previous_version()
+    if standby_ver:
+        try:
+            standby_pred = MLService.get_standby_predictor()
+            if standby_pred is not None:
+                print(f"[+] Standby Model: '{standby_ver}' is ready for immediate zero-downtime rollback.")
+        except Exception as e:
+            print(f"[!] Notice: Standby model '{standby_ver}' is currently unavailable: {e}")
+
+    # Preload Candidate Model in Shadow Mode if enabled
+    try:
+        from backend.app.services.shadow_service import ShadowService
+        if settings.shadow_mode_enabled:
+            cand_pred = ShadowService.get_candidate_predictor()
+            if cand_pred is not None:
+                if active_ver == "candidate_xgboost_v2":
+                    print(f"[+] Dual-Model Telemetry: Authoritative Primary is XGBoost V2 ({len(active_pred.feature_schema)} features).")
+                    print(f"    Standby Rollback: Random Forest Baseline ready for zero-downtime rollback.")
+                    print("    Enforcement authority: AUTHORITATIVE PRIMARY (Active Gateway & Router Enforcement)")
+                else:
+                    print(f"[+] Dual-Model Telemetry: Candidate model active in Shadow Mode ({len(cand_pred.feature_schema)} features).")
+                    print("    Enforcement authority: NONE (Advisory / Non-enforcing)")
+            else:
+                print("[!] Notice: Shadow mode model could not be loaded.")
+        else:
+            print("[*] Shadow mode is disabled in configuration.")
+    except Exception as e:
+        print(f"[!] Notice: Shadow mode initialization note: {e}")
+    print("==================================================================")
 
     # 2. Initialize Database & Seed Baseline Demo Events if empty
     try:
@@ -118,6 +185,10 @@ app.include_router(analytics_router, prefix="/api/v1")
 app.include_router(analytics_router, prefix="/api")
 app.include_router(evaluation_router, prefix="/api/v1")
 app.include_router(evaluation_router, prefix="/api")
+app.include_router(shadow_router, prefix="/api/v1")
+app.include_router(shadow_router, prefix="/api")
+app.include_router(adaptive_router, prefix="/api/v1")
+app.include_router(adaptive_router, prefix="/api")
 app.include_router(dashboard_router, prefix="/api")
 
 # Also include root-level convenience endpoints

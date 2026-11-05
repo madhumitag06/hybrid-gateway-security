@@ -90,6 +90,10 @@ export interface InfrastructureHealthResponse {
   }
   ml_engine: {
     model_type: string
+    model_name?: string
+    version_id?: string
+    feature_count?: number
+    role?: string
     artifacts_dir: string
     shap_threshold: number
   }

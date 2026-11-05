@@ -172,6 +172,48 @@ if ($BundledJsContent -like "*admin@gateway.local*") {
 }
 Write-Host "  -> Bundled JS Credentials Clean (No stale admin@gateway.local)" -ForegroundColor Green
 
+# Ensure native xgboost.dll is properly placed in _internal/xgboost/lib and _internal
+$SourceXgbDll = "$WorkspaceRoot\ml\.venv\Lib\site-packages\xgboost\lib\xgboost.dll"
+$TargetXgbDir = "$DistPath\AdaptiveSecurityGateway\_internal\xgboost\lib"
+$TargetXgbDll = "$TargetXgbDir\xgboost.dll"
+
+if (-not (Test-Path $TargetXgbDll) -and (Test-Path $SourceXgbDll)) {
+    Write-Host "  -> Placing native xgboost.dll into $TargetXgbDir..." -ForegroundColor Yellow
+    New-Item -ItemType Directory -Path $TargetXgbDir -Force | Out-Null
+    Copy-Item -Path $SourceXgbDll -Destination $TargetXgbDll -Force
+    Copy-Item -Path $SourceXgbDll -Destination "$DistPath\AdaptiveSecurityGateway\_internal\xgboost.dll" -Force
+}
+
+if (Test-Path $TargetXgbDll) {
+    Write-Host "  -> Native XGBoost Library : $TargetXgbDll (VERIFIED)" -ForegroundColor Green
+} else {
+    Write-Error "[FAIL] Native xgboost.dll was not found in packaged output!"
+    exit 1
+}
+
+# Verify both model directories are packaged
+$PackagedV1Model = "$DistPath\AdaptiveSecurityGateway\_internal\ml\models\model.joblib"
+$PackagedV2Model = "$DistPath\AdaptiveSecurityGateway\_internal\ml\models\candidates\bigdata_v2\model.joblib"
+if (-not (Test-Path $PackagedV1Model)) {
+    Write-Error "[FAIL] Baseline Random Forest model missing from packaged output ($PackagedV1Model)!"
+    exit 1
+}
+if (-not (Test-Path $PackagedV2Model)) {
+    Write-Error "[FAIL] Candidate XGBoost V2 model missing from packaged output ($PackagedV2Model)!"
+    exit 1
+}
+Write-Host "  -> Model Artifacts Bundled: Random Forest Baseline + Big Data XGBoost V2 (VERIFIED)" -ForegroundColor Green
+
+$RepBenchSrc = "$WorkspaceRoot\backend\app\services\evaluation\benchmark_dataset_representative.json"
+$RepBenchDst = "$DistPath\AdaptiveSecurityGateway\_internal\backend\app\services\evaluation\benchmark_dataset_representative.json"
+if (-not (Test-Path $RepBenchDst) -and (Test-Path $RepBenchSrc)) {
+    New-Item -ItemType Directory -Path (Split-Path $RepBenchDst -Parent) -Force | Out-Null
+    Copy-Item -Path $RepBenchSrc -Destination $RepBenchDst -Force
+}
+if (Test-Path $RepBenchDst) {
+    Write-Host "  -> Representative Benchmark Dataset: $RepBenchDst (VERIFIED)" -ForegroundColor Green
+}
+
 $ExeMb = [math]::Round($ExeItem.Length / 1048576, 2)
 Write-Host "  -> Executable Size : $ExeMb MB ($($ExeItem.Length) bytes)" -ForegroundColor Green
 Write-Host "  -> Last Modified   : $($ExeItem.LastWriteTime)" -ForegroundColor Green

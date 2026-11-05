@@ -128,3 +128,43 @@ async def upload_and_ingest_pcap(
                 shutil.rmtree(temp_dir, ignore_errors=True)
         except Exception:
             pass
+
+
+@router.get(
+    "/latest",
+    summary="Get Most Recent PCAP Ingestion Record",
+    description="Returns the most recent completed or active PCAP ingestion record from PostgreSQL.",
+)
+def get_latest_pcap_ingestion(db: Session = Depends(get_db)):
+    rec = IngestionService.get_latest_ingestion(db)
+    if not rec:
+        return {"status": "NO_PREVIOUS_INGESTION", "ingestion": None}
+    return {"status": "FOUND", "ingestion": rec}
+
+
+@router.get(
+    "/history",
+    summary="List PCAP Ingestion History",
+    description="Returns paginated history of all past PCAP uploads and processing runs.",
+)
+def list_pcap_ingestion_history(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(10, ge=1, le=50),
+    db: Session = Depends(get_db),
+):
+    return IngestionService.get_history(db=db, page=page, page_size=page_size)
+
+
+@router.get(
+    "/history/{ingestion_id}",
+    summary="Get Specific PCAP Ingestion Details",
+    description="Returns detailed flow summary and metrics for a specific past PCAP ingestion.",
+)
+def get_pcap_ingestion_details(
+    ingestion_id: str,
+    db: Session = Depends(get_db),
+):
+    rec = IngestionService.get_ingestion_by_id(db, ingestion_id)
+    if not rec:
+        raise HTTPException(status_code=404, detail=f"Ingestion '{ingestion_id}' not found.")
+    return rec

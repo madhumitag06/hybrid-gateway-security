@@ -130,8 +130,9 @@ class ExplainabilityService:
         else:
             flow_obj = flow_input
 
+        feature_schema = getattr(self.predictor, "feature_schema", FEATURE_NAMES)
         if raw_feature_vector is None:
-            raw_feature_vector = FeatureExtractor.extract_from_flow(flow_obj)[0]
+            raw_feature_vector = FeatureExtractor.extract_from_flow(flow_obj, schema=feature_schema)[0]
 
         try:
             X_scaled = self.predictor.scaler.transform([raw_feature_vector])
@@ -145,7 +146,7 @@ class ExplainabilityService:
 
             detailed_features: List[FeatureAttributionDetail] = []
 
-            for idx, feat_name in enumerate(FEATURE_NAMES):
+            for idx, feat_name in enumerate(feature_schema):
                 raw_val = float(raw_feature_vector[idx])
                 shap_val = float(class_attributions[idx])
                 mean = means.get(feat_name, 0.0)
@@ -224,7 +225,8 @@ class ExplainabilityService:
         else:
             flow_obj = flow_input
 
-        raw_vector = FeatureExtractor.extract_from_flow(flow_obj)[0]
+        feature_schema = getattr(self.predictor, "feature_schema", FEATURE_NAMES)
+        raw_vector = FeatureExtractor.extract_from_flow(flow_obj, schema=feature_schema)[0]
         X_scaled = self.predictor.scaler.transform([raw_vector])
         class_attributions, base_val, all_base_vals = self.compute_shap_attributions(
             X_scaled, predicted_class
@@ -237,7 +239,7 @@ class ExplainabilityService:
         positive_contributors: List[Dict[str, Any]] = []
         mitigating_contributors: List[Dict[str, Any]] = []
 
-        for idx, feat_name in enumerate(FEATURE_NAMES):
+        for idx, feat_name in enumerate(feature_schema):
             raw_val = float(raw_vector[idx])
             shap_val = float(class_attributions[idx])
             mean = means.get(feat_name, 0.0)

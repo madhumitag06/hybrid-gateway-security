@@ -99,7 +99,7 @@ export const AnalyticsView: React.FC = () => {
         <article className="card analytics-card">
           <div className="title-line">
             <h2>Threat Classification Distribution</h2>
-            <small style={{ color: 'var(--muted-cream)' }}>RandomForest Predictions</small>
+            <small style={{ color: 'var(--muted-cream)' }}>Authoritative Model Predictions</small>
           </div>
           <p className="analytics-sub">
             Proportion of evaluated network flows classified into learned threat categories.
@@ -196,7 +196,7 @@ export const AnalyticsView: React.FC = () => {
       {/* Non-Causal Framing Disclaimer */}
       <div className="non-causal-disclaimer">
         <strong>⚠️ Non-Causal Transparency Notice: </strong>
-        SHAP feature attributions quantify the mathematical sensitivity of the trained Random Forest decision trees to specific input values. They explain the statistical basis of model predictions and do not constitute physical or legal proof of malicious causality.
+        SHAP feature attributions quantify the mathematical sensitivity of the authoritative tree ensemble to specific input values. They explain the statistical basis of model predictions and do not constitute physical or legal proof of malicious causality.
       </div>
     </div>
   )

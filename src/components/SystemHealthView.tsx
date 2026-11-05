@@ -146,10 +146,12 @@ export const SystemHealthView: React.FC = () => {
                     display: 'inline-block',
                   }}
                 />
-                <b style={{ color: 'var(--warm-cream)', fontSize: '18px' }}>RandomForest</b>
+                <b style={{ color: 'var(--warm-cream)', fontSize: '18px' }}>
+                  {healthData.ml_engine.model_name || healthData.ml_engine.model_type || 'Big Data XGBoost V2'}
+                </b>
               </div>
               <small style={{ color: 'var(--muted)', fontSize: '11px', marginTop: '4px', display: 'block' }}>
-                SHAP Explainer: Threshold ≥ {healthData.ml_engine.shap_threshold}
+                Authoritative Primary • SHAP Explainer: Threshold ≥ {healthData.ml_engine.shap_threshold}
               </small>
             </div>
           </div>

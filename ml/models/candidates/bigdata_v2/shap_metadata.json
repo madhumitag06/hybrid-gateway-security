@@ -1,0 +1,192 @@
+{
+  "expected_base_values": [
+    2.671463966369629,
+    -2.6640281677246094,
+    -1.3146787881851196,
+    -1.9972813129425049,
+    1.8906445503234863
+  ],
+  "sample_attributions": {
+    "BENIGN": {
+      "predicted_class": "BENIGN",
+      "raw_features": {
+        "packet_count": 29.0,
+        "byte_count": 7604.0,
+        "duration": 60.56,
+        "conn_rate": 0.48,
+        "dst_port": 443.0,
+        "unique_dst_ports": 1.0,
+        "bytes_per_sec": 125.57,
+        "packets_per_sec": 0.48,
+        "avg_packet_size": 262.21
+      },
+      "top_attributions": [
+        {
+          "feature": "dst_port",
+          "value": 443.0,
+          "shap_value": 1.4282,
+          "direction": "INCREASES_RISK"
+        },
+        {
+          "feature": "duration",
+          "value": 60.56,
+          "shap_value": 0.6661,
+          "direction": "INCREASES_RISK"
+        },
+        {
+          "feature": "bytes_per_sec",
+          "value": 125.57,
+          "shap_value": 0.4387,
+          "direction": "INCREASES_RISK"
+        }
+      ]
+    },
+    "PORT_SCAN": {
+      "predicted_class": "PORT_SCAN",
+      "raw_features": {
+        "packet_count": 2.0,
+        "byte_count": 458.0,
+        "duration": 0.0,
+        "conn_rate": 500.0,
+        "dst_port": 7182.0,
+        "unique_dst_ports": 16.0,
+        "bytes_per_sec": 458000.0,
+        "packets_per_sec": 2000.0,
+        "avg_packet_size": 229.0
+      },
+      "top_attributions": [
+        {
+          "feature": "dst_port",
+          "value": 7182.0,
+          "shap_value": -2.3815,
+          "direction": "DECREASES_RISK"
+        },
+        {
+          "feature": "avg_packet_size",
+          "value": 229.0,
+          "shap_value": -0.4538,
+          "direction": "DECREASES_RISK"
+        },
+        {
+          "feature": "packet_count",
+          "value": 2.0,
+          "shap_value": -0.2284,
+          "direction": "DECREASES_RISK"
+        }
+      ]
+    },
+    "BRUTE_FORCE": {
+      "predicted_class": "BRUTE_FORCE",
+      "raw_features": {
+        "packet_count": 44.0,
+        "byte_count": 4593.0,
+        "duration": 0.35,
+        "conn_rate": 126.63,
+        "dst_port": 22.0,
+        "unique_dst_ports": 1.0,
+        "bytes_per_sec": 13218.83,
+        "packets_per_sec": 126.63,
+        "avg_packet_size": 104.39
+      },
+      "top_attributions": [
+        {
+          "feature": "unique_dst_ports",
+          "value": 1.0,
+          "shap_value": -1.9838,
+          "direction": "DECREASES_RISK"
+        },
+        {
+          "feature": "byte_count",
+          "value": 4593.0,
+          "shap_value": -1.3918,
+          "direction": "DECREASES_RISK"
+        },
+        {
+          "feature": "avg_packet_size",
+          "value": 104.39,
+          "shap_value": -0.8691,
+          "direction": "DECREASES_RISK"
+        }
+      ]
+    },
+    "TRAFFIC_SPIKE": {
+      "predicted_class": "TRAFFIC_SPIKE",
+      "raw_features": {
+        "packet_count": 200.0,
+        "byte_count": 88000.0,
+        "duration": 0.0,
+        "conn_rate": 500.0,
+        "dst_port": 22357.0,
+        "unique_dst_ports": 1.0,
+        "bytes_per_sec": 64896755.16,
+        "packets_per_sec": 147492.63,
+        "avg_packet_size": 440.0
+      },
+      "top_attributions": [
+        {
+          "feature": "packets_per_sec",
+          "value": 147492.63,
+          "shap_value": -1.8121,
+          "direction": "DECREASES_RISK"
+        },
+        {
+          "feature": "duration",
+          "value": 0.0,
+          "shap_value": -0.9911,
+          "direction": "DECREASES_RISK"
+        },
+        {
+          "feature": "dst_port",
+          "value": 22357.0,
+          "shap_value": -0.6027,
+          "direction": "DECREASES_RISK"
+        }
+      ]
+    },
+    "SUSPICIOUS_TRANSFER": {
+      "predicted_class": "SUSPICIOUS_TRANSFER",
+      "raw_features": {
+        "packet_count": 44.0,
+        "byte_count": 2836.0,
+        "duration": 1.32,
+        "conn_rate": 33.41,
+        "dst_port": 21.0,
+        "unique_dst_ports": 1.0,
+        "bytes_per_sec": 2153.33,
+        "packets_per_sec": 33.41,
+        "avg_packet_size": 64.45
+      },
+      "top_attributions": [
+        {
+          "feature": "packet_count",
+          "value": 44.0,
+          "shap_value": -0.9548,
+          "direction": "DECREASES_RISK"
+        },
+        {
+          "feature": "avg_packet_size",
+          "value": 64.45,
+          "shap_value": -0.5658,
+          "direction": "DECREASES_RISK"
+        },
+        {
+          "feature": "duration",
+          "value": 1.32,
+          "shap_value": 0.4493,
+          "direction": "INCREASES_RISK"
+        }
+      ]
+    }
+  },
+  "global_importance": {
+    "unique_dst_ports": 0.4712,
+    "bytes_per_sec": 0.2458,
+    "byte_count": 0.0583,
+    "packet_count": 0.0552,
+    "dst_port": 0.0475,
+    "avg_packet_size": 0.0464,
+    "duration": 0.0278,
+    "packets_per_sec": 0.0257,
+    "conn_rate": 0.0221
+  }
+}

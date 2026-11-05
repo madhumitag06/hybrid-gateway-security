@@ -220,8 +220,8 @@ class HybridTrafficService:
                 "pool_size": getattr(settings, "db_pool_size", 10),
             },
             "ml_engine": {
-                "model_type": "RandomForestClassifier",
-                "artifacts_dir": str(settings.ml_artifacts_dir),
+                **(__import__("backend.app.services.ml_service", fromlist=["MLService"]).MLService.get_registry_status()["active_model_details"]),
+                "model_type": __import__("backend.app.services.ml_service", fromlist=["MLService"]).MLService.get_registry_status()["active_model_details"].get("algorithm", "XGBClassifier"),
                 "shap_threshold": getattr(settings, "shap_risk_threshold", 50),
             },
             "containers": containers,

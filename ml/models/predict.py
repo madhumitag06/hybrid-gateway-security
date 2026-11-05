@@ -69,6 +69,7 @@ class ThreatPredictor:
             with open(meta_path, "r", encoding="utf-8") as f:
                 self.metadata = json.load(f)
 
+        self.feature_schema = self.metadata.get("feature_schema", FEATURE_NAMES)
         self.classes: List[str] = list(self.label_encoder.classes_)
         self.benign_idx = self.classes.index("BENIGN") if "BENIGN" in self.classes else 0
         self.benign_baseline = self.metadata.get("benign_baseline", {})
@@ -82,8 +83,8 @@ class ThreatPredictor:
         else:
             flow_obj = flow
 
-        # Extract numerical feature vector [1, n_features]
-        X_raw = FeatureExtractor.extract_from_flow(flow_obj)
+        # Extract numerical feature vector [1, n_features] matching model schema
+        X_raw = FeatureExtractor.extract_from_flow(flow_obj, schema=self.feature_schema)
 
         # Apply preprocessing scaling fitted during training
         X_scaled = self.scaler.transform(X_raw)
@@ -166,7 +167,7 @@ class ThreatPredictor:
         stds = self.benign_baseline.get("stds", {})
 
         contributions: List[ContributingFeature] = []
-        for idx, feat_name in enumerate(FEATURE_NAMES):
+        for idx, feat_name in enumerate(self.feature_schema):
             val = float(raw_values[idx])
             mean = means.get(feat_name, 0.0)
             std = stds.get(feat_name, 1.0)

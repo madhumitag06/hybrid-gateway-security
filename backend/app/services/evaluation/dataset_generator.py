@@ -6,8 +6,12 @@ across all 5 threat categories, operational edge cases, borderline flows,
 and allowlisted administrative traffic using a fixed pseudo-random seed.
 """
 
+import json
+import os
 import random
-from typing import List, Optional
+import sys
+from pathlib import Path
+from typing import Dict, List, Optional
 from backend.app.schemas.evaluation import BenchmarkScenario, SuiteNameType
 from backend.app.schemas.predict import NetworkFlowRequest
 
@@ -18,6 +22,38 @@ class EvaluationDatasetGenerator:
     """
 
     RANDOM_SEED: int = 42
+    _cached_representative_benchmarks: Optional[List[BenchmarkScenario]] = None
+
+    @classmethod
+    def _get_representative_scenarios(cls) -> Optional[List[BenchmarkScenario]]:
+        if cls._cached_representative_benchmarks is not None:
+            return cls._cached_representative_benchmarks
+
+        candidates = []
+        if getattr(sys, "frozen", False):
+            meipass = getattr(sys, "_MEIPASS", None)
+            if meipass:
+                candidates.append(Path(meipass) / "backend" / "app" / "services" / "evaluation" / "benchmark_dataset_representative.json")
+                candidates.append(Path(meipass) / "benchmark_dataset_representative.json")
+            exe_dir = Path(sys.executable).resolve().parent
+            candidates.append(exe_dir / "_internal" / "backend" / "app" / "services" / "evaluation" / "benchmark_dataset_representative.json")
+            candidates.append(exe_dir / "_internal" / "benchmark_dataset_representative.json")
+            candidates.append(exe_dir / "benchmark_dataset_representative.json")
+
+        current_dir = Path(__file__).resolve().parent
+        candidates.append(current_dir / "benchmark_dataset_representative.json")
+
+        for cand in candidates:
+            if cand.is_file():
+                try:
+                    with open(cand, "r", encoding="utf-8") as f:
+                        raw_list = json.load(f)
+                    scenarios = [BenchmarkScenario(**item) for item in raw_list]
+                    cls._cached_representative_benchmarks = scenarios
+                    return scenarios
+                except Exception:
+                    pass
+        return None
 
     @classmethod
     def generate_suite(
@@ -28,7 +64,56 @@ class EvaluationDatasetGenerator:
     ) -> List[BenchmarkScenario]:
         """
         Generates a deterministic list of BenchmarkScenario items for the requested suite.
+        Uses the representative multi-dataset benchmark distribution when available.
         """
+        rep = cls._get_representative_scenarios()
+        if rep:
+            if suite_name == "FULL_BENCHMARK":
+                rng = random.Random(seed if seed is not None else cls.RANDOM_SEED)
+                classes = ["BENIGN", "PORT_SCAN", "BRUTE_FORCE", "TRAFFIC_SPIKE", "SUSPICIOUS_TRANSFER"]
+                grouped: Dict[str, List[BenchmarkScenario]] = {c: [] for c in classes}
+                for s in rep:
+                    if s.ground_truth_class in grouped:
+                        grouped[s.ground_truth_class].append(s)
+
+                interleaved: List[BenchmarkScenario] = []
+                idx_map = {c: 0 for c in classes}
+
+                for i in range(sample_count):
+                    mod = i % 20
+                    if mod == 5:
+                        interleaved.append(cls._gen_allowlist_admin(i, rng))
+                    elif mod == 19:
+                        interleaved.append(cls._gen_borderline_flow(i, rng))
+                    else:
+                        target_class = classes[(i // 4) % len(classes)]
+                        curr_idx = idx_map[target_class]
+                        if curr_idx < len(grouped[target_class]):
+                            interleaved.append(grouped[target_class][curr_idx])
+                            idx_map[target_class] += 1
+                        else:
+                            interleaved.append(cls._gen_benign(i, rng))
+
+                return interleaved[:sample_count]
+
+            elif suite_name == "RECON_SUITE":
+                subset = [s for s in rep if s.ground_truth_class == "PORT_SCAN"]
+                if subset:
+                    return subset[:sample_count]
+            elif suite_name == "BRUTE_FORCE_SUITE":
+                subset = [s for s in rep if s.ground_truth_class == "BRUTE_FORCE"]
+                if subset:
+                    return subset[:sample_count]
+            elif suite_name == "VOLUMETRIC_SUITE":
+                subset = [s for s in rep if s.ground_truth_class == "TRAFFIC_SPIKE"]
+                if subset:
+                    return subset[:sample_count]
+            elif suite_name == "BENIGN_SUITE":
+                subset = [s for s in rep if s.ground_truth_class == "BENIGN"]
+                if subset:
+                    return subset[:sample_count]
+
+        # Procedural fallback
         rng = random.Random(seed if seed is not None else cls.RANDOM_SEED)
         scenarios: List[BenchmarkScenario] = []
 

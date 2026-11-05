@@ -90,3 +90,22 @@ export async function uploadPcapFile(
     clearTimeout(timeoutId)
   }
 }
+
+export interface IngestionHistoryResponse {
+  total: number
+  page: number
+  page_size: number
+  ingestions: any[]
+}
+
+export async function getLatestIngestion(): Promise<{ status: string; ingestion: any }> {
+  return request<{ status: string; ingestion: any }>('v1/ingest/latest')
+}
+
+export async function getIngestionHistory(page: number = 1, pageSize: number = 10): Promise<IngestionHistoryResponse> {
+  return request<IngestionHistoryResponse>(`v1/ingest/history?page=${page}&page_size=${pageSize}`)
+}
+
+export async function getIngestionDetails(ingestionId: string): Promise<any> {
+  return request<any>(`v1/ingest/history/${encodeURIComponent(ingestionId)}`)
+}

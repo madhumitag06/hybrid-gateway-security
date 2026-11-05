@@ -18,17 +18,157 @@ from ml.models.predict import ThreatPredictor, PredictionOutput
 from ml.features.extractor import NetworkFlowInput
 
 
+from datetime import datetime, timezone
+
 class MLService:
-    _instance: Optional[ThreatPredictor] = None
+    _predictors: Dict[str, ThreatPredictor] = {}
+    _custom_models: Dict[str, Dict[str, Any]] = {}
+    _active_version: str = getattr(settings, "active_model_version", "candidate_xgboost_v2")
+    _previous_version: Optional[str] = getattr(settings, "standby_model_version", "production_rf")
+    _promotion_history: List[Dict[str, Any]] = [
+        {
+            "event": "PRODUCTION_PROMOTION",
+            "active_version": "candidate_xgboost_v2",
+            "previous_version": "production_rf",
+            "timestamp": "2026-11-06T00:00:00Z",
+            "reason": "Production promotion of Big Data XGBoost V2 as authoritative active primary model; Random Forest retained as standby rollback.",
+        }
+    ]
 
     @classmethod
-    def get_predictor(cls) -> ThreatPredictor:
+    def register_model(cls, version_id: str, details: Dict[str, Any]) -> None:
+        cls._custom_models[version_id] = details
+
+    @classmethod
+    def get_registry(cls) -> Dict[str, Dict[str, Any]]:
+        base_reg = {
+            "production_rf": {
+                "version_id": "production_rf",
+                "name": "Production Random Forest (Synthetic Baseline)",
+                "model_version": "v1.0",
+                "artifacts_dir": str(settings.ml_artifacts_dir),
+                "algorithm": "RandomForestClassifier",
+                "schema_version": "v1",
+                "feature_count": 10,
+                "role": "ACTIVE_PRIMARY" if cls._active_version == "production_rf" else "STANDBY_ROLLBACK",
+                "description": "Authoritative 100-tree Random Forest model governing live gateway policy and router enforcement." if cls._active_version == "production_rf" else "Standby 100-tree Random Forest baseline preserved for zero-downtime rollback.",
+            },
+            "candidate_xgboost_v2": {
+                "version_id": "candidate_xgboost_v2",
+                "name": "Big Data XGBoost V2 (Clean Schema)",
+                "model_version": "v2.0",
+                "artifacts_dir": str(settings.shadow_artifacts_dir),
+                "algorithm": "XGBClassifier",
+                "schema_version": "v2",
+                "feature_count": 9,
+                "role": "ACTIVE_PRIMARY" if cls._active_version == "candidate_xgboost_v2" else "STANDBY_ROLLBACK",
+                "description": "Authoritative production-grade XGBoost trained on 6.49M multi-dataset records with clean 9-feature schema." if cls._active_version == "candidate_xgboost_v2" else "Candidate XGBoost V2 model available for promotion.",
+            },
+        }
+        base_reg.update(cls._custom_models)
+        return base_reg
+
+    @classmethod
+    def get_active_version(cls) -> str:
+        return cls._active_version
+
+    @classmethod
+    def get_previous_version(cls) -> Optional[str]:
+        return cls._previous_version
+
+    @classmethod
+    def get_predictor(cls, version: Optional[str] = None) -> ThreatPredictor:
         """
-        Lazily initialize or return the singleton ThreatPredictor instance.
+        Lazily initialize or return the requested ThreatPredictor instance (defaults to active model).
         """
-        if cls._instance is None:
-            cls._instance = ThreatPredictor(artifacts_dir=settings.ml_artifacts_dir)
-        return cls._instance
+        ver = version or cls._active_version
+        if ver not in cls._predictors:
+            registry = cls.get_registry()
+            if ver not in registry:
+                raise ValueError(f"Unknown model version '{ver}'. Available: {list(registry.keys())}")
+            art_dir = Path(registry[ver]["artifacts_dir"])
+            cls._predictors[ver] = ThreatPredictor(artifacts_dir=art_dir)
+        return cls._predictors[ver]
+
+    @classmethod
+    def get_standby_predictor(cls) -> Optional[ThreatPredictor]:
+        """
+        Returns the standby/comparison predictor if available.
+        """
+        if cls._previous_version:
+            return cls.get_predictor(cls._previous_version)
+        return None
+
+    @classmethod
+    def promote_model(cls, version: str, reason: str = "") -> Dict[str, Any]:
+        """
+        Controlled model promotion: sets the target version as active primary,
+        retains the current active model as standby, and resets the SHAP explainer cache.
+        """
+        registry = cls.get_registry()
+        if version not in registry:
+            raise ValueError(f"Cannot promote unknown model '{version}'. Available: {list(registry.keys())}")
+
+        if version == cls._active_version:
+            return {
+                "status": "ALREADY_ACTIVE",
+                "active_version": cls._active_version,
+                "message": f"Model '{version}' is already the active authoritative model.",
+            }
+
+        old_active = cls._active_version
+        cls._previous_version = old_active
+        cls._active_version = version
+
+        # Ensure model is loadable
+        new_predictor = cls.get_predictor(version)
+
+        # Reset SHAP explainer cache so it attaches to new predictor
+        from backend.app.services.explainability_service import ExplainabilityService
+        ExplainabilityService._instance = None
+        ExplainabilityService._explainer = None
+
+        record = {
+            "event": "PROMOTION",
+            "active_version": version,
+            "previous_version": old_active,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "reason": reason or f"Controlled promotion of {version} to active production primary.",
+        }
+        cls._promotion_history.append(record)
+
+        return {
+            "status": "PROMOTED",
+            "active_version": cls._active_version,
+            "previous_version": cls._previous_version,
+            "algorithm": registry[version]["algorithm"],
+            "feature_count": registry[version]["feature_count"],
+            "timestamp": record["timestamp"],
+            "message": f"Successfully promoted '{version}' to active authoritative model.",
+        }
+
+    @classmethod
+    def rollback(cls, reason: str = "") -> Dict[str, Any]:
+        """
+        Zero-downtime rollback: restores the previous model version as authoritative primary.
+        """
+        if not cls._previous_version:
+            raise ValueError("No previous model version recorded for rollback.")
+
+        target = cls._previous_version
+        return cls.promote_model(target, reason=reason or "Emergency or operational rollback to previous model version.")
+
+    @classmethod
+    def get_registry_status(cls) -> Dict[str, Any]:
+        registry = cls.get_registry()
+        return {
+            "active_version": cls._active_version,
+            "previous_version": cls._previous_version,
+            "active_model_details": registry.get(cls._active_version, {}),
+            "standby_model_details": registry.get(cls._previous_version, {}) if cls._previous_version else None,
+            "all_models": registry,
+            "promotion_history": cls._promotion_history,
+        }
 
     @classmethod
     def is_loaded(cls) -> bool:

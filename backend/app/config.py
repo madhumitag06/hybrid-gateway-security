@@ -90,6 +90,30 @@ def get_default_ml_artifacts_dir() -> Path:
     return Path(__file__).resolve().parent.parent.parent / "ml" / "models"
 
 
+def get_default_shadow_artifacts_dir() -> Path:
+    """
+    Resolves the candidate XGBoost V2 model artifacts directory for Shadow Mode.
+    """
+    explicit = os.getenv("SHADOW_ARTIFACTS_DIR")
+    if explicit:
+        return Path(explicit).resolve()
+
+    if getattr(sys, "frozen", False):
+        meipass = getattr(sys, "_MEIPASS", None)
+        if meipass:
+            bundled_dir = Path(meipass) / "ml" / "models" / "candidates" / "bigdata_v2"
+            if bundled_dir.is_dir():
+                return bundled_dir
+        internal_dir = Path(sys.executable).resolve().parent / "_internal" / "ml" / "models" / "candidates" / "bigdata_v2"
+        if internal_dir.is_dir():
+            return internal_dir
+        exe_dir = Path(sys.executable).resolve().parent / "ml" / "models" / "candidates" / "bigdata_v2"
+        if exe_dir.is_dir():
+            return exe_dir
+
+    return Path(__file__).resolve().parent.parent.parent / "ml" / "models" / "candidates" / "bigdata_v2"
+
+
 def get_frontend_dist_dir() -> Optional[Path]:
     """
     Resolves the frontend distribution directory across standalone packaged (frozen)
@@ -121,6 +145,7 @@ def get_frontend_dist_dir() -> Optional[Path]:
 
 WORKSPACE_ROOT = get_workspace_root()
 DEFAULT_ML_ARTIFACTS_DIR = get_default_ml_artifacts_dir()
+DEFAULT_SHADOW_ARTIFACTS_DIR = get_default_shadow_artifacts_dir()
 
 
 class Settings(BaseSettings):
@@ -132,8 +157,18 @@ class Settings(BaseSettings):
     host: str = "127.0.0.1"
     port: int = 8000
 
+    # Model Registry & Lifecycle Configuration (Phase 5: Controlled Promotion & Rollback)
+    active_model_version: str = os.getenv("ACTIVE_MODEL_VERSION", "candidate_xgboost_v2")
+    standby_model_version: str = os.getenv("STANDBY_MODEL_VERSION", "production_rf")
+
     # ML Artifacts directory
     ml_artifacts_dir: Path = DEFAULT_ML_ARTIFACTS_DIR
+
+    # Shadow Mode Candidate Model Configuration (Phase 3: XGBoost V2 Shadow Evaluation)
+    shadow_mode_enabled: bool = True
+    shadow_artifacts_dir: Path = DEFAULT_SHADOW_ARTIFACTS_DIR
+    shadow_shap_threshold: int = 50
+    shadow_persist_records: bool = True
 
     # Database Configuration (PostgreSQL with psycopg3)
     database_url: str = "postgresql+psycopg://postgres:postgres@localhost:5434/hybrid_gateway_db"
@@ -169,6 +204,14 @@ class Settings(BaseSettings):
         "10.20.10.2/32",
         "10.30.10.0/24",
     ]
+
+    # Observable SSH Brute-Force Safeguard Configuration (V2 Policy Guardrail)
+    ssh_safeguard_enabled: bool = True
+    ssh_burst_window_seconds: float = 60.0
+    ssh_monitor_burst_threshold: int = 3
+    ssh_restrict_burst_threshold: int = 6
+    ssh_block_burst_threshold: int = 12
+    ssh_max_bytes_per_probe: int = 10000
 
     # Hybrid Cloud & AWS Telemetry Configuration (Phase 6 & Virtual Hybrid Lab)
     on_prem_cidrs: Union[List[str], str] = ["192.168.0.0/16", "10.0.0.0/16", "10.10.10.0/24"]

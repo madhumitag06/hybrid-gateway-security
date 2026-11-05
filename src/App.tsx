@@ -356,7 +356,7 @@ function Connectivity({
           <small>
             Router: <code>10.10.10.2 ↔ 10.20.10.2</code>
             <br />
-            ML: RandomForest + Conditional SHAP
+            ML: XGBoost V2 (Authoritative) + Conditional SHAP
             <br />
             Risk: <b>{riskScore ?? 0}/100</b> • Policy: <b>{riskState || 'Allow'}</b>
           </small>
@@ -1822,7 +1822,7 @@ export default function App() {
                 </div>
 
                 <div className="prob-breakdown">
-                  <h4>Class Probability Estimates (RandomForest)</h4>
+                  <h4>Class Probability Estimates ({predictResult.model_version?.includes('xgboost') ? 'XGBoost V2' : 'Authoritative Model'})</h4>
                   {Object.entries(predictResult.class_probabilities).map(([clsName, prob]) => (
                     <div className="prob-row" key={clsName}>
                       <span>{clsName}</span>

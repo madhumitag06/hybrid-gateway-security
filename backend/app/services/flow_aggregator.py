@@ -6,12 +6,95 @@ using canonical 5-tuple keys and sliding time windows. Extracts exact feature
 representations compatible with the Phase 1 ML pipeline (NetworkFlowInput).
 """
 
-from collections import defaultdict
+from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import hashlib
-from typing import Dict, List, Optional, Set, Tuple
-from ml.features.extractor import NetworkFlowInput
+import threading
+import time
+from typing import Deque, Dict, List, Optional, Set, Tuple
+from ml.features.extractor import NetworkFlowInput, calculate_conn_rate
+
+
+class HostPortTracker:
+    """
+    Thread-safe, memory-bounded, rolling 60-second window tracker
+    for unique destination ports and connection frequency per source host.
+    """
+
+    def __init__(self, window_seconds: float = 60.0, max_hosts: int = 10000):
+        self.window_seconds = window_seconds
+        self.max_hosts = max_hosts
+        self.lock = threading.RLock()
+        # Mapping: src_ip -> deque of (timestamp, dst_port)
+        self.host_ports: Dict[str, Deque[Tuple[float, int]]] = defaultdict(deque)
+        # Mapping: src_ip -> deque of timestamp (for conn_rate calculation)
+        self.host_timestamps: Dict[str, Deque[float]] = defaultdict(deque)
+        # Mapping: src_ip -> last_seen_timestamp (for LRU eviction)
+        self.host_last_seen: Dict[str, float] = {}
+
+    def record_destination_port(
+        self, src_ip: str, dst_port: int, timestamp: Optional[float] = None
+    ) -> None:
+        ts = float(timestamp) if timestamp is not None else time.time()
+        with self.lock:
+            # Memory bounded host eviction
+            if len(self.host_last_seen) >= self.max_hosts and src_ip not in self.host_last_seen:
+                oldest_host = min(self.host_last_seen, key=self.host_last_seen.get)
+                del self.host_last_seen[oldest_host]
+                if oldest_host in self.host_ports:
+                    del self.host_ports[oldest_host]
+                if oldest_host in self.host_timestamps:
+                    del self.host_timestamps[oldest_host]
+
+            self.host_last_seen[src_ip] = ts
+            self.host_ports[src_ip].append((ts, int(dst_port)))
+            self.host_timestamps[src_ip].append(ts)
+            self._expire_host_entries(src_ip, ts)
+
+    def get_unique_dst_ports(
+        self, src_ip: str, current_time: Optional[float] = None
+    ) -> int:
+        ts = float(current_time) if current_time is not None else time.time()
+        with self.lock:
+            if src_ip not in self.host_ports:
+                return 1
+            self._expire_host_entries(src_ip, ts)
+            q = self.host_ports[src_ip]
+            if not q:
+                return 1
+            return max(1, len({port for _, port in q}))
+
+    def get_connection_rate(
+        self, src_ip: str, packet_count: int, duration: float, current_time: Optional[float] = None
+    ) -> float:
+        ts = float(current_time) if current_time is not None else time.time()
+        with self.lock:
+            if src_ip not in self.host_timestamps:
+                return calculate_conn_rate(packet_count=packet_count, duration=duration)
+            self._expire_host_entries(src_ip, ts)
+            q = self.host_timestamps[src_ip]
+            if len(q) > 1:
+                window_span = max(q[-1] - q[0], 0.1)
+                return calculate_conn_rate(
+                    packet_count=packet_count,
+                    duration=duration,
+                    host_connection_count=len(q),
+                    window_seconds=window_span,
+                )
+            return calculate_conn_rate(packet_count=packet_count, duration=duration)
+
+    def _expire_host_entries(self, src_ip: str, current_time: float) -> None:
+        cutoff = current_time - self.window_seconds
+        q_ports = self.host_ports.get(src_ip)
+        if q_ports:
+            while q_ports and q_ports[0][0] < cutoff:
+                q_ports.popleft()
+
+        q_times = self.host_timestamps.get(src_ip)
+        if q_times:
+            while q_times and q_times[0] < cutoff:
+                q_times.popleft()
 
 
 @dataclass
@@ -67,14 +150,25 @@ class FlowAggregator:
         self,
         inactivity_timeout: float = 10.0,
         max_flow_duration: float = 30.0,
+        port_scan_window_seconds: float = 60.0,
     ):
         self.inactivity_timeout = inactivity_timeout
         self.max_flow_duration = max_flow_duration
         self.active_sessions: Dict[Tuple, FlowSession] = {}
         self.completed_flows: List[FlowSession] = []
-        # Per-source host tracking for scan detection and conn_rate
-        self.host_target_ports: Dict[str, Set[int]] = defaultdict(set)
-        self.host_connection_timestamps: Dict[str, List[float]] = defaultdict(list)
+        # Production-grade 60-second rolling window host port & rate tracker
+        self.host_tracker = HostPortTracker(window_seconds=port_scan_window_seconds)
+
+    @property
+    def host_target_ports(self) -> Dict[str, Set[int]]:
+        """Backwards-compatible view of active destination ports per host."""
+        with self.host_tracker.lock:
+            result = {}
+            for host, q in self.host_tracker.host_ports.items():
+                ports = {p for _, p in q}
+                if ports:
+                    result[host] = ports
+            return result
 
     @staticmethod
     def _make_canonical_key(src_ip: str, src_port: int, dst_ip: str, dst_port: int, protocol: str) -> Tuple:
@@ -93,14 +187,14 @@ class FlowAggregator:
             packet.src_ip, packet.src_port, packet.dst_ip, packet.dst_port, packet.protocol
         )
 
-        # Track destination ports targeted by the source IP for port-scan detection
-        self.host_target_ports[packet.src_ip].add(packet.dst_port)
-        self.host_connection_timestamps[packet.src_ip].append(packet.timestamp)
-
         flushed_session: Optional[FlowSession] = None
 
         if key in self.active_sessions:
             session = self.active_sessions[key]
+            # Track destination port only when packet is from initiator to responder (prevents reverse pollution)
+            if packet.src_ip == session.initiator_ip:
+                self.host_tracker.record_destination_port(packet.src_ip, packet.dst_port, packet.timestamp)
+
             # Check for inactivity or maximum session duration expiration
             if (packet.timestamp - session.last_seen > self.inactivity_timeout) or (
                 packet.timestamp - session.first_seen > self.max_flow_duration
@@ -130,6 +224,8 @@ class FlowAggregator:
                 session.last_seen = packet.timestamp
                 session.packets.append(packet)
         else:
+            # First packet of a new session: packet.src_ip is designated initiator
+            self.host_tracker.record_destination_port(packet.src_ip, packet.dst_port, packet.timestamp)
             session = FlowSession(
                 initiator_ip=packet.src_ip,
                 responder_ip=packet.dst_ip,
@@ -158,32 +254,24 @@ class FlowAggregator:
 
     def extract_features(self, session: FlowSession) -> Tuple[NetworkFlowInput, str, str]:
         """
-        Convert a FlowSession into a Phase 1 NetworkFlowInput along with (source_ip, destination_ip).
-        
-        Features:
-          - packet_count: Total packets in flow
-          - byte_count: Total bytes transferred
-          - duration: Seconds between first and last packet
-          - conn_rate: Flows/packets initiated per second from source IP
-          - dst_port: Target service port on responder
-          - unique_dst_ports: Number of distinct destination ports targeted by initiator
-          - failed_auth_count: 0 (conservative; encrypted or unobservable without L7 auth stream)
+        Convert a FlowSession into a NetworkFlowInput along with (source_ip, destination_ip).
         """
         source_ip = session.initiator_ip
         destination_ip = session.responder_ip
         dst_port = session.responder_port
 
-        # Calculate unique destination ports targeted by this initiator
-        unique_ports = len(self.host_target_ports.get(source_ip, {dst_port}))
-        unique_ports = max(unique_ports, 1)
+        # Calculate unique destination ports targeted by initiator within 60s rolling window
+        unique_ports = self.host_tracker.get_unique_dst_ports(
+            source_ip, current_time=session.last_seen
+        )
 
-        # Calculate connection rate (flow initiation frequency within window)
-        timestamps = self.host_connection_timestamps.get(source_ip, [session.first_seen])
-        if len(timestamps) > 1:
-            time_span = max(timestamps[-1] - timestamps[0], 0.1)
-            conn_rate = round(len(timestamps) / time_span, 2)
-        else:
-            conn_rate = round(session.packet_count / max(session.duration, 0.1), 2)
+        # Calculate connection rate using unified defensible formula
+        conn_rate = self.host_tracker.get_connection_rate(
+            source_ip,
+            packet_count=session.packet_count,
+            duration=session.duration,
+            current_time=session.last_seen,
+        )
 
         # Bound values safely within expected physical boundaries
         packet_count = max(session.packet_count, 1)
@@ -195,9 +283,9 @@ class FlowAggregator:
             packet_count=packet_count,
             byte_count=byte_count,
             duration=duration,
-            conn_rate=float(conn_rate),
+            conn_rate=round(float(conn_rate), 2),
             dst_port=safe_dst_port,
-            unique_dst_ports=unique_ports,
+            unique_dst_ports=int(unique_ports),
             failed_auth_count=max(session.failed_auth_count, 0),
         )
 

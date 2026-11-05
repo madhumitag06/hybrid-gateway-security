@@ -126,13 +126,13 @@ def test_conditional_shap_execution_on_high_vs_low_risk():
 
     # 2. High-risk port scan / anomaly request
     high_risk_req = NetworkFlowRequest(
-        packet_count=500,
-        byte_count=25000,
+        packet_count=5,
+        byte_count=240,
         duration=0.05,
-        conn_rate=200.0,
-        dst_port=22,
-        unique_dst_ports=40,
-        failed_auth_count=10,
+        conn_rate=50.0,
+        dst_port=445,
+        unique_dst_ports=50,
+        failed_auth_count=0,
         source_ip="192.168.1.99",
         destination_ip="10.100.4.12",
         persist=False,

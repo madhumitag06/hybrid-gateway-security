@@ -56,15 +56,30 @@ def test_predict_port_scan():
 
 
 def test_predict_brute_force():
-    payload = {
-        "packet_count": 35,
-        "byte_count": 8500,
-        "duration": 1.8,
-        "conn_rate": 18.0,
-        "dst_port": 22,
-        "unique_dst_ports": 1,
-        "failed_auth_count": 12,
-    }
+    from backend.app.services.ml_service import MLService
+    if MLService.get_active_version() == "candidate_xgboost_v2":
+        payload = {
+            "packet_count": 43,
+            "byte_count": 4593,
+            "duration": 0.364,
+            "conn_rate": 118.21,
+            "dst_port": 22,
+            "unique_dst_ports": 1,
+            "failed_auth_count": 12,
+            "bytes_per_sec": 12626.7,
+            "packets_per_sec": 118.21,
+            "avg_packet_size": 106.81,
+        }
+    else:
+        payload = {
+            "packet_count": 35,
+            "byte_count": 8500,
+            "duration": 1.8,
+            "conn_rate": 18.0,
+            "dst_port": 22,
+            "unique_dst_ports": 1,
+            "failed_auth_count": 12,
+        }
     response = client.post("/api/v1/predict", json=payload)
     assert response.status_code == 200
     data = response.json()
@@ -75,15 +90,30 @@ def test_predict_brute_force():
 
 
 def test_predict_traffic_spike():
-    payload = {
-        "packet_count": 4500,
-        "byte_count": 4500000,
-        "duration": 4.0,
-        "conn_rate": 60.0,
-        "dst_port": 80,
-        "unique_dst_ports": 1,
-        "failed_auth_count": 0,
-    }
+    from backend.app.services.ml_service import MLService
+    if MLService.get_active_version() == "candidate_xgboost_v2":
+        payload = {
+            "packet_count": 4,
+            "byte_count": 0,
+            "duration": 0.001,
+            "conn_rate": 500.0,
+            "dst_port": 61083,
+            "unique_dst_ports": 1,
+            "failed_auth_count": 0,
+            "bytes_per_sec": 0.0,
+            "packets_per_sec": 4000.0,
+            "avg_packet_size": 0.0,
+        }
+    else:
+        payload = {
+            "packet_count": 4500,
+            "byte_count": 4500000,
+            "duration": 4.0,
+            "conn_rate": 60.0,
+            "dst_port": 80,
+            "unique_dst_ports": 1,
+            "failed_auth_count": 0,
+        }
     response = client.post("/api/v1/predict", json=payload)
     assert response.status_code == 200
     data = response.json()

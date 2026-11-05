@@ -8,21 +8,46 @@ Includes pre-trained ML artifacts, FastAPI application routers, database drivers
 
 import os
 from pathlib import Path
-from PyInstaller.utils.hooks import collect_data_files, collect_submodules
+from PyInstaller.utils.hooks import collect_data_files, collect_submodules, collect_dynamic_libs
 
 block_cipher = None
 WORKSPACE_ROOT = Path(os.path.abspath(".")).resolve()
 
-# 1. Collect Data Files
+# 1. Collect Binaries (Native dynamic libraries including XGBoost)
+binaries = []
+binaries += collect_dynamic_libs("xgboost")
+binaries += collect_dynamic_libs("lightgbm")
+
+try:
+    import xgboost
+    xgb_dir = Path(os.path.dirname(xgboost.__file__))
+    xgb_dll = xgb_dir / "lib" / "xgboost.dll"
+    if xgb_dll.is_file():
+        binaries.append((str(xgb_dll), "xgboost/lib"))
+        binaries.append((str(xgb_dll), "."))
+except Exception as e:
+    print(f"[!] Warning: Could not locate native xgboost.dll dynamically: {e}")
+
+# 2. Collect Data Files
 datas = [
     (str(WORKSPACE_ROOT / "dist"), "dist"),
     (str(WORKSPACE_ROOT / "ml" / "models"), "ml/models"),
     (str(WORKSPACE_ROOT / "backend" / "alembic"), "backend/alembic"),
     (str(WORKSPACE_ROOT / "backend" / "app" / "data"), "backend/app/data"),
+    (str(WORKSPACE_ROOT / "backend" / "app" / "services" / "evaluation" / "benchmark_dataset_representative.json"), "backend/app/services/evaluation"),
 ]
 if (WORKSPACE_ROOT / ".env").is_file():
     datas.append((str(WORKSPACE_ROOT / ".env"), "."))
 datas += collect_data_files("shap")
+datas += collect_data_files("xgboost")
+datas += collect_data_files("lightgbm")
+
+# Also ensure xgboost.dll is in datas as backup
+try:
+    if xgb_dll.is_file():
+        datas.append((str(xgb_dll), "xgboost/lib"))
+except Exception:
+    pass
 
 # 2. Collect Hidden Imports
 hidden_imports = [
@@ -66,6 +91,8 @@ hidden_imports = [
     "sklearn.preprocessing",
     "joblib",
     "shap",
+    "xgboost",
+    "lightgbm",
     "numpy",
     "scipy",
     "bcrypt",
@@ -85,7 +112,7 @@ hidden_imports = sorted(list(set(hidden_imports)))
 a = Analysis(
     [str(WORKSPACE_ROOT / "backend" / "launcher.py")],
     pathex=[str(WORKSPACE_ROOT)],
-    binaries=[],
+    binaries=binaries,
     datas=datas,
     hiddenimports=hidden_imports,
     hookspath=[],

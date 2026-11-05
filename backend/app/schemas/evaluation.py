@@ -64,6 +64,9 @@ class MLClassificationMetrics(BaseModel):
     macro_precision: float
     macro_recall: float
     macro_f1: float
+    weighted_f1: float = 0.0
+    overall_fpr: float = 0.0
+    overall_fnr: float = 0.0
     confusion_matrix: ConfusionMatrixSchema
     per_class_metrics: List[PerClassMetrics]
 
@@ -141,6 +144,13 @@ class EvaluationRunResponse(BaseModel):
     suite_name: str
     total_flows_evaluated: int
     evaluation_timestamp: datetime
+    model_version: str = "candidate_xgboost_v2"
+    model_name: str = "Big Data XGBoost V2"
+    model_algorithm: str = "XGBClassifier"
+    active_role: str = "ACTIVE_PRIMARY"
+    dataset_type: str = "Representative Multi-Dataset Benchmark"
+    is_single_class_suite: bool = False
+    represented_classes: List[str] = Field(default_factory=lambda: list(CLASSES))
     ml_classification_metrics: MLClassificationMetrics
     policy_comparison_metrics: PolicyComparisonMetrics
     latency_metrics: LatencyBreakdown

@@ -1,0 +1,153 @@
+{
+  "candidate_id": "bigdata_v2",
+  "algorithm": "Big Data XGBoost V2",
+  "timestamp_utc": "2026-11-05T19:45:59.260016+00:00",
+  "feature_schema": [
+    "packet_count",
+    "byte_count",
+    "duration",
+    "conn_rate",
+    "dst_port",
+    "unique_dst_ports",
+    "bytes_per_sec",
+    "packets_per_sec",
+    "avg_packet_size"
+  ],
+  "feature_count": 9,
+  "classes": [
+    "BENIGN",
+    "PORT_SCAN",
+    "BRUTE_FORCE",
+    "TRAFFIC_SPIKE",
+    "SUSPICIOUS_TRANSFER"
+  ],
+  "evaluation_metrics": {
+    "model_name": "Big Data XGBoost V2",
+    "accuracy": 0.9842,
+    "macro_precision": 0.9548,
+    "macro_recall": 0.9429,
+    "macro_f1": 0.9486,
+    "weighted_f1": 0.9842,
+    "false_positive_rate": 0.0096,
+    "false_negative_rate": 0.0251,
+    "confusion_matrix": [
+      [
+        64248,
+        3,
+        0,
+        581,
+        38
+      ],
+      [
+        0,
+        1521,
+        0,
+        0,
+        10
+      ],
+      [
+        0,
+        0,
+        1485,
+        0,
+        0
+      ],
+      [
+        786,
+        0,
+        2,
+        30799,
+        36
+      ],
+      [
+        97,
+        7,
+        1,
+        14,
+        370
+      ]
+    ],
+    "per_class": {
+      "BENIGN": {
+        "precision": 0.9864,
+        "recall": 0.9904,
+        "f1_score": 0.9884,
+        "support": 64870
+      },
+      "PORT_SCAN": {
+        "precision": 0.9935,
+        "recall": 0.9935,
+        "f1_score": 0.9935,
+        "support": 1531
+      },
+      "BRUTE_FORCE": {
+        "precision": 0.998,
+        "recall": 1.0,
+        "f1_score": 0.999,
+        "support": 1485
+      },
+      "TRAFFIC_SPIKE": {
+        "precision": 0.981,
+        "recall": 0.9739,
+        "f1_score": 0.9775,
+        "support": 31623
+      },
+      "SUSPICIOUS_TRANSFER": {
+        "precision": 0.815,
+        "recall": 0.7566,
+        "f1_score": 0.7847,
+        "support": 489
+      }
+    },
+    "labels": [
+      "BENIGN",
+      "PORT_SCAN",
+      "BRUTE_FORCE",
+      "TRAFFIC_SPIKE",
+      "SUSPICIOUS_TRANSFER"
+    ],
+    "single_sample_latency_ms": 0.957,
+    "batch_throughput_fps": 664756,
+    "training_time_sec": 5.31
+  },
+  "benign_baseline": {
+    "means": {
+      "packet_count": 55.00088968363379,
+      "byte_count": 32422.5871735808,
+      "duration": 11.605775768246222,
+      "conn_rate": 172.3147210889188,
+      "dst_port": 14989.52041207327,
+      "unique_dst_ports": 1.0115482697415072,
+      "bytes_per_sec": 242177.13349636443,
+      "packets_per_sec": 960.7005839259289,
+      "avg_packet_size": 196.80828531501635
+    },
+    "stds": {
+      "packet_count": 1175.8692971836458,
+      "byte_count": 1463978.53613424,
+      "duration": 29.438122318475926,
+      "conn_rate": 210.39884999384537,
+      "dst_port": 21495.87297077171,
+      "unique_dst_ports": 0.1967119782675774,
+      "bytes_per_sec": 2714631.206844318,
+      "packets_per_sec": 3816.6334840962127,
+      "avg_packet_size": 204.69476572303225
+    }
+  },
+  "global_feature_importance": {
+    "unique_dst_ports": 0.4712,
+    "bytes_per_sec": 0.2458,
+    "byte_count": 0.0583,
+    "packet_count": 0.0552,
+    "dst_port": 0.0475,
+    "avg_packet_size": 0.0464,
+    "duration": 0.0278,
+    "packets_per_sec": 0.0257,
+    "conn_rate": 0.0221
+  },
+  "environment": {
+    "python_version": "3.14.5",
+    "xgboost_version": "3.4.1",
+    "shap_version": "0.52.0"
+  }
+}

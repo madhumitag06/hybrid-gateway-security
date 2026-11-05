@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 from pydantic import BaseModel, Field, field_validator
 
-FEATURE_NAMES = [
+FEATURE_NAMES_V1 = [
     "packet_count",
     "byte_count",
     "duration",
@@ -23,7 +23,51 @@ FEATURE_NAMES = [
     "avg_packet_size",
 ]
 
+# Production-grade V2 Feature Schema (9 features)
+# failed_auth_count removed due to lack of genuine L3/L4 network observability
+FEATURE_NAMES_V2 = [
+    "packet_count",
+    "byte_count",
+    "duration",
+    "conn_rate",
+    "dst_port",
+    "unique_dst_ports",
+    "bytes_per_sec",
+    "packets_per_sec",
+    "avg_packet_size",
+]
+
+# Default alias for legacy/baseline compatibility
+FEATURE_NAMES = FEATURE_NAMES_V1
+
 Tuple_Features = Tuple[np.ndarray, Optional[np.ndarray]]
+
+
+def calculate_conn_rate(
+    packet_count: float,
+    duration: float,
+    host_connection_count: Optional[int] = None,
+    window_seconds: Optional[float] = None,
+) -> float:
+    """
+    Calculate mathematically defensible connection rate (connections/second).
+    
+    Shared calculation for both model training and live gateway inference:
+    1. If stateful host connection history is available over a rolling window:
+       conn_rate = host_connection_count / max(window_seconds, 0.1)
+    2. For standalone single-flow records without prior host history:
+       conn_rate = packet_count / max(duration, 0.01)
+       
+    Bounded cleanly within [0.1, 500.0] conns/sec to prevent division-by-zero artifacts.
+    """
+    if host_connection_count is not None and window_seconds is not None:
+        span = max(float(window_seconds), 0.1)
+        raw_rate = float(host_connection_count) / span
+    else:
+        dur_safe = max(float(duration), 0.01)
+        raw_rate = float(packet_count) / dur_safe
+
+    return float(np.clip(raw_rate, 0.1, 500.0))
 
 
 class NetworkFlowInput(BaseModel):
@@ -58,10 +102,14 @@ class FeatureExtractor:
     """
 
     @staticmethod
-    def extract_from_flow(flow: NetworkFlowInput) -> np.ndarray:
+    def extract_from_flow(
+        flow: NetworkFlowInput, schema: Optional[List[str]] = None
+    ) -> np.ndarray:
         """
-        Convert a single NetworkFlowInput into a 2D numpy array [1, n_features].
+        Convert a single NetworkFlowInput into a 2D numpy array [1, n_features]
+        according to the specified feature schema (defaults to FEATURE_NAMES_V1).
         """
+        target_schema = schema if schema is not None else FEATURE_NAMES_V1
         duration_safe = max(flow.duration, 0.001)
         pkt_safe = max(flow.packet_count, 1)
 
@@ -81,38 +129,46 @@ class FeatureExtractor:
             else flow.byte_count / pkt_safe
         )
 
-        vector = [
-            float(flow.packet_count),
-            float(flow.byte_count),
-            float(flow.duration),
-            float(flow.conn_rate),
-            float(flow.dst_port),
-            float(max(flow.unique_dst_ports, 1)),
-            float(max(flow.failed_auth_count, 0)),
-            float(bytes_per_sec),
-            float(packets_per_sec),
-            float(avg_packet_size),
-        ]
+        feature_map = {
+            "packet_count": float(flow.packet_count),
+            "byte_count": float(flow.byte_count),
+            "duration": float(flow.duration),
+            "conn_rate": float(flow.conn_rate),
+            "dst_port": float(flow.dst_port),
+            "unique_dst_ports": float(max(flow.unique_dst_ports, 1)),
+            "failed_auth_count": float(max(flow.failed_auth_count, 0)),
+            "bytes_per_sec": float(bytes_per_sec),
+            "packets_per_sec": float(packets_per_sec),
+            "avg_packet_size": float(avg_packet_size),
+        }
+
+        vector = [feature_map[name] for name in target_schema]
         return np.nan_to_num(np.array([vector], dtype=np.float64), nan=0.0, posinf=1e9, neginf=0.0)
 
     @staticmethod
-    def extract_from_dict(d: Dict[str, Union[int, float]]) -> np.ndarray:
+    def extract_v2_from_flow(flow: NetworkFlowInput) -> np.ndarray:
+        """Convenience method for extracting production-grade V2 9-feature vectors."""
+        return FeatureExtractor.extract_from_flow(flow, schema=FEATURE_NAMES_V2)
+
+    @staticmethod
+    def extract_from_dict(d: Dict[str, Union[int, float]], schema: Optional[List[str]] = None) -> np.ndarray:
         """
         Validate dictionary via Pydantic model and extract feature vector.
         """
         flow = NetworkFlowInput(**d)
-        return FeatureExtractor.extract_from_flow(flow)
+        return FeatureExtractor.extract_from_flow(flow, schema=schema)
 
     @staticmethod
-    def extract_from_dataframe(df: pd.DataFrame) -> Tuple_Features:
+    def extract_from_dataframe(df: pd.DataFrame, schema: Optional[List[str]] = None) -> Tuple_Features:
         """
         Extract feature matrix X and optional target array y from a DataFrame.
         """
-        for feature in FEATURE_NAMES:
+        target_schema = schema if schema is not None else FEATURE_NAMES_V1
+        for feature in target_schema:
             if feature not in df.columns:
                 raise ValueError(f"Missing required feature column: {feature}")
 
-        X = df[FEATURE_NAMES].to_numpy(dtype=np.float64)
+        X = df[target_schema].to_numpy(dtype=np.float64)
         y = df["label"].to_numpy() if "label" in df.columns else None
         return X, y
 

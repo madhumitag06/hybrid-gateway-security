@@ -17,8 +17,8 @@ COPY backend/requirements.txt /tmp/backend-requirements.txt
 COPY ml/requirements.txt /tmp/ml-requirements.txt
 
 RUN grep -iv "pyinstaller" /tmp/backend-requirements.txt > /tmp/backend-req-clean.txt && \
-    pip install --no-cache-dir "psycopg2-binary==2.9.10" -r /tmp/backend-req-clean.txt -r /tmp/ml-requirements.txt && \
-    python -c "import psycopg2, psycopg, sqlalchemy, alembic, fastapi, uvicorn, pydantic, scapy, numpy, scipy, pandas, sklearn, joblib, shap; print('Verified Python packages; psycopg2=' + psycopg2.__version__ + ', numpy=' + numpy.__version__ + ', sklearn=' + sklearn.__version__)" && \
+    pip install --no-cache-dir "psycopg2-binary==2.9.10" xgboost -r /tmp/backend-req-clean.txt -r /tmp/ml-requirements.txt && \
+    python -c "import psycopg2, psycopg, sqlalchemy, alembic, fastapi, uvicorn, pydantic, scapy, numpy, scipy, pandas, sklearn, joblib, shap, xgboost; print('Verified Python packages; psycopg2=' + psycopg2.__version__ + ', numpy=' + numpy.__version__ + ', sklearn=' + sklearn.__version__ + ', xgboost=' + xgboost.__version__)" && \
     rm -f /tmp/backend-requirements.txt /tmp/backend-req-clean.txt /tmp/ml-requirements.txt
 
 # Copy only explicit project source and model artifact paths (never copy host .venv or Windows executables)
@@ -37,6 +37,7 @@ COPY ml/models/__init__.py \
      ml/models/label_encoder.joblib \
      ml/models/metadata.json \
      /app/ml/models/
+COPY ml/models/candidates/bigdata_v2 /app/ml/models/candidates/bigdata_v2
 COPY deployment/hybrid-lab/gateway/entrypoint.sh /app/entrypoint.sh
 
 RUN test ! -d /app/ml/.venv && \

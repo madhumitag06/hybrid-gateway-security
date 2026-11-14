@@ -4,6 +4,24 @@ terraform {
   required_version = ">= 1.5.0"
 }
 
+provider "aws" {
+  region                      = "us-east-1"
+  skip_credentials_validation = true
+  skip_requesting_account_id  = true
+}
+
+provider "google" {
+  project = var.gcp_project_id
+  region  = "us-central1"
+}
+
+provider "azurerm" {
+  features {}
+  skip_provider_registration = true
+}
+
+provider "azuread" {}
+
 module "aws_network" {
   source              = "../../modules/aws-network"
   project_name        = var.project_name
@@ -49,4 +67,3 @@ module "security_gateway" {
   cpu_units            = 4
   memory_mb            = 8192
 }
-

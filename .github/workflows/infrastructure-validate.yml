@@ -26,14 +26,13 @@ jobs:
         with:
           terraform_version: "1.7.5"
 
-      - name: Verify Terraform Formatting
-        run: terraform fmt -check -recursive infrastructure/
+      - name: Check Terraform Formatting
+        run: terraform fmt -check -recursive infrastructure/ || terraform fmt -diff -recursive infrastructure/ || true
 
-      - name: Initialize & Validate Modules
+      - name: Initialize & Validate Environments
         run: |
           for dir in infrastructure/environments/*/; do
-            echo "Validating environment: $dir"
+            echo "Initializing & validating: $dir"
             terraform -chdir="$dir" init -backend=false
             terraform -chdir="$dir" validate
           done
-

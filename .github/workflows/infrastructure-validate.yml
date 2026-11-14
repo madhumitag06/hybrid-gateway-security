@@ -1,0 +1,39 @@
+name: Infrastructure as Code (Terraform) Validation
+
+on:
+  push:
+    paths:
+      - "infrastructure/**"
+      - ".github/workflows/infrastructure-validate.yml"
+  pull_request:
+    paths:
+      - "infrastructure/**"
+
+permissions:
+  contents: read
+
+jobs:
+  terraform-validate:
+    name: Terraform Format & Lint Verification
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.7.5"
+
+      - name: Verify Terraform Formatting
+        run: terraform fmt -check -recursive infrastructure/
+
+      - name: Initialize & Validate Modules
+        run: |
+          for dir in infrastructure/environments/*/; do
+            echo "Validating environment: $dir"
+            terraform -chdir="$dir" init -backend=false
+            terraform -chdir="$dir" validate
+          done
+

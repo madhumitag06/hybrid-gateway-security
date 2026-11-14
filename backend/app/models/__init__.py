@@ -6,6 +6,7 @@ from backend.app.models.user import UserModel, RefreshTokenModel
 from backend.app.models.shadow_prediction import ShadowPredictionModel
 from backend.app.models.pcap_ingestion import PcapIngestionModel
 from backend.app.models.adaptive_learning import AdaptiveFlowFeedbackModel, AdaptiveTrainingRunModel
+from backend.app.models.cloud_account import CloudAccountModel, CloudResourceModel
 
 __all__ = [
     "SecurityEventModel",
@@ -17,4 +18,6 @@ __all__ = [
     "PcapIngestionModel",
     "AdaptiveFlowFeedbackModel",
     "AdaptiveTrainingRunModel",
+    "CloudAccountModel",
+    "CloudResourceModel",
 ]

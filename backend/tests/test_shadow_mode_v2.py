@@ -237,50 +237,55 @@ def test_shadow_persistence_in_db():
 
 def test_policy_isolation_candidate_non_enforcing():
     """Verify candidate prediction NEVER modifies policy decisions or containment rules."""
-    with SessionLocal() as db:
-        # A benign flow for candidate that is flagged as traffic spike by prod
-        flow_req = NetworkFlowRequest(
-            packet_count=1200,
-            byte_count=1197600,
-            duration=3.0,
-            conn_rate=400.0,
-            dst_port=80,
-            unique_dst_ports=1,
-            failed_auth_count=0,
-        )
+    orig_ver = MLService.get_active_version()
+    MLService.promote_model("production_rf", reason="Test shadow mode baseline isolation")
+    try:
+        with SessionLocal() as db:
+            # A benign flow for candidate that is flagged as traffic spike by prod RF
+            flow_req = NetworkFlowRequest(
+                packet_count=1200,
+                byte_count=1197600,
+                duration=3.0,
+                conn_rate=400.0,
+                dst_port=80,
+                unique_dst_ports=1,
+                failed_auth_count=0,
+            )
 
-        pred, evt = DashboardService.record_prediction(
-            db=db,
-            flow_request=flow_req,
-            source_ip="10.10.10.99",
-            destination_ip="10.20.10.40",
-            is_demo=False,
-        )
-        db.commit()
+            pred, evt = DashboardService.record_prediction(
+                db=db,
+                flow_request=flow_req,
+                source_ip="10.10.10.99",
+                destination_ip="10.20.10.40",
+                is_demo=False,
+            )
+            db.commit()
 
-        # Authoritative decision was made by production RF (e.g. Block or Restrict)
-        # Even though candidate XGBoost V2 predicted BENIGN!
-        shadow_record = (
-            db.query(ShadowPredictionModel)
-            .filter(ShadowPredictionModel.flow_id == evt.id)
-            .first()
-        )
-        assert shadow_record is not None
-        assert shadow_record.candidate_attack_type == "BENIGN"
-        assert shadow_record.prod_attack_type == "TRAFFIC_SPIKE"
-        assert shadow_record.agreement is False
+            # Authoritative decision was made by production RF (e.g. Block or Restrict)
+            # Even though candidate XGBoost V2 predicted BENIGN!
+            shadow_record = (
+                db.query(ShadowPredictionModel)
+                .filter(ShadowPredictionModel.flow_id == evt.id)
+                .first()
+            )
+            assert shadow_record is not None
+            assert shadow_record.candidate_attack_type == "BENIGN"
+            assert shadow_record.prod_attack_type == "TRAFFIC_SPIKE"
+            assert shadow_record.agreement is False
 
-        # Production event status strictly reflects production policy, NOT candidate BENIGN
-        assert evt.attack_type == "TRAFFIC_SPIKE"
-        assert evt.current_policy_action in ["Block", "Restrict", "Monitor"]
+            # Production event status strictly reflects production policy, NOT candidate BENIGN
+            assert evt.attack_type == "TRAFFIC_SPIKE"
+            assert evt.current_policy_action in ["Block", "Restrict", "Monitor"]
+    finally:
+        MLService.promote_model(orig_ver, reason="Restore active model after test")
 
 
 def test_production_model_isolation():
-    """Verify active production model remains RandomForest and unaffected by candidate service."""
-    prod_predictor = MLService.get_predictor()
-    assert prod_predictor.model.__class__.__name__ == "RandomForestClassifier"
-    assert len(prod_predictor.feature_schema) == 10
-    assert "failed_auth_count" in prod_predictor.feature_schema
+    """Verify production model and candidate model feature schema separation."""
+    rf_predictor = MLService.get_predictor("production_rf")
+    assert rf_predictor.model.__class__.__name__ == "RandomForestClassifier"
+    assert len(rf_predictor.feature_schema) == 10
+    assert "failed_auth_count" in rf_predictor.feature_schema
 
     cand_predictor = ShadowService.get_candidate_predictor()
     assert cand_predictor.model.__class__.__name__ == "XGBClassifier"

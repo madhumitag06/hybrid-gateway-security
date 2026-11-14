@@ -37,6 +37,7 @@ import { PoliciesView } from './components/PoliciesView'
 import { SimulationView } from './components/SimulationView'
 import { SystemHealthView } from './components/SystemHealthView'
 import { AwsVpcView } from './components/AwsVpcView'
+import { MultiCloudView } from './components/MultiCloudView'
 import { PcapIngestView } from './components/PcapIngestView'
 import { SettingsView } from './components/SettingsView'
 import { AuthView } from './components/AuthView'
@@ -74,6 +75,7 @@ const nav = [
   ['🛡️', 'Policies & Firewall'],
   ['📦', 'PCAP Ingestion'],
   ['☁', 'AWS VPC Logs'],
+  ['🌐', 'Multi-Cloud'],
   ['▣', 'Security Events'],
   ['🖥', 'System Health'],
   ['⚙', 'Settings'],
@@ -1190,6 +1192,8 @@ export default function App() {
               <PcapIngestView />
             ) : activeNav === 'AWS VPC Logs' ? (
               <AwsVpcView />
+            ) : activeNav === 'Multi-Cloud' ? (
+              <MultiCloudView />
             ) : activeNav === 'Security Events' || activeNav === 'Events' ? (
               <EventsView />
             ) : activeNav === 'System Health' ? (

@@ -1,0 +1,7 @@
+# Development Environment Variables Example
+# Copy to terraform.tfvars and customize for local development testing
+
+environment    = "development"
+project_name   = "hybrid-sec-dev"
+gcp_project_id = "gcp-builders-hub-dev"
+

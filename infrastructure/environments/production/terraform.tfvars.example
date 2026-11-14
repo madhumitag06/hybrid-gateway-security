@@ -1,0 +1,7 @@
+# Production Environment Variables Example
+
+environment       = "production"
+project_name      = "hybrid-sec-prod"
+gcp_project_id    = "gcp-builders-hub-prod"
+github_repository = "madhumitag06/hybrid-gateway-security"
+

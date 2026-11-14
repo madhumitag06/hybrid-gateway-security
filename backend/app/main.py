@@ -23,6 +23,7 @@ from backend.app.api.v1.ingest import router as ingest_router
 from backend.app.api.v1.predict import router as predict_router
 from backend.app.api.v1.shadow import router as shadow_router
 from backend.app.api.v1.adaptive import router as adaptive_router
+from backend.app.api.v1.cloud import router as cloud_router
 from backend.app.config import get_frontend_dist_dir, settings
 from backend.app.db.session import SessionLocal, init_db
 from backend.app.services.auth_service import AuthService
@@ -189,6 +190,8 @@ app.include_router(shadow_router, prefix="/api/v1")
 app.include_router(shadow_router, prefix="/api")
 app.include_router(adaptive_router, prefix="/api/v1")
 app.include_router(adaptive_router, prefix="/api")
+app.include_router(cloud_router, prefix="/api/v1")
+app.include_router(cloud_router, prefix="/api")
 app.include_router(dashboard_router, prefix="/api")
 
 # Also include root-level convenience endpoints
@@ -208,6 +211,7 @@ def _get_root_info():
         "events_endpoint": "/api/v1/events",
         "ingestion_endpoint": "/api/v1/ingest/pcap",
         "enforcement_endpoint": "/api/v1/enforcement/rules",
+        "cloud_endpoint": "/api/v1/cloud",
     }
 
 

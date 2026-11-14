@@ -1,0 +1,6 @@
+# Staging Environment Variables Example
+
+environment    = "staging"
+project_name   = "hybrid-sec-stg"
+gcp_project_id = "gcp-builders-hub-staging"
+

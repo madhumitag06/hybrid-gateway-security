@@ -217,11 +217,35 @@ class Settings(BaseSettings):
     on_prem_cidrs: Union[List[str], str] = ["192.168.0.0/16", "10.0.0.0/16", "10.10.10.0/24"]
     aws_vpc_cidrs: Union[List[str], str] = ["10.100.0.0/16", "172.31.0.0/16", "10.20.10.0/24"]
     aws_telemetry_mode: str = "AWS_FIXTURE"  # "AWS_FIXTURE" or "AWS_READ_ONLY"
+    aws_enabled: bool = True
+    aws_account_id: str = "aws-production-01"
     aws_region: str = "us-east-1"
+    aws_role_arn: str = ""
+    aws_oidc_role_arn: str = ""
     aws_access_key_id: str = ""
     aws_secret_access_key: str = ""
     aws_cloudwatch_log_group: str = "/aws/vpc/flow-logs"
     aws_vpc_flow_log_group: str = ""
+
+    # Google Cloud Platform (GCP - Google Builders Hub) Configuration
+    gcp_enabled: bool = True
+    gcp_project_id: str = "gcp-builders-hub-prod"
+    gcp_region: str = "us-central1"
+    gcp_workload_identity_pool: str = ""
+    gcp_workload_identity_provider: str = ""
+    gcp_service_account_email: str = ""
+    gcp_vpc_cidrs: Union[List[str], str] = ["10.40.0.0/16", "10.40.10.0/24"]
+
+    # Microsoft Azure Configuration
+    azure_enabled: bool = True
+    azure_subscription_id: str = "sub-azure-enterprise-prod"
+    azure_tenant_id: str = "tenant-entra-id-01"
+    azure_client_id: str = ""
+    azure_region: str = "eastus"
+    azure_vnet_cidrs: Union[List[str], str] = ["10.50.0.0/16", "10.50.10.0/24"]
+
+    # Multi-Cloud Containment Safeguard (False = safe dry-run simulation)
+    cloud_enforcement_enabled: bool = False
 
     # Virtual Hybrid-Cloud Docker Lab Integration (Isolated Data/Telemetry Plane)
     hybrid_lab_mode: str = "SIMULATED_HYBRID_LAB"

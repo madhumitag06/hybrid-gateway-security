@@ -83,7 +83,8 @@ def get_hybrid_lab_status(db: Session = Depends(get_db)) -> Dict[str, Any]:
         "topology": topo.model_dump(),
         "gateway_intelligence": {
             "ml_model_loaded": MLService.is_loaded(),
-            "model_type": "RandomForestClassifier",
+            "model_type": MLService.get_registry_status().get("active_model_details", {}).get("algorithm", "XGBClassifier"),
+            "model_name": MLService.get_registry_status().get("active_model_details", {}).get("name", "XGBoost V2"),
             "shap_explainer": "Conditional TreeExplainer (threshold >= 50)",
             "enforcement_mode": EnforcementService.get_mode(),
             "lab_data_plane_enforcement_opt_in": getattr(settings, "lab_enforcement_enabled", False),

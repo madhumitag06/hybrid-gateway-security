@@ -132,7 +132,7 @@ class CloudTelemetryBatchRequest(BaseModel):
     provider: CloudProviderType
     account_id: str = "default"
     region: Optional[str] = None
-    records: List[Any] = Field(default_factory=list)
+    records: List[Any] = Field(default_factory=list, max_length=2000, description="List of flow records (capped at 2000)")
     raw_records: Optional[List[str]] = Field(None, description="Raw log lines or JSON strings")
     json_payload: Optional[Dict[str, Any]] = Field(None, description="Parsed structured JSON log batch")
     persist_events: bool = True

@@ -172,6 +172,25 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    """
+    Inject enterprise-grade HTTP security defense-in-depth headers:
+    - X-Content-Type-Options: nosniff (prevent MIME-sniffing)
+    - X-Frame-Options: DENY (clickjacking protection)
+    - X-XSS-Protection: 1; mode=block (cross-site scripting filter)
+    - Referrer-Policy: strict-origin-when-cross-origin
+    - Permissions-Policy: geolocation=(), camera=(), microphone=()
+    """
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "geolocation=(), camera=(), microphone=()"
+    return response
+
 # Register routes with /api prefix (for standard frontend integration)
 app.include_router(health_router, prefix="/api")
 app.include_router(auth_router, prefix="/api")

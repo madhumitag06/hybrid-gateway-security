@@ -77,7 +77,9 @@ class PredictionResponse(BaseModel):
 
 
 class BatchPredictionRequest(BaseModel):
-    flows: List[NetworkFlowRequest] = Field(..., min_length=1, description="List of network flows to evaluate")
+    flows: List[NetworkFlowRequest] = Field(
+        ..., min_length=1, max_length=500, description="List of network flows to evaluate (capped at 500 per request)"
+    )
 
 
 class BatchPredictionResponse(BaseModel):

@@ -94,7 +94,7 @@ def ensure_aws_sample_fixtures() -> List[AwsVpcSampleFixtureInfo]:
             "sample_id": "aws-port-scan-recon",
             "name": "AWS VPC Port Scan Reconnaissance",
             "filename": "aws_port_scan_recon_fixture.log",
-            "description": "Multi-port reconnaissance probe across 25 destination ports targeting AWS VPC instance.",
+            "description": "Multi-port reconnaissance probe across 60 destination ports targeting AWS VPC instance.",
             "generator": generate_aws_port_scan_fixture,
             "expected_threat": "PORT_SCAN",
         },

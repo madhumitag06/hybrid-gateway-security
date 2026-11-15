@@ -23,6 +23,7 @@ from backend.app.schemas.aws_flow import (
 from backend.app.schemas.predict import NetworkFlowRequest, PredictionResponse
 from backend.app.services.dashboard_service import DashboardService
 from backend.app.services.enforcement_service import EnforcementService
+from backend.app.services.flow_aggregator import HostPortTracker
 from backend.app.services.hybrid_topology import NetworkZoneClassifier
 from backend.app.services.ml_service import MLService
 from backend.app.services.policy_engine import PolicyEngine
@@ -30,33 +31,44 @@ from backend.app.services.policy_engine import PolicyEngine
 
 class AggregatedVpcFlow:
     """
-    Internal accumulator for aggregating multiple VPC flow log records sharing a session key.
+    Internal accumulator for aggregating multiple VPC flow log records sharing a directed session key:
+    (interface_id, src_ip, dst_ip, dst_port, protocol).
+    Preserves exact destination port, maintains directional context, and aggregates
+    contiguous or overlapping records for the same destination service without double counting.
     """
-    def __init__(self, src_ip: str, dst_ip: str, protocol: int):
+    def __init__(
+        self,
+        src_ip: str,
+        dst_ip: str,
+        dst_port: int,
+        protocol: int,
+        src_port: Optional[int] = None,
+        interface_id: Optional[str] = None,
+        account_id: Optional[str] = None,
+    ):
         self.src_ip = src_ip
         self.dst_ip = dst_ip
+        self.dst_port = dst_port
         self.protocol = protocol
-        self.ports_targeted: set[int] = set()
-        self.primary_dst_port: int = 80
+        self.src_port = src_port
+        self.interface_id = interface_id
+        self.account_id = account_id
         self.total_packets: int = 0
         self.total_bytes: int = 0
         self.min_start: Optional[int] = None
         self.max_end: Optional[int] = None
-        self.interface_id: Optional[str] = None
-        self.account_id: Optional[str] = None
         self.record_count: int = 0
 
     def add_record(self, rec: VpcFlowLogRecordSchema) -> None:
         self.total_packets += rec.packets
         self.total_bytes += rec.bytes
-        self.ports_targeted.add(rec.dst_port)
-        # Prioritize standard service ports (e.g. 80, 443, 22, 21, 25, 53, 8080) if probed
-        common_ports = {80, 443, 22, 21, 25, 53, 8080, 3389, 3306, 5432, 1433}
-        if rec.dst_port in common_ports or not any(p in common_ports for p in self.ports_targeted):
-            self.primary_dst_port = rec.dst_port
-        self.interface_id = rec.interface_id
-        self.account_id = rec.account_id
         self.record_count += 1
+        if self.interface_id is None:
+            self.interface_id = rec.interface_id
+        if self.account_id is None:
+            self.account_id = rec.account_id
+        if self.src_port is None:
+            self.src_port = rec.src_port
 
         if self.min_start is None or rec.start < self.min_start:
             self.min_start = rec.start
@@ -68,15 +80,6 @@ class AggregatedVpcFlow:
         if self.min_start is not None and self.max_end is not None:
             return max(float(self.max_end - self.min_start), 0.1)
         return 1.0
-
-    @property
-    def conn_rate(self) -> float:
-        from ml.features.extractor import calculate_conn_rate
-        return calculate_conn_rate(self.total_packets, self.duration_seconds)
-
-    @property
-    def unique_dst_ports(self) -> int:
-        return len(self.ports_targeted)
 
 
 class AwsVpcFlowParser:
@@ -90,6 +93,18 @@ class AwsVpcFlowParser:
         1: "ICMP",
         58: "ICMPv6",
     }
+
+    _host_tracker: Optional[HostPortTracker] = None
+
+    @classmethod
+    def get_host_tracker(cls) -> HostPortTracker:
+        if cls._host_tracker is None:
+            cls._host_tracker = HostPortTracker(window_seconds=60.0, max_hosts=10000)
+        return cls._host_tracker
+
+    @classmethod
+    def reset_host_tracker(cls) -> None:
+        cls._host_tracker = HostPortTracker(window_seconds=60.0, max_hosts=10000)
 
     @classmethod
     def parse_raw_log_line(cls, line: str) -> Optional[VpcFlowLogRecordSchema]:
@@ -189,15 +204,34 @@ class AwsVpcFlowParser:
 
         parse_dur_ms = (time.perf_counter() - start_time) * 1000.0
 
-        # Step 2: Aggregate by (src_ip, dst_ip, protocol)
-        session_map: Dict[Tuple[str, str, int], AggregatedVpcFlow] = {}
+        # Step 2: Track destination-port diversity per source host chronologically
+        parsed_records.sort(key=lambda x: (x.start, x.end))
+        tracker = cls.get_host_tracker()
         for r in parsed_records:
-            key = (r.src_addr, r.dst_addr, r.protocol)
+            tracker.record_destination_port(
+                src_ip=r.src_addr,
+                dst_port=r.dst_port,
+                timestamp=float(r.end),
+            )
+
+        # Step 3: Session aggregation preserving directed service endpoint (interface, src_addr, dst_addr, dst_port, protocol)
+        session_map: Dict[Tuple[str, str, str, int, int], AggregatedVpcFlow] = {}
+        for r in parsed_records:
+            iface = r.interface_id or "default-iface"
+            key = (iface, r.src_addr, r.dst_addr, r.dst_port, r.protocol)
             if key not in session_map:
-                session_map[key] = AggregatedVpcFlow(r.src_addr, r.dst_addr, r.protocol)
+                session_map[key] = AggregatedVpcFlow(
+                    src_ip=r.src_addr,
+                    dst_ip=r.dst_addr,
+                    dst_port=r.dst_port,
+                    protocol=r.protocol,
+                    src_port=r.src_port,
+                    interface_id=r.interface_id,
+                    account_id=r.account_id,
+                )
             session_map[key].add_record(r)
 
-        # Step 3: ML Inference & Policy Engine Execution
+        # Step 4: ML Inference & Policy Engine Execution
         inf_start = time.perf_counter()
         results: List[AwsVpcFlowItemResult] = []
         high_risk_count = 0
@@ -213,18 +247,33 @@ class AwsVpcFlowParser:
             direction = NetworkZoneClassifier.classify_direction(session.src_ip, session.dst_ip)
             proto_name = cls.PROTOCOL_MAP.get(session.protocol, f"PROTO_{session.protocol}")
 
+            end_ts = float(session.max_end or time.time())
+            unique_dst_ports = tracker.get_unique_dst_ports(session.src_ip, current_time=end_ts)
+            conn_rate = tracker.get_connection_rate(
+                session.src_ip,
+                packet_count=session.total_packets,
+                duration=session.duration_seconds,
+                current_time=end_ts,
+            )
+
+            dur_safe = max(session.duration_seconds, 0.001)
+            pkt_safe = max(session.total_packets, 1)
+
             # Strict Provenance Feature Construction:
             # - OBSERVED: packet_count, byte_count, dst_port, interface_id, account_id
-            # - DERIVED: duration, conn_rate, unique_dst_ports
+            # - DERIVED: duration, conn_rate, unique_dst_ports, bytes_per_sec, packets_per_sec, avg_packet_size
             # - UNAVAILABLE: failed_auth_count = 0 (Strictly 0 for VPC flow logs)
             flow_req = NetworkFlowRequest(
                 packet_count=session.total_packets,
                 byte_count=session.total_bytes,
                 duration=session.duration_seconds,
-                conn_rate=session.conn_rate,
-                dst_port=session.primary_dst_port,
-                unique_dst_ports=session.unique_dst_ports,
+                conn_rate=conn_rate,
+                dst_port=session.dst_port,
+                unique_dst_ports=unique_dst_ports,
                 failed_auth_count=0,  # Factual, not inferred
+                bytes_per_sec=float(session.total_bytes) / dur_safe,
+                packets_per_sec=float(session.total_packets) / dur_safe,
+                avg_packet_size=float(session.total_bytes) / float(pkt_safe),
             )
 
             # 1. ML Threat Inference
@@ -237,7 +286,7 @@ class AwsVpcFlowParser:
                 prediction=prediction,
                 source_ip=session.src_ip,
                 destination_ip=session.dst_ip,
-                dst_port=session.primary_dst_port,
+                dst_port=session.dst_port,
                 protocol=proto_name,
             )
 
@@ -274,10 +323,13 @@ class AwsVpcFlowParser:
                         "packet_count": session.total_packets,
                         "byte_count": session.total_bytes,
                         "duration": session.duration_seconds,
-                        "conn_rate": session.conn_rate,
-                        "dst_port": session.primary_dst_port,
-                        "unique_dst_ports": session.unique_dst_ports,
+                        "conn_rate": conn_rate,
+                        "dst_port": session.dst_port,
+                        "unique_dst_ports": unique_dst_ports,
                         "failed_auth_count": 0,
+                        "bytes_per_sec": float(session.total_bytes) / dur_safe,
+                        "packets_per_sec": float(session.total_packets) / dur_safe,
+                        "avg_packet_size": float(session.total_bytes) / float(pkt_safe),
                     },
                     class_probabilities=prediction.class_probabilities,
                     top_contributing_features=[
@@ -331,12 +383,12 @@ class AwsVpcFlowParser:
                     destination_zone=dst_zone,
                     traffic_direction=direction,
                     protocol_name=proto_name,
-                    dst_port=session.primary_dst_port,
+                    dst_port=session.dst_port,
                     packet_count=session.total_packets,
                     byte_count=session.total_bytes,
                     duration=session.duration_seconds,
-                    conn_rate=session.conn_rate,
-                    unique_dst_ports=session.unique_dst_ports,
+                    conn_rate=conn_rate,
+                    unique_dst_ports=unique_dst_ports,
                     failed_auth_count=0,
                     interface_id=session.interface_id,
                     account_id=session.account_id,

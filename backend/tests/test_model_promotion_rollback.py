@@ -109,7 +109,7 @@ def test_model_registry_api_endpoints():
     assert r_promo.status_code == 200
     assert r_promo.json()["active_version"] == "candidate_xgboost_v2"
 
-    # 4. Restore production_rf as baseline active model
-    MLService.promote_model("production_rf", reason="Restoring baseline production model after test")
-    assert MLService.get_active_version() == "production_rf"
+    # 4. Restore authoritative candidate_xgboost_v2 primary model
+    MLService.promote_model("candidate_xgboost_v2", reason="Restoring authoritative primary model after test")
+    assert MLService.get_active_version() == "candidate_xgboost_v2"
 

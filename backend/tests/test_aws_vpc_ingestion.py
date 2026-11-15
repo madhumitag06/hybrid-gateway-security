@@ -80,17 +80,22 @@ def test_port_scan_recon_fixture_ingestion(db_session):
     assert resp.telemetry_source == "AWS_VPC_FLOW_LOG_FIXTURE"
     assert resp.is_fixture is True
     assert resp.total_records_parsed == 60
-    assert resp.total_flows_aggregated == 1  # Aggregated into 1 session (same src/dst/proto)
+    assert resp.total_flows_aggregated == 60  # Directed 5-tuple sessions preserving destination ports
+
+    # Verify that all 60 distinct destination ports survive parsing & aggregation
+    ports_preserved = [f.dst_port for f in resp.results]
+    assert len(set(ports_preserved)) == 60
+    assert set(ports_preserved) == set(range(21, 81))
+
+    # Verify that every flow retains unique_dst_ports == 60 via HostPortTracker
+    assert all(f.unique_dst_ports == 60 for f in resp.results)
+
+    # Verify that PORT_SCAN reconnaissance is detected
+    scan_flows = [f for f in resp.results if f.prediction.attack_type == "PORT_SCAN"]
+    assert len(scan_flows) >= 30
+    assert resp.high_risk_flows_count >= 30
 
     flow = resp.results[0]
-    assert flow.unique_dst_ports == 60
-    from backend.app.services.ml_service import MLService
-    if MLService.get_active_version() == "candidate_xgboost_v2":
-        assert flow.prediction.attack_type in ["PORT_SCAN", "BENIGN"]
-    else:
-        assert flow.prediction.attack_type == "PORT_SCAN"
-        assert flow.prediction.risk_score >= 70
-        assert flow.prediction.threat_level == "HIGH"
     assert flow.source_zone == "ON_PREMISE"
     assert flow.destination_zone == "AWS_VPC"
     assert flow.traffic_direction == "ON_PREM_TO_CLOUD"

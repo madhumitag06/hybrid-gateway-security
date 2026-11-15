@@ -29,12 +29,12 @@ class EnforcementRepository:
         self, target_ip: str, target_port: Optional[int] = None
     ) -> Optional[ActiveEnforcementModel]:
         """
-        Find any currently ACTIVE non-expired rule for the given IP (and optional port).
+        Find any currently ACTIVE or SIMULATED non-expired rule for the given IP (and optional port).
         """
         now = datetime.now(timezone.utc)
         stmt = select(ActiveEnforcementModel).where(
             ActiveEnforcementModel.target_ip == target_ip,
-            ActiveEnforcementModel.status == "ACTIVE",
+            ActiveEnforcementModel.status.in_(["ACTIVE", "SIMULATED"]),
             ActiveEnforcementModel.expires_at > now,
         )
         if target_port is not None:
@@ -45,6 +45,7 @@ class EnforcementRepository:
             )
         stmt = stmt.order_by(
             (ActiveEnforcementModel.action == "Block").desc(),
+            (ActiveEnforcementModel.status == "ACTIVE").desc(),
             ActiveEnforcementModel.expires_at.desc(),
         )
 
@@ -52,13 +53,13 @@ class EnforcementRepository:
 
     def list_active_rules(self) -> List[ActiveEnforcementModel]:
         """
-        List all currently active and non-expired containment rules.
+        List all currently active and non-expired containment rules (ACTIVE and SIMULATED).
         """
         now = datetime.now(timezone.utc)
         stmt = (
             select(ActiveEnforcementModel)
             .where(
-                ActiveEnforcementModel.status == "ACTIVE",
+                ActiveEnforcementModel.status.in_(["ACTIVE", "SIMULATED"]),
                 ActiveEnforcementModel.expires_at > now,
             )
             .order_by(ActiveEnforcementModel.expires_at.asc())
@@ -73,13 +74,15 @@ class EnforcementRepository:
     ) -> Tuple[List[ActiveEnforcementModel], int]:
         """
         List containment rules with pagination and status filtering.
+        Supports explicit status filter ('ACTIVE', 'SIMULATED', 'EXPIRED', 'REVOKED') or 'ALL' / None.
         """
         stmt = select(ActiveEnforcementModel)
         count_stmt = select(func.count(ActiveEnforcementModel.id))
 
-        if status_filter:
-            stmt = stmt.where(ActiveEnforcementModel.status == status_filter.upper())
-            count_stmt = count_stmt.where(ActiveEnforcementModel.status == status_filter.upper())
+        if status_filter and status_filter.strip().upper() != "ALL":
+            filter_val = status_filter.strip().upper()
+            stmt = stmt.where(ActiveEnforcementModel.status == filter_val)
+            count_stmt = count_stmt.where(ActiveEnforcementModel.status == filter_val)
 
         total = self.db.scalar(count_stmt) or 0
         stmt = stmt.order_by(ActiveEnforcementModel.created_at.desc()).limit(limit).offset(offset)
@@ -88,15 +91,32 @@ class EnforcementRepository:
 
     def extend_ttl(self, rule_id: str, extra_seconds: int) -> Optional[ActiveEnforcementModel]:
         """
-        Extend the expiration time of an existing active rule.
+        Refresh the expiration time of an existing active or simulated rule using sliding-window semantics.
+        Never compounds TTL by adding onto previous expiry; slides from current evaluation time.
+        Preserves an explicitly longer existing expiration date.
         """
         rule = self.get_by_id(rule_id)
-        if not rule or rule.status != "ACTIVE":
+        if not rule or rule.status not in ("ACTIVE", "SIMULATED"):
             return None
 
-        rule.expires_at = rule.expires_at + timedelta(seconds=extra_seconds)
-        rule.ttl_seconds += extra_seconds
-        rule.updated_at = datetime.now(timezone.utc)
+        now = datetime.now(timezone.utc)
+        cur_exp = rule.expires_at
+        if cur_exp.tzinfo is None:
+            cur_exp = cur_exp.replace(tzinfo=timezone.utc)
+
+        # If already expired, do not extend
+        if cur_exp <= now:
+            return None
+
+        # Sliding window: refresh expiration relative to current evaluation timestamp
+        sliding_expiry = now + timedelta(seconds=extra_seconds)
+
+        # Do not shorten an explicitly longer expiry if a policy requires preservation
+        if sliding_expiry > cur_exp:
+            rule.expires_at = sliding_expiry
+
+        rule.ttl_seconds = max(rule.ttl_seconds, extra_seconds)
+        rule.updated_at = now
         self.db.flush()
         return rule
 
@@ -118,12 +138,12 @@ class EnforcementRepository:
 
     def prune_expired_rules(self) -> List[str]:
         """
-        Find rules whose TTL has expired and mark them as EXPIRED in PostgreSQL.
+        Find rules whose TTL has expired (both ACTIVE and SIMULATED) and mark them as EXPIRED in PostgreSQL.
         Returns the list of expired rule IDs.
         """
         now = datetime.now(timezone.utc)
         stmt = select(ActiveEnforcementModel).where(
-            ActiveEnforcementModel.status == "ACTIVE",
+            ActiveEnforcementModel.status.in_(["ACTIVE", "SIMULATED"]),
             ActiveEnforcementModel.expires_at <= now,
         )
         expired_rules = list(self.db.scalars(stmt).all())

@@ -126,53 +126,57 @@ class EnforcementService:
             extra_seconds = decision.suggested_ttl_seconds
             updated_rule = repo.extend_ttl(existing_rule.id, extra_seconds)
 
-            # If action escalated (e.g. Restrict -> Block) or existing rule is Block, normalize scope
-            if decision.policy_action == "Block" or existing_rule.action == "Block":
-                existing_rule.action = "Block"
-                existing_rule.target_port = None
-                existing_rule.protocol = "ANY"
-                if decision.policy_action == "Block":
-                    existing_rule.reason = decision.reason
-                decision.policy_action = "Block"
-                decision.target_port = None
-                decision.protocol = "ANY"
+            if updated_rule is not None:
+                # If action escalated (e.g. Restrict -> Block) or existing rule is Block, normalize scope
+                if decision.policy_action == "Block" or existing_rule.action == "Block":
+                    existing_rule.action = "Block"
+                    existing_rule.target_port = None
+                    existing_rule.protocol = "ANY"
+                    if decision.policy_action == "Block":
+                        existing_rule.reason = decision.reason
+                    decision.policy_action = "Block"
+                    decision.target_port = None
+                    decision.protocol = "ANY"
+                    db.flush()
+
+                now_utc = datetime.now(timezone.utc)
+                exp_dt = existing_rule.expires_at
+                if exp_dt.tzinfo is None:
+                    exp_dt = exp_dt.replace(tzinfo=timezone.utc)
+                rem_ttl = max(
+                    int((exp_dt - now_utc).total_seconds()),
+                    0,
+                )
+                decision.suggested_ttl_seconds = rem_ttl
+
+                # Update in adapter
+                enforce_res = adapter.enforce(decision, existing_rule.id)
+                existing_rule.status = enforce_res.status
+                existing_rule.mode = cls._active_mode
                 db.flush()
 
-            now_utc = datetime.now(timezone.utc)
-            exp_dt = existing_rule.expires_at
-            if exp_dt.tzinfo is None:
-                exp_dt = exp_dt.replace(tzinfo=timezone.utc)
-            rem_ttl = max(
-                int((exp_dt - now_utc).total_seconds()),
-                decision.suggested_ttl_seconds,
-            )
-            decision.suggested_ttl_seconds = rem_ttl
+                # Determine precise resulting status (Enforced in router vs Applied in sandbox)
+                is_synced = bool(enforce_res.metadata and enforce_res.metadata.get("lab_router_synced"))
+                if enforce_res.status == "ACTIVE":
+                    resulting_status = "Enforced" if is_synced else "Applied"
+                elif enforce_res.status == "SIMULATED":
+                    resulting_status = "Simulated"
+                elif decision.policy_action == "Monitor":
+                    resulting_status = "Monitoring"
+                else:
+                    resulting_status = "Allowed"
 
-            # Update in adapter
-            enforce_res = adapter.enforce(decision, existing_rule.id)
+                # Audit log entry for TTL extension / modification
+                if decision.event_id:
+                    audit_repo.log_action(
+                        event_id=decision.event_id,
+                        requested_action=decision.policy_action,
+                        previous_action=previous_action,
+                        resulting_status=resulting_status,
+                        actor=actor,
+                    )
 
-            # Determine precise resulting status (Enforced in router vs Applied in sandbox)
-            is_synced = bool(enforce_res.metadata and enforce_res.metadata.get("lab_router_synced"))
-            if enforce_res.status == "ACTIVE":
-                resulting_status = "Enforced" if is_synced else "Applied"
-            elif enforce_res.status == "SIMULATED":
-                resulting_status = "Simulated"
-            elif decision.policy_action == "Monitor":
-                resulting_status = "Monitoring"
-            else:
-                resulting_status = "Allowed"
-
-            # Audit log entry for TTL extension / modification
-            if decision.event_id:
-                audit_repo.log_action(
-                    event_id=decision.event_id,
-                    requested_action=decision.policy_action,
-                    previous_action=previous_action,
-                    resulting_status=resulting_status,
-                    actor=actor,
-                )
-
-            return enforce_res, updated_rule
+                return enforce_res, updated_rule
 
         # 3. Create New Active Containment Rule
         rule_id = f"rule-{uuid.uuid4().hex[:8]}"
@@ -275,6 +279,8 @@ class EnforcementService:
         now = datetime.now(timezone.utc)
 
         for r in active_db_rules:
+            if r.status != "ACTIVE":
+                continue
             exp_dt = r.expires_at
             if exp_dt.tzinfo is None:
                 exp_dt = exp_dt.replace(tzinfo=timezone.utc)

@@ -53,7 +53,14 @@ def list_enforcement_rules(
     results: List[ActiveEnforcementRule] = []
 
     for r in rules_models:
-        rem_ttl = max(int((r.expires_at - now).total_seconds()), 0) if r.status == "ACTIVE" else 0
+        rem_ttl = 0
+        if r.expires_at is not None and r.status in ("ACTIVE", "SIMULATED"):
+            exp_dt = r.expires_at
+            if exp_dt.tzinfo is None:
+                exp_dt = exp_dt.replace(tzinfo=timezone.utc)
+            seconds_left = int((exp_dt - now).total_seconds())
+            if seconds_left > 0:
+                rem_ttl = seconds_left
         results.append(
             ActiveEnforcementRule(
                 rule_id=r.id,

@@ -118,7 +118,7 @@ export const PoliciesView: React.FC = () => {
   const [config, setConfig] = useState<EnforcementConfig | null>(null)
   const [rules, setRules] = useState<ActiveEnforcementRule[]>([])
   const [auditLogs, setAuditLogs] = useState<PolicyAuditLog[]>([])
-  const [statusFilter, setStatusFilter] = useState<string>('ACTIVE')
+  const [statusFilter, setStatusFilter] = useState<string>('')
   const [loading, setLoading] = useState<boolean>(true)
   const [auditLoading, setAuditLoading] = useState<boolean>(false)
   const [error, setError] = useState<string | null>(null)
@@ -235,7 +235,7 @@ export const PoliciesView: React.FC = () => {
           className={`sub-nav-btn ${activeSubTab === 'rules' ? 'active' : ''}`}
           onClick={() => setActiveSubTab('rules')}
         >
-          ⚡ Active Rules ({rules.length})
+          ⚡ Containment Rules ({rules.length})
         </button>
         <button
           type="button"
@@ -383,20 +383,31 @@ export const PoliciesView: React.FC = () => {
               </p>
             ) : (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '10px' }}>
-                {rules.slice(0, 4).map((r) => (
-                  <div key={r.rule_id} style={{ background: 'var(--panel-secondary)', border: '1px solid var(--line)', borderRadius: '6px', padding: '10px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                      <span className={`pill ${r.action === 'Block' ? 'r87' : 'r76'}`} style={{ fontSize: '10px' }}>
-                        {r.action}
-                      </span>
-                      <span style={{ fontSize: '11px', color: 'var(--muted-cream)' }}>⏱ {Math.max(r.remaining_ttl_seconds, 0)}s</span>
+                {(() => {
+                  const activeOrSim = rules.filter(
+                    (r) => (r.status === 'ACTIVE' || r.status === 'SIMULATED') && r.remaining_ttl_seconds > 0
+                  )
+                  const displayRules = activeOrSim.length > 0 ? activeOrSim : rules
+                  return displayRules.slice(0, 4).map((r) => (
+                    <div key={r.rule_id} style={{ background: 'var(--panel-secondary)', border: '1px solid var(--line)', borderRadius: '6px', padding: '10px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span className={`pill ${r.action === 'Block' ? 'r87' : 'r76'}`} style={{ fontSize: '10px' }}>
+                            {r.action}
+                          </span>
+                          <span className={`pill ${r.status === 'ACTIVE' ? 'r87' : (r.status === 'SIMULATED' ? 'pill-benign' : 'r76')}`} style={{ fontSize: '9px', padding: '1px 6px' }}>
+                            {r.status}
+                          </span>
+                        </div>
+                        <span style={{ fontSize: '11px', color: 'var(--muted-cream)' }}>⏱ {Math.max(r.remaining_ttl_seconds, 0)}s</span>
+                      </div>
+                      <b style={{ color: 'var(--warm-cream)', fontSize: '13px' }}>{r.target_ip} {r.target_port ? `:${r.target_port}` : ''}</b>
+                      <p style={{ fontSize: '11px', color: 'var(--muted-cream)', margin: '4px 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {r.reason}
+                      </p>
                     </div>
-                    <b style={{ color: 'var(--warm-cream)', fontSize: '13px' }}>{r.target_ip} {r.target_port ? `:${r.target_port}` : ''}</b>
-                    <p style={{ fontSize: '11px', color: 'var(--muted-cream)', margin: '4px 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {r.reason}
-                    </p>
-                  </div>
-                ))}
+                  ))
+                })()}
               </div>
             )}
           </div>
@@ -411,9 +422,9 @@ export const PoliciesView: React.FC = () => {
           <div className="card" style={{ padding: '16px' }}>
             <div className="title-line" style={{ marginBottom: '14px' }}>
               <div>
-                <h2 style={{ margin: 0 }}>Active Containment Rules ({rules.length})</h2>
+                <h2 style={{ margin: 0 }}>Containment Rules ({rules.length})</h2>
                 <span style={{ fontSize: '12px', color: 'var(--muted-cream)' }}>
-                  Live in-memory adapter containment rules with real-time TTL expiration counters.
+                  Active and simulated containment rules with real-time sliding TTL expiration counters.
                 </span>
               </div>
               <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
@@ -423,9 +434,9 @@ export const PoliciesView: React.FC = () => {
                   onChange={(e) => setStatusFilter(e.target.value)}
                   style={{ height: '32px', fontSize: '12px' }}
                 >
-                  <option value="">All Statuses</option>
-                  <option value="ACTIVE">ACTIVE</option>
-                  <option value="SIMULATED">SIMULATED</option>
+                  <option value="">All Statuses (Active, Simulated, Expired, Revoked)</option>
+                  <option value="ACTIVE">ACTIVE (Enforced)</option>
+                  <option value="SIMULATED">SIMULATED (DRY_RUN)</option>
                   <option value="EXPIRED">EXPIRED</option>
                   <option value="REVOKED">REVOKED</option>
                 </select>
@@ -455,6 +466,9 @@ export const PoliciesView: React.FC = () => {
                         <b style={{ color: 'var(--warm-cream)', fontSize: '14px' }}>
                           {r.target_ip} {r.target_port ? `:${r.target_port}` : ''}
                         </b>
+                        <span className={`pill ${r.status === 'ACTIVE' ? 'r87' : (r.status === 'SIMULATED' ? 'pill-benign' : 'r76')}`} style={{ fontSize: '10px' }}>
+                          {r.status}
+                        </span>
                         <span className="prov-badge" style={{ fontSize: '10px' }}>
                           {r.mode}
                         </span>

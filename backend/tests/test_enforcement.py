@@ -163,7 +163,8 @@ def test_enforcement_service_deduplication(db_session: Session, sample_block_dec
     db_session.commit()
     assert rule2 is not None
     assert rule2.id == original_rule_id, "Should reuse existing rule ID"
-    assert rule2.ttl_seconds > original_ttl, "Should extend TTL"
+    assert rule2.expires_at >= rule1.expires_at, "Should refresh sliding expiration timestamp"
+    assert rule2.ttl_seconds == original_ttl, "TTL seconds should represent configured window, not compounded"
 
 
 def test_manual_rule_revocation(db_session: Session, sample_block_decision):

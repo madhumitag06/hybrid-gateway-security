@@ -6,6 +6,7 @@ tamper rejection, role authorization checks, and initial admin bootstrap idempot
 """
 
 from datetime import timedelta
+from fastapi import HTTPException
 import pytest
 import jwt
 
@@ -130,10 +131,16 @@ def test_admin_login_with_predefined_credentials():
         assert res.user.email == settings.admin_email
         assert res.user.role == "ADMIN"
 
-        # Login with transition fallback also succeeds and reconciles
+        # Legacy fallback passwords must now strictly fail with 401 Unauthorized
         req_fallback = UserLoginRequest(email=settings.admin_email, password="AdminSecOps2026!")
-        res2 = AuthService.login(req_fallback, db)
-        assert res2.user.email == settings.admin_email
+        with pytest.raises(HTTPException) as exc_info:
+            AuthService.login(req_fallback, db)
+        assert exc_info.value.status_code == 401
+
+        req_fallback_2 = UserLoginRequest(email=settings.admin_email, password="AdminSecret2026!")
+        with pytest.raises(HTTPException) as exc_info_2:
+            AuthService.login(req_fallback_2, db)
+        assert exc_info_2.value.status_code == 401
 
 
 def test_operator_signup_and_rbac_roles():
@@ -191,10 +198,12 @@ def test_expected_admin_credentials_and_account_coexistence():
         if legacy_admin is not None:
             assert legacy_admin.role == "ADMIN"
             assert legacy_admin.is_active is True
-            # Legacy admin can also authenticate cleanly
-            legacy_req = UserLoginRequest(email="admin@gateway.local", password="AdminSecOps2026!")
-            legacy_res = AuthService.login(legacy_req, db)
-            assert legacy_res.user.email == "admin@gateway.local"
+            # Legacy fallback password fails without stored bcrypt match
+            if not verify_password("AdminSecOps2026!", legacy_admin.password_hash or ""):
+                legacy_req = UserLoginRequest(email="admin@gateway.local", password="AdminSecOps2026!")
+                with pytest.raises(HTTPException) as exc_info:
+                    AuthService.login(legacy_req, db)
+                assert exc_info.value.status_code == 401
 
 
 def test_inactive_account_rejected():

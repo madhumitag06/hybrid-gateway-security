@@ -8,13 +8,25 @@ and static vs adaptive policy comparison.
 from fastapi.testclient import TestClient
 import pytest
 
+from backend.app.config import settings
 from backend.app.main import app
 from backend.app.schemas.predict import NetworkFlowRequest
+
+
+def get_admin_headers(client: TestClient) -> dict:
+    res = client.post(
+        "/api/v1/auth/login",
+        json={"email": settings.admin_email, "password": settings.admin_password},
+    )
+    assert res.status_code == 200
+    token = res.json()["access_token"]
+    return {"Authorization": f"Bearer {token}"}
 
 
 def test_get_and_update_enforcement_config():
     """Test GET and PUT /api/v1/enforcement/config."""
     client = TestClient(app)
+    admin_headers = get_admin_headers(client)
 
     # 1. GET config
     resp = client.get("/api/v1/enforcement/config")
@@ -24,14 +36,22 @@ def test_get_and_update_enforcement_config():
     assert "management_allowlist" in data
 
     # 2. PUT config: set mode to SANDBOX
-    update_resp = client.put("/api/v1/enforcement/config", json={"active_mode": "SANDBOX", "default_ttl_seconds": 450})
+    update_resp = client.put(
+        "/api/v1/enforcement/config",
+        json={"active_mode": "SANDBOX", "default_ttl_seconds": 450},
+        headers=admin_headers,
+    )
     assert update_resp.status_code == 200
     updated_data = update_resp.json()
     assert updated_data["active_mode"] == "SANDBOX"
     assert updated_data["default_ttl_seconds"] == 450
 
     # Reset back to safe DRY_RUN
-    client.put("/api/v1/enforcement/config", json={"active_mode": "DRY_RUN", "default_ttl_seconds": 300})
+    client.put(
+        "/api/v1/enforcement/config",
+        json={"active_mode": "DRY_RUN", "default_ttl_seconds": 300},
+        headers=admin_headers,
+    )
 
 
 def test_evaluate_policy_endpoint():
@@ -83,8 +103,9 @@ def test_compare_policies_endpoint():
 def test_list_and_revoke_enforcement_rules():
     """Test listing rules and revoking an active rule."""
     client = TestClient(app)
+    admin_headers = get_admin_headers(client)
     # 1. Switch to SANDBOX and execute a high-risk prediction with persist=true
-    client.put("/api/v1/enforcement/config", json={"active_mode": "SANDBOX"})
+    client.put("/api/v1/enforcement/config", json={"active_mode": "SANDBOX"}, headers=admin_headers)
     flow_req = {
         "packet_count": 2,
         "byte_count": 120,
@@ -110,9 +131,11 @@ def test_list_and_revoke_enforcement_rules():
     rule_id = rule_to_revoke["rule_id"]
 
     # 3. Revoke rule
+    admin_headers = get_admin_headers(client)
     revoke_resp = client.post(
         f"/api/v1/enforcement/rules/{rule_id}/revoke",
         json={"actor": "test_analyst", "reason": "Test rollback"},
+        headers=admin_headers,
     )
     assert revoke_resp.status_code == 200
     rev_data = revoke_resp.json()
@@ -120,4 +143,8 @@ def test_list_and_revoke_enforcement_rules():
     assert rev_data["rule_id"] == rule_id
 
     # Reset mode to DRY_RUN
-    client.put("/api/v1/enforcement/config", json={"active_mode": "DRY_RUN"})
+    client.put(
+        "/api/v1/enforcement/config",
+        json={"active_mode": "DRY_RUN"},
+        headers=admin_headers,
+    )

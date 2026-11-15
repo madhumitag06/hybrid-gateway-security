@@ -32,12 +32,14 @@ try:
     from backend.app.cloud.services.cloud_connection_manager import CloudConnectionManager
     from backend.app.cloud.services.cloud_health_monitor import CloudHealthMonitor
     from backend.app.cloud.services.cloud_registry import CloudRegistry
+    from backend.app.api.deps import require_admin, require_operator
     from backend.app.cloud.services.telemetry_checkpoint_service import TelemetryCheckpointService
     from backend.app.cloud.services.telemetry_normalizer import TelemetryNormalizer
     from backend.app.db.session import get_db
     from backend.app.models.cloud_account import CloudTelemetryCheckpointModel
     from ml.features.extractor import FEATURE_NAMES_V2
 except ImportError:
+    from app.api.deps import require_admin, require_operator
     from app.cloud.schemas.cloud_account import (
         CloudAccountConfigSchema,
         CloudAccountCreateRequest,
@@ -159,6 +161,7 @@ def list_accounts(
 @router.post("/accounts", response_model=CloudAccountStatusSchema)
 def register_or_update_account(
     req: CloudAccountCreateRequest,
+    current_user: Any = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
     """
@@ -568,6 +571,7 @@ def get_aws_telemetry_history(
 @router.post("/accounts/AWS/telemetry-checkpoints/reset", response_model=Dict[str, Any])
 def reset_aws_telemetry_checkpoint(
     source_identifier: Optional[str] = Query(None, description="Specific log group or bucket to reset, or omit to reset all"),
+    current_user: Any = Depends(require_operator),
     db: Session = Depends(get_db),
 ):
     """

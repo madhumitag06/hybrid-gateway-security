@@ -31,6 +31,16 @@ from backend.app.services.sample_pcap_generator import ensure_sample_pcaps, SAMP
 client = TestClient(app)
 
 
+def get_admin_headers(c: TestClient) -> dict:
+    res = c.post(
+        "/api/v1/auth/login",
+        json={"email": settings.admin_email, "password": settings.admin_password},
+    )
+    assert res.status_code == 200
+    token = res.json()["access_token"]
+    return {"Authorization": f"Bearer {token}"}
+
+
 @pytest.fixture(scope="module", autouse=True)
 def setup_environment():
     """Ensure database tables exist and sample PCAPs are generated."""
@@ -93,6 +103,7 @@ def test_adaptive_telemetry_and_feedback():
 
     target_record = records[0]
     rec_id = target_record["id"]
+    admin_headers = get_admin_headers(client)
 
     # 1. Submit CONFIRM
     confirm_resp = client.post(
@@ -102,6 +113,7 @@ def test_adaptive_telemetry_and_feedback():
             "action": "CONFIRM",
             "reviewer": "test_analyst",
         },
+        headers=admin_headers,
     )
     assert confirm_resp.status_code == 200
     conf_data = confirm_resp.json()
@@ -118,6 +130,7 @@ def test_adaptive_telemetry_and_feedback():
             "verified_label": "PORT_SCAN",
             "reviewer": "test_analyst",
         },
+        headers=admin_headers,
     )
     assert correct_resp.status_code == 200
     corr_data = correct_resp.json()
@@ -132,6 +145,7 @@ def test_adaptive_telemetry_and_feedback():
             "action": "EXCLUDE",
             "reviewer": "test_analyst",
         },
+        headers=admin_headers,
     )
     assert exclude_resp.status_code == 200
     assert exclude_resp.json()["feedback_status"] == "EXCLUDED"
@@ -145,6 +159,7 @@ def test_adaptive_telemetry_and_feedback():
             "action": "RESET",
             "reviewer": "test_analyst",
         },
+        headers=admin_headers,
     )
     assert reset_resp.status_code == 200
     assert reset_resp.json()["feedback_status"] == "UNVERIFIED"
@@ -165,7 +180,8 @@ def test_adaptive_dataset_and_retraining_safety():
         db.close()
 
     # 1. Prepare training dataset
-    prep_resp = client.post("/api/v1/adaptive/dataset/prepare?min_samples=5")
+    admin_headers = get_admin_headers(client)
+    prep_resp = client.post("/api/v1/adaptive/dataset/prepare?min_samples=5", headers=admin_headers)
     assert prep_resp.status_code == 200
     prep_data = prep_resp.json()
     assert prep_data["eligible"] is True
@@ -181,6 +197,7 @@ def test_adaptive_dataset_and_retraining_safety():
             "candidate_version": cand_ver,
             "created_by": "test_operator",
         },
+        headers=admin_headers,
     )
     assert train_resp.status_code == 200, f"Train failed: {train_resp.text}"
     train_data = train_resp.json()
@@ -198,6 +215,7 @@ def test_adaptive_dataset_and_retraining_safety():
     promote_resp = client.post(
         "/api/v1/adaptive/promote",
         json={"run_id": run_id, "approved_by": "test_operator"},
+        headers=admin_headers,
     )
     assert promote_resp.status_code == 200
     assert MLService.get_active_version() == cand_ver
@@ -206,6 +224,7 @@ def test_adaptive_dataset_and_retraining_safety():
     rollback_resp = client.post(
         "/api/v1/adaptive/rollback",
         json={"reason": "Testing rollback to standby"},
+        headers=admin_headers,
     )
     assert rollback_resp.status_code == 200
     assert MLService.get_active_version() != cand_ver

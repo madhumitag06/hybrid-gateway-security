@@ -10,8 +10,10 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import desc, func, select
 from sqlalchemy.orm import Session
 
+from backend.app.api.deps import require_admin
 from backend.app.db.session import get_db
 from backend.app.models.shadow_prediction import ShadowPredictionModel
+from backend.app.models.user import UserModel
 from backend.app.services.shadow_service import ShadowService
 
 router = APIRouter(prefix="/v1/shadow", tags=["Shadow Mode (XGBoost V2 Candidate)"])
@@ -186,23 +188,29 @@ def get_model_registry() -> Dict[str, Any]:
 
 @router.post(
     "/promote",
-    summary="Promote Model Version",
-    description="Promotes a validated model version (e.g. candidate_xgboost_v2) to authoritative production primary.",
+    summary="Promote Model Version (Admin only)",
+    description="Promotes a validated model version (e.g. candidate_xgboost_v2) to authoritative production primary. Requires Administrator role.",
 )
-def promote_model_endpoint(payload: Dict[str, str]) -> Dict[str, Any]:
+def promote_model_endpoint(
+    payload: Dict[str, str],
+    current_user: UserModel = Depends(require_admin),
+) -> Dict[str, Any]:
     from backend.app.services.ml_service import MLService
     version = payload.get("version", "candidate_xgboost_v2")
-    reason = payload.get("reason", "API-triggered controlled model promotion")
+    reason = payload.get("reason", f"Controlled model promotion approved by {current_user.email}")
     return MLService.promote_model(version, reason=reason)
 
 
 @router.post(
     "/rollback",
-    summary="Rollback Model Version",
-    description="Restores the previous model version as authoritative production primary with zero downtime.",
+    summary="Rollback Model Version (Admin only)",
+    description="Restores the previous model version as authoritative production primary with zero downtime. Requires Administrator role.",
 )
-def rollback_model_endpoint(payload: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+def rollback_model_endpoint(
+    payload: Optional[Dict[str, str]] = None,
+    current_user: UserModel = Depends(require_admin),
+) -> Dict[str, Any]:
     from backend.app.services.ml_service import MLService
-    reason = (payload or {}).get("reason", "API-triggered emergency rollback")
+    reason = (payload or {}).get("reason", f"Emergency rollback approved by {current_user.email}")
     return MLService.rollback(reason=reason)
 

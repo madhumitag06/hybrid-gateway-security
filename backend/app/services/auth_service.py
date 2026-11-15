@@ -94,7 +94,10 @@ class AuthService:
 
     @classmethod
     def login(cls, req: UserLoginRequest, db: Session) -> TokenResponse:
-        """Authenticate user credentials and issue session tokens."""
+        """
+        Authenticate operator credentials strictly using stored bcrypt password hash.
+        Zero hardcoded fallback passwords or alternative secret strings.
+        """
         user_repo = UserRepository(db)
         user = user_repo.get_by_email(req.email)
         if not user or not user.password_hash:
@@ -104,22 +107,7 @@ class AuthService:
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
-        password_valid = verify_password(req.password, user.password_hash)
-
-        # Resilient fallback & hash reconciliation for administrator account
-        if not password_valid and user.role == "ADMIN":
-            req_email = req.email.strip().lower()
-            admin_cfg_email = settings.admin_email.strip().lower()
-            if req_email == admin_cfg_email and req.password in (settings.admin_password, "test@123", "AdminSecOps2026!"):
-                user.password_hash = hash_password(settings.admin_password)
-                user_repo.update(user)
-                password_valid = True
-            elif req_email == "admin@gateway.local" and req.password in ("AdminSecOps2026!", "AdminSecret2026!"):
-                user.password_hash = hash_password("AdminSecOps2026!")
-                user_repo.update(user)
-                password_valid = True
-
-        if not password_valid:
+        if not verify_password(req.password, user.password_hash):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid email or password.",

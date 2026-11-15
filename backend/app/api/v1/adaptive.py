@@ -9,7 +9,9 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
+from backend.app.api.deps import get_current_active_user, require_admin, require_operator
 from backend.app.db.session import get_db
+from backend.app.models.user import UserModel
 from backend.app.services.adaptive_learning_service import AdaptiveLearningService
 
 router = APIRouter(prefix="/v1/adaptive", tags=["Adaptive ML Learning"])
@@ -52,12 +54,13 @@ def list_feedbacks(
 )
 def submit_flow_feedback(
     payload: Dict[str, Any] = Body(...),
+    current_user: UserModel = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ) -> Dict[str, Any]:
     feedback_id = payload.get("feedback_id")
     action = payload.get("action", "CONFIRM")
     verified_label = payload.get("verified_label")
-    reviewer = payload.get("reviewer", "admin")
+    reviewer = payload.get("reviewer") or current_user.email or current_user.username or "admin"
     notes = payload.get("notes")
 
     if not feedback_id:
@@ -83,6 +86,7 @@ def submit_flow_feedback(
 )
 def prepare_dataset(
     min_samples: int = Query(5, ge=1),
+    current_user: UserModel = Depends(require_operator),
     db: Session = Depends(get_db),
 ) -> Dict[str, Any]:
     return AdaptiveLearningService.prepare_training_dataset(db=db, min_samples=min_samples)
@@ -90,16 +94,17 @@ def prepare_dataset(
 
 @router.post(
     "/train",
-    summary="Trigger Isolated Candidate Retraining",
-    description="Trains a new versioned candidate model using verified feedback, saving artifacts to an isolated directory without modifying active production weights.",
+    summary="Trigger Isolated Candidate Retraining (Admin only)",
+    description="Trains a new versioned candidate model using verified feedback, saving artifacts to an isolated directory without modifying active production weights. Requires Administrator role.",
 )
 def trigger_retraining(
     payload: Optional[Dict[str, Any]] = Body(None),
+    current_user: UserModel = Depends(require_admin),
     db: Session = Depends(get_db),
 ) -> Dict[str, Any]:
     body = payload or {}
     candidate_version = body.get("candidate_version")
-    created_by = body.get("created_by", "admin")
+    created_by = body.get("created_by") or current_user.email or "admin"
 
     try:
         return AdaptiveLearningService.trigger_candidate_training(
@@ -125,15 +130,16 @@ def list_training_runs(
 
 @router.post(
     "/promote",
-    summary="Approve Candidate Model Promotion",
-    description="Promotes an evaluated candidate model to authoritative primary after explicit administrator approval.",
+    summary="Approve Candidate Model Promotion (Admin only)",
+    description="Promotes an evaluated candidate model to authoritative primary after explicit administrator approval. Requires Administrator role.",
 )
 def approve_candidate_promotion(
     payload: Dict[str, Any] = Body(...),
+    current_user: UserModel = Depends(require_admin),
     db: Session = Depends(get_db),
 ) -> Dict[str, Any]:
     run_id = payload.get("run_id")
-    approved_by = payload.get("approved_by", "admin")
+    approved_by = payload.get("approved_by") or current_user.email or "admin"
 
     if not run_id:
         raise HTTPException(status_code=400, detail="Missing required field 'run_id'.")
@@ -150,11 +156,12 @@ def approve_candidate_promotion(
 
 @router.post(
     "/rollback",
-    summary="Rollback Model Version",
-    description="Rolls back active model to the previous standby version.",
+    summary="Rollback Model Version (Admin only)",
+    description="Rolls back active model to the previous standby version. Requires Administrator role.",
 )
 def rollback_model(
     payload: Optional[Dict[str, Any]] = Body(None),
+    current_user: UserModel = Depends(require_admin),
     db: Session = Depends(get_db),
 ) -> Dict[str, Any]:
     reason = (payload or {}).get("reason", "Administrator rollback")

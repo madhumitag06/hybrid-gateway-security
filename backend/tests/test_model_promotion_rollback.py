@@ -91,6 +91,12 @@ def test_model_promotion_back_to_xgboost():
 def test_model_registry_api_endpoints():
     """Verify in-process TestClient endpoints for registry, rollback, and promote."""
     client = TestClient(app)
+    admin_login = client.post(
+        "/api/v1/auth/login",
+        json={"email": settings.admin_email, "password": settings.admin_password},
+    )
+    assert admin_login.status_code == 200
+    admin_headers = {"Authorization": f"Bearer {admin_login.json()['access_token']}"}
 
     # 1. GET /api/v1/shadow/registry
     r = client.get("/api/v1/shadow/registry")
@@ -100,12 +106,20 @@ def test_model_registry_api_endpoints():
     assert "all_models" in data
 
     # 2. POST /api/v1/shadow/rollback
-    r_roll = client.post("/api/v1/shadow/rollback", json={"reason": "API test rollback"})
+    r_roll = client.post(
+        "/api/v1/shadow/rollback",
+        json={"reason": "API test rollback"},
+        headers=admin_headers,
+    )
     assert r_roll.status_code == 200
     assert r_roll.json()["active_version"] == "production_rf"
 
     # 3. POST /api/v1/shadow/promote
-    r_promo = client.post("/api/v1/shadow/promote", json={"version": "candidate_xgboost_v2", "reason": "API test promote"})
+    r_promo = client.post(
+        "/api/v1/shadow/promote",
+        json={"version": "candidate_xgboost_v2", "reason": "API test promote"},
+        headers=admin_headers,
+    )
     assert r_promo.status_code == 200
     assert r_promo.json()["active_version"] == "candidate_xgboost_v2"
 

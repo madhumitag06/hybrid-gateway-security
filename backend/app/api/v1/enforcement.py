@@ -10,8 +10,10 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
+from backend.app.api.deps import require_admin, require_operator
 from backend.app.config import settings
 from backend.app.db.session import get_db
+from backend.app.models.user import UserModel
 from backend.app.repositories.enforcement_repo import EnforcementRepository
 from backend.app.repositories.policy_audit_repo import PolicyAuditRepository
 from backend.app.schemas.policy import (
@@ -87,12 +89,13 @@ def list_enforcement_rules(
 @router.post(
     "/v1/enforcement/rules/{rule_id}/revoke",
     response_model=RevokeRuleResponse,
-    summary="Manually revoke active containment rule",
-    description="Rolls back active containment for a target host and logs the action in the immutable audit ledger.",
+    summary="Manually revoke active containment rule (Operator/Admin only)",
+    description="Rolls back active containment for a target host and logs the action in the immutable audit ledger. Requires Operator or Administrator role.",
 )
 def revoke_containment_rule(
     rule_id: str,
     request: RevokeRuleRequest = RevokeRuleRequest(),
+    current_user: UserModel = Depends(require_operator),
     db: Session = Depends(get_db),
 ) -> RevokeRuleResponse:
     repo = EnforcementRepository(db)
@@ -103,8 +106,9 @@ def revoke_containment_rule(
             detail=f"Containment rule '{rule_id}' not found.",
         )
 
+    actor = current_user.email or current_user.full_name or request.actor or "operator"
     success, msg = EnforcementService.revoke_rule(
-        rule_id=rule_id, db=db, actor=request.actor or "analyst"
+        rule_id=rule_id, db=db, actor=actor
     )
     if not success:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg)
@@ -138,11 +142,12 @@ def get_enforcement_config(db: Session = Depends(get_db)) -> EnforcementConfigSc
 @router.put(
     "/v1/enforcement/config",
     response_model=EnforcementConfigSchema,
-    summary="Update enforcement configuration",
-    description="Switch between DRY_RUN and SANDBOX modes or update management allowlist.",
+    summary="Update enforcement configuration (Admin only)",
+    description="Switch between DRY_RUN and SANDBOX modes or update management allowlist. Requires Administrator role.",
 )
 def update_enforcement_config(
     update: EnforcementConfigUpdate,
+    current_user: UserModel = Depends(require_admin),
     db: Session = Depends(get_db),
 ) -> EnforcementConfigSchema:
     if update.active_mode:

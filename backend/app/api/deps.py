@@ -97,6 +97,21 @@ def require_admin(
     return current_user
 
 
+def require_operator(
+    current_user: UserModel = Depends(get_current_active_user),
+) -> UserModel:
+    """
+    Ensure the authenticated operator possesses at least 'OPERATOR' or 'ADMIN' role.
+    Raises 403 Forbidden for analysts, auditors, or ordinary users.
+    """
+    if current_user.role not in ("ADMIN", "OPERATOR"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access forbidden: Operator or Administrator privileges required.",
+        )
+    return current_user
+
+
 def get_optional_user(
     db: Session = Depends(get_db),
     token: Optional[str] = Depends(oauth2_scheme),

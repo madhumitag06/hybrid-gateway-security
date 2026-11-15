@@ -15,6 +15,8 @@ CloudResourceType = Literal[
     "SUBNET",
     "GATEWAY",
     "SECURITY_GROUP",
+    "ROUTE_TABLE",
+    "NETWORK_ACL",
     "FIREWALL_POLICY",
     "FIREWALL_RULE",
     "NSG",

@@ -1,0 +1,116 @@
+{
+  "benchmark_name": "Phase 10 Authoritative XGBoost V2 500-Sample Holdout Verification",
+  "timestamp_utc": "2026-11-15T17:51:51Z",
+  "model_artifact": "ml\\models\\candidates\\bigdata_v2\\model.joblib",
+  "total_samples": 500,
+  "feature_schema": [
+    "packet_count",
+    "byte_count",
+    "duration",
+    "conn_rate",
+    "dst_port",
+    "unique_dst_ports",
+    "bytes_per_sec",
+    "packets_per_sec",
+    "avg_packet_size"
+  ],
+  "classes": [
+    "BENIGN",
+    "PORT_SCAN",
+    "BRUTE_FORCE",
+    "TRAFFIC_SPIKE",
+    "SUSPICIOUS_TRANSFER"
+  ],
+  "overall": {
+    "accuracy": 0.938,
+    "macro_precision": 0.9450156416357547,
+    "macro_recall": 0.9380000000000001,
+    "macro_f1": 0.9359646666135528,
+    "weighted_f1": 0.935964666613553,
+    "median_latency_ms": 0.5773500015493482,
+    "p95_latency_ms": 0.651725014904514,
+    "batch_throughput_fps": 317017.5072867527
+  },
+  "confusion_matrix": [
+    [
+      100,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      99,
+      0,
+      0,
+      1
+    ],
+    [
+      0,
+      0,
+      100,
+      0,
+      0
+    ],
+    [
+      3,
+      0,
+      0,
+      97,
+      0
+    ],
+    [
+      18,
+      4,
+      0,
+      5,
+      73
+    ]
+  ],
+  "per_class": {
+    "BENIGN": {
+      "precision": 0.8264462809917356,
+      "recall": 1.0,
+      "f1-score": 0.9049773755656109,
+      "support": 100.0
+    },
+    "PORT_SCAN": {
+      "precision": 0.9611650485436893,
+      "recall": 0.99,
+      "f1-score": 0.9753694581280788,
+      "support": 100.0
+    },
+    "BRUTE_FORCE": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 100.0
+    },
+    "TRAFFIC_SPIKE": {
+      "precision": 0.9509803921568627,
+      "recall": 0.97,
+      "f1-score": 0.9603960396039604,
+      "support": 100.0
+    },
+    "SUSPICIOUS_TRANSFER": {
+      "precision": 0.9864864864864865,
+      "recall": 0.73,
+      "f1-score": 0.8390804597701149,
+      "support": 100.0
+    },
+    "accuracy": 0.938,
+    "macro avg": {
+      "precision": 0.9450156416357549,
+      "recall": 0.938,
+      "f1-score": 0.9359646666135528,
+      "support": 500.0
+    },
+    "weighted avg": {
+      "precision": 0.9450156416357549,
+      "recall": 0.938,
+      "f1-score": 0.935964666613553,
+      "support": 500.0
+    }
+  }
+}

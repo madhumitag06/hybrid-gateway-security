@@ -114,31 +114,47 @@ def get_default_shadow_artifacts_dir() -> Path:
     return Path(__file__).resolve().parent.parent.parent / "ml" / "models" / "candidates" / "bigdata_v2"
 
 
-def get_frontend_dist_dir() -> Optional[Path]:
+def get_frontend_dist_dir(require_exists: bool = False) -> Optional[Path]:
     """
     Resolves the frontend distribution directory across standalone packaged (frozen)
     and development environments.
     """
-    explicit = os.getenv("FRONTEND_DIST_DIR")
-    if explicit and Path(explicit).is_dir() and (Path(explicit) / "index.html").is_file():
-        return Path(explicit).resolve()
+    candidates: List[Path] = []
 
-    # 1. PyInstaller frozen mode (_MEIPASS or _internal)
+    # 0. Explicit environment variable override
+    explicit = os.getenv("FRONTEND_DIST_DIR")
+    if explicit:
+        candidates.append(Path(explicit).resolve())
+
+    # 1. PyInstaller frozen runtime (_MEIPASS or _internal)
     if getattr(sys, "frozen", False):
         meipass = getattr(sys, "_MEIPASS", None)
         if meipass:
-            cand = Path(meipass) / "dist"
-            if cand.is_dir() and (cand / "index.html").is_file():
-                return cand
+            candidates.append(Path(meipass) / "dist")
         exe_dir = Path(sys.executable).resolve().parent
-        for cand in [exe_dir / "dist", exe_dir / "_internal" / "dist", exe_dir.parent / "dist"]:
-            if cand.is_dir() and (cand / "index.html").is_file():
-                return cand
+        candidates.append(exe_dir / "_internal" / "dist")
+        candidates.append(exe_dir / "dist")
+        candidates.append(exe_dir.parent / "dist")
 
-    # 2. Check workspace root dist
-    ws_dist = Path(__file__).resolve().parent.parent.parent / "dist"
-    if ws_dist.is_dir() and (ws_dist / "index.html").is_file():
-        return ws_dist
+    # 2. Workspace root dist (development & standard python execution)
+    ws_root = Path(__file__).resolve().parent.parent.parent
+    candidates.append(ws_root / "dist")
+    candidates.append(Path.cwd() / "dist")
+
+    # Check candidates in priority order
+    for cand in candidates:
+        try:
+            if cand.is_dir() and (cand / "index.html").is_file():
+                return cand.resolve()
+        except Exception:
+            continue
+
+    if require_exists:
+        searched = ", ".join(str(c) for c in candidates)
+        raise RuntimeError(
+            f"Frontend production distribution ('dist/index.html') not found. Searched locations: {searched}. "
+            "Please run 'npm run build' before launching the standalone application."
+        )
 
     return None
 
@@ -187,6 +203,10 @@ class Settings(BaseSettings):
     cors_origins: Union[List[str], str] = [
         "http://localhost:5173",
         "http://127.0.0.1:5173",
+        "http://localhost:5174",
+        "http://127.0.0.1:5174",
+        "http://localhost:5175",
+        "http://127.0.0.1:5175",
         "http://localhost:3000",
         "http://127.0.0.1:3000",
     ]

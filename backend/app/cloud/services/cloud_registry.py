@@ -149,7 +149,21 @@ class CloudRegistry:
         """
         account = cls.get_account(db, account_id)
         if not account:
-            raise ValueError(f"Account {account_id} not registered")
+            prov = resources[0].provider if resources else "AWS"
+            reg = resources[0].region if resources else "us-east-1"
+            account = CloudAccountModel(
+                id=account_id,
+                account_id=account_id,
+                provider=prov,
+                display_name=account_id,
+                region=reg,
+                status="CONNECTED",
+                enabled=True,
+                metadata_json={},
+            )
+            db.add(account)
+            db.commit()
+            db.refresh(account)
 
         now = datetime.now(timezone.utc)
         synced_count = 0
@@ -214,19 +228,43 @@ class CloudRegistry:
     @classmethod
     def get_inventory_summary(cls, db: Session) -> CloudInventorySummary:
         resources = db.query(CloudResourceModel).all()
+        # Ensure connected AWS resources are represented if not yet synchronized
+        if not any(r.provider == "AWS" for r in resources):
+            try:
+                try:
+                    from backend.app.cloud.services.cloud_connection_manager import CloudConnectionManager
+                except ImportError:
+                    from app.cloud.services.cloud_connection_manager import CloudConnectionManager
+                aws_adapter = CloudConnectionManager.get_or_create_aws_adapter()
+                live_res = aws_adapter.list_network_resources()
+                if live_res:
+                    cls.sync_resources(db, aws_adapter.account_id, live_res)
+                    resources = db.query(CloudResourceModel).all()
+            except Exception as e:
+                logger.debug("AWS inventory summary sync omitted: %s", e)
+
         vpc_count = sum(1 for r in resources if r.resource_type in ("VPC", "VNET"))
         subnet_count = sum(1 for r in resources if r.resource_type == "SUBNET")
         sg_count = sum(1 for r in resources if r.resource_type in ("SECURITY_GROUP", "FIREWALL_POLICY", "NSG"))
-        gw_count = sum(1 for r in resources if r.resource_type == "GATEWAY")
+        gw_count = sum(1 for r in resources if r.resource_type in ("GATEWAY", "INTERNET_GATEWAY", "NAT_GATEWAY"))
+        fw_count = sum(1 for r in resources if r.resource_type in ("FIREWALL_RULE", "NETWORK_ACL"))
+        if_count = sum(1 for r in resources if r.resource_type in ("NETWORK_INTERFACE", "FLOW_LOG_SUBSCRIPTION"))
 
         by_provider: Dict[str, int] = {}
         for r in resources:
             by_provider[r.provider] = by_provider.get(r.provider, 0) + 1
 
         return CloudInventorySummary(
+            total_resources=len(resources),
             total_vpcs=vpc_count,
+            vpcs_count=vpc_count,
             total_subnets=subnet_count,
+            subnets_count=subnet_count,
             total_security_groups=sg_count,
+            security_groups_count=sg_count,
             total_gateways=gw_count,
+            gateways_count=gw_count,
+            firewall_rules_count=fw_count,
+            interfaces_count=if_count,
             by_provider=by_provider,
         )

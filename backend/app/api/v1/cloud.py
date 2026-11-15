@@ -7,6 +7,7 @@ network resource discovery, and canonical telemetry normalization.
 
 from datetime import datetime, timezone
 import logging
+import os
 from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
@@ -26,12 +27,16 @@ try:
         CanonicalFlowRecord,
         CloudTelemetryBatchRequest,
         CloudTelemetryBatchResponse,
+        TelemetryNormalizationReport,
     )
     from backend.app.cloud.services.cloud_connection_manager import CloudConnectionManager
     from backend.app.cloud.services.cloud_health_monitor import CloudHealthMonitor
     from backend.app.cloud.services.cloud_registry import CloudRegistry
+    from backend.app.cloud.services.telemetry_checkpoint_service import TelemetryCheckpointService
     from backend.app.cloud.services.telemetry_normalizer import TelemetryNormalizer
     from backend.app.db.session import get_db
+    from backend.app.models.cloud_account import CloudTelemetryCheckpointModel
+    from ml.features.extractor import FEATURE_NAMES_V2
 except ImportError:
     from app.cloud.schemas.cloud_account import (
         CloudAccountConfigSchema,
@@ -47,12 +52,16 @@ except ImportError:
         CanonicalFlowRecord,
         CloudTelemetryBatchRequest,
         CloudTelemetryBatchResponse,
+        TelemetryNormalizationReport,
     )
     from app.cloud.services.cloud_connection_manager import CloudConnectionManager
     from app.cloud.services.cloud_health_monitor import CloudHealthMonitor
     from app.cloud.services.cloud_registry import CloudRegistry
+    from app.cloud.services.telemetry_checkpoint_service import TelemetryCheckpointService
     from app.cloud.services.telemetry_normalizer import TelemetryNormalizer
     from app.db.session import get_db
+    from app.models.cloud_account import CloudTelemetryCheckpointModel
+    from ml.features.extractor import FEATURE_NAMES_V2
 
 logger = logging.getLogger(__name__)
 
@@ -203,14 +212,54 @@ def test_provider_connection(
     if config:
         cfg = config
     else:
-        # Default test config
-        cfg = CloudAccountConfigSchema(
-            account_id=f"{prov_upper.lower()}-test",
-            provider=prov_upper,
-            account_name=f"{prov_upper} Test Account",
-            region="us-east-1" if prov_upper == "AWS" else ("us-central1" if prov_upper == "GCP" else "eastus"),
-            enabled=True,
-        )
+        # Default test config with environment awareness
+        default_region = "us-east-1"
+        role_arn = None
+        ext_id = None
+        if prov_upper == "AWS":
+            default_region = os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION") or "ap-southeast-2"
+            role_arn = os.environ.get("AWS_ROLE_ARN") or "arn:aws:iam::698766075180:role/SecurityGatewayReadOnlyRole"
+            ext_id = os.environ.get("AWS_EXTERNAL_ID") or "AdaptiveGatewayAuth"
+            profile = os.environ.get("AWS_PROFILE") or "security-gateway-readonly"
+            acc_id = os.environ.get("AWS_ACCOUNT_ID") or "698766075180"
+            cfg = CloudAccountConfigSchema(
+                account_id=acc_id,
+                provider="AWS",
+                account_name="AWS Primary Account",
+                display_name=f"AWS Production ({acc_id})",
+                region=default_region,
+                role_arn=role_arn,
+                external_id=ext_id,
+                profile_name=profile,
+                enabled=True,
+                metadata={"profile_name": profile},
+            )
+        elif prov_upper == "GCP":
+            default_region = "us-central1"
+            cfg = CloudAccountConfigSchema(
+                account_id=f"{prov_upper.lower()}-test",
+                provider=prov_upper,
+                account_name=f"{prov_upper} Test Account",
+                region=default_region,
+                enabled=True,
+            )
+        elif prov_upper == "AZURE":
+            default_region = "eastus"
+            cfg = CloudAccountConfigSchema(
+                account_id=f"{prov_upper.lower()}-test",
+                provider=prov_upper,
+                account_name=f"{prov_upper} Test Account",
+                region=default_region,
+                enabled=True,
+            )
+        else:
+            cfg = CloudAccountConfigSchema(
+                account_id=f"{prov_upper.lower()}-test",
+                provider=prov_upper,
+                account_name=f"{prov_upper} Test Account",
+                region="local",
+                enabled=True,
+            )
 
     try:
         return CloudConnectionManager.test_connection(cfg)
@@ -223,55 +272,422 @@ def test_provider_connection(
         }
 
 
+@router.post("/accounts/AWS/discover", response_model=Dict[str, Any])
+def discover_aws_network_resources(
+    region: Optional[str] = Query(None, description="Optional region override"),
+    db: Session = Depends(get_db),
+):
+    """
+    Triggers read-only AWS EC2 discovery of VPCs, Subnets, Route Tables, Security Groups, NACLs, and Flow Logs.
+    Persists discovered resources in PostgreSQL and returns inventory breakdown.
+    """
+    adapter = CloudConnectionManager.get_or_create_aws_adapter(region=region)
+    conn = adapter.check_connection()
+    if conn.get("status") not in ("CONNECTED", "CONFIGURED"):
+        return {
+            "status": conn.get("status"),
+            "message": conn.get("message"),
+            "resources_discovered": 0,
+            "caller_identity": conn.get("caller_identity"),
+            "inventory": [],
+        }
+
+    resources = adapter.list_network_resources()
+    synced_count = 0
+    if resources:
+        synced_count = CloudRegistry.sync_resources(db, adapter.account_id, resources)
+        CloudRegistry.update_account_status(
+            db,
+            adapter.account_id,
+            status=conn.get("status", "CONNECTED"),
+            latency_ms=conn.get("latency_ms"),
+        )
+
+    counts: Dict[str, int] = {}
+    for r in resources:
+        counts[r.resource_type] = counts.get(r.resource_type, 0) + 1
+
+    return {
+        "status": "SUCCESS",
+        "account_id": adapter.account_id,
+        "region": adapter.region,
+        "total_resources": len(resources),
+        "synced_to_db": synced_count,
+        "counts_by_type": counts,
+        "caller_identity": conn.get("caller_identity"),
+        "resources": [r.model_dump() for r in resources],
+    }
+
+
+@router.get("/accounts/AWS/flow-logs", response_model=Dict[str, Any])
+def get_aws_flow_log_subscriptions(
+    region: Optional[str] = Query(None, description="Optional region override"),
+):
+    """
+    Inspects active VPC Flow Log subscriptions on AWS, identifying destinations (CloudWatch Logs vs S3).
+    """
+    adapter = CloudConnectionManager.get_or_create_aws_adapter(region=region)
+    subscriptions = adapter.get_flow_log_subscriptions()
+    return {
+        "account_id": adapter.account_id,
+        "region": adapter.region,
+        "subscriptions_count": len(subscriptions),
+        "subscriptions": subscriptions,
+    }
+
+
+@router.post("/accounts/AWS/poll-telemetry", response_model=CloudTelemetryBatchResponse)
+def poll_aws_telemetry(
+    limit: int = Query(50, ge=1, le=500),
+    log_group: Optional[str] = Query(None, description="Specific CloudWatch log group"),
+    s3_bucket: Optional[str] = Query(None, description="Specific S3 bucket destination"),
+    mock_fallback: bool = Query(False, description="Allow mock fixture fallback if no live AWS flow logs exist"),
+    db: Session = Depends(get_db),
+):
+    """
+    Polls real AWS VPC flow log events from CloudWatch Logs or Amazon S3,
+    normalizes them into the canonical 9-feature XGBoost V2 format,
+    runs threat prediction, updates persistent checkpoints, and records security events.
+    """
+    adapter = CloudConnectionManager.get_or_create_aws_adapter()
+    telemetry_provider = adapter.get_telemetry_provider()
+
+    filter_params: Dict[str, Any] = {}
+    if log_group:
+        filter_params["log_group"] = log_group
+    if s3_bucket:
+        filter_params["s3_bucket"] = s3_bucket
+
+    target_source_id = log_group or s3_bucket or "default"
+    existing_chk = TelemetryCheckpointService.get_checkpoint(
+        db, provider="AWS", account_id=adapter.account_id, source_identifier=target_source_id
+    )
+
+    chk_dict = None
+    if existing_chk:
+        chk_dict = {
+            "last_timestamp_ms": existing_chk.last_timestamp_ms,
+            "last_token": existing_chk.last_token,
+            "last_object_key": existing_chk.last_object_key,
+        }
+
+    poll_res = telemetry_provider.poll_flow_telemetry(
+        checkpoint=chk_dict,
+        limit=limit,
+        filter_params=filter_params or None,
+        mock_fallback=mock_fallback,
+    )
+
+    raw_events = poll_res.get("events", [])
+    chk_err = poll_res.get("checkpoint", {}).get("error")
+    if not raw_events:
+        # Return structured NO_NEW_EVENTS (or ERROR) response rather than failure
+        resp_status = "ERROR" if chk_err else "NO_NEW_EVENTS"
+        return CloudTelemetryBatchResponse(
+            status=resp_status,
+            provider="AWS",
+            account_id=adapter.account_id,
+            records_received=0,
+            records_parsed=0,
+            records_aggregated=0,
+            high_risk_flows_detected=0,
+            flows_accepted=0,
+            flows_dropped=0,
+            parsing_duration_ms=0.0,
+            inference_duration_ms=0.0,
+            flows=[],
+            normalization_report=TelemetryNormalizationReport(
+                features_extracted=FEATURE_NAMES_V2,
+                schema_version="v2_canonical",
+                failed_auth_synthesized=False,
+                timestamp_provenance=True,
+                direction_classified=True,
+            ),
+        )
+
+    canonical_records: List[CanonicalFlowRecord] = []
+    for ev in raw_events:
+        parsed = telemetry_provider.parse_raw_log_record(ev)
+        if parsed is not None:
+            canonical_records.append(parsed)
+
+    if not canonical_records:
+        return CloudTelemetryBatchResponse(
+            status="NO_NEW_EVENTS",
+            provider="AWS",
+            account_id=adapter.account_id,
+            records_received=len(raw_events),
+            records_parsed=0,
+            records_aggregated=0,
+            high_risk_flows_detected=0,
+            flows_accepted=0,
+            flows_dropped=0,
+            parsing_duration_ms=0.0,
+            inference_duration_ms=0.0,
+            flows=[],
+            normalization_report=TelemetryNormalizationReport(
+                features_extracted=FEATURE_NAMES_V2,
+                schema_version="v2_canonical",
+                failed_auth_synthesized=False,
+                timestamp_provenance=True,
+                direction_classified=True,
+            ),
+        )
+
+    return TelemetryNormalizer.process_canonical_batch(
+        records=canonical_records,
+        provider="AWS",
+        account_id=adapter.account_id,
+        db=db,
+        persist=True,
+        checkpoint_data=poll_res.get("checkpoint"),
+        source_type=poll_res.get("source_type"),
+        source_identifier=poll_res.get("source_identifier"),
+    )
+
+
+@router.get("/accounts/AWS/telemetry-status", response_model=Dict[str, Any])
+def get_aws_telemetry_status(
+    db: Session = Depends(get_db),
+):
+    """
+    Returns live ingestion health metrics, source identifier, and last checkpoint information.
+    Distinguishes clearly between latest ingestion run metrics and cumulative checkpoint metrics.
+    """
+    adapter = CloudConnectionManager.get_or_create_aws_adapter()
+    telemetry_provider = adapter.get_telemetry_provider()
+    ingest_status = telemetry_provider.get_ingestion_status()
+
+    # Get checkpoints
+    sources = telemetry_provider.discover_flow_log_sources()
+    checkpoints: List[Dict[str, Any]] = []
+    cumulative_records = 0
+    for s in sources:
+        dest = s.get("destination", "")
+        if dest:
+            chk = TelemetryCheckpointService.get_checkpoint(
+                db, provider="AWS", account_id=adapter.account_id, source_identifier=dest
+            )
+            if chk:
+                checkpoints.append({
+                    "source_identifier": chk.source_identifier,
+                    "source_type": chk.source_type,
+                    "last_timestamp_ms": chk.last_timestamp_ms,
+                    "last_poll_at": chk.last_poll_at.isoformat() if chk.last_poll_at else None,
+                    "total_records_processed": chk.total_records_processed,
+                })
+                cumulative_records += (chk.total_records_processed or 0)
+
+    # If no active sources from EC2 describe_flow_logs, check DB for stored checkpoints
+    if not checkpoints:
+        db_chks = db.query(CloudTelemetryCheckpointModel).filter(
+            CloudTelemetryCheckpointModel.provider == "AWS",
+            CloudTelemetryCheckpointModel.account_id == adapter.account_id,
+        ).all()
+        for chk in db_chks:
+            checkpoints.append({
+                "source_identifier": chk.source_identifier,
+                "source_type": chk.source_type,
+                "last_timestamp_ms": chk.last_timestamp_ms,
+                "last_poll_at": chk.last_poll_at.isoformat() if chk.last_poll_at else None,
+                "total_records_processed": chk.total_records_processed,
+            })
+            cumulative_records += (chk.total_records_processed or 0)
+
+    # Retrieve latest persistent ingestion run from DB
+    recent_runs = TelemetryCheckpointService.list_ingestion_history(
+        db, provider="AWS", account_id=adapter.account_id, limit=1
+    )
+    latest_run = recent_runs[0] if recent_runs else None
+
+    latest_run_metrics = {
+        "status": latest_run.status if latest_run else "INITIALIZED",
+        "records_discovered": latest_run.records_discovered if latest_run else 0,
+        "records_ingested": latest_run.records_ingested if latest_run else 0,
+        "records_duplicate_skipped": latest_run.records_duplicate_skipped if latest_run else 0,
+        "records_rejected": latest_run.records_rejected if latest_run else 0,
+        "high_risk_detected": latest_run.high_risk_detected if latest_run else 0,
+        "last_poll_at": latest_run.created_at.isoformat() if latest_run and latest_run.created_at else None,
+        "source_identifier": latest_run.source_identifier if latest_run else None,
+    }
+
+    cumulative_checkpoint_metrics = {
+        "total_records_processed": cumulative_records,
+        "checkpoints_tracked": len(checkpoints),
+    }
+
+    return {
+        "provider": "AWS",
+        "account_id": adapter.account_id,
+        "region": adapter.region,
+        "metrics": ingest_status,
+        "latest_run_metrics": latest_run_metrics,
+        "cumulative_checkpoint_metrics": cumulative_checkpoint_metrics,
+        "active_sources_count": len(sources) or len(checkpoints),
+        "sources": sources,
+        "checkpoints": checkpoints,
+    }
+
+
+@router.get("/accounts/AWS/telemetry-history", response_model=List[Dict[str, Any]])
+def get_aws_telemetry_history(
+    limit: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db),
+):
+    """
+    Returns historical ingestion audit logs for AWS telemetry.
+    """
+    adapter = CloudConnectionManager.get_or_create_aws_adapter()
+    runs = TelemetryCheckpointService.list_ingestion_history(
+        db, provider="AWS", account_id=adapter.account_id, limit=limit
+    )
+    return [
+        {
+            "id": r.id,
+            "provider": r.provider,
+            "account_id": r.account_id,
+            "source_type": r.source_type,
+            "source_identifier": r.source_identifier,
+            "records_discovered": r.records_discovered,
+            "records_ingested": r.records_ingested,
+            "records_duplicate_skipped": r.records_duplicate_skipped,
+            "records_rejected": r.records_rejected,
+            "high_risk_detected": r.high_risk_detected,
+            "flows_accepted": r.flows_accepted,
+            "flows_dropped": r.flows_dropped,
+            "status": r.status,
+            "error_message": r.error_message,
+            "duration_ms": r.duration_ms,
+            "ingested_at": r.created_at.isoformat() if r.created_at else None,
+            "summary": r.summary_json,
+        }
+        for r in runs
+    ]
+
+
+@router.post("/accounts/AWS/telemetry-checkpoints/reset", response_model=Dict[str, Any])
+def reset_aws_telemetry_checkpoint(
+    source_identifier: Optional[str] = Query(None, description="Specific log group or bucket to reset, or omit to reset all"),
+    db: Session = Depends(get_db),
+):
+    """
+    Resets ingestion checkpoints and deduplication cache to allow clean re-ingestion.
+    """
+    adapter = CloudConnectionManager.get_or_create_aws_adapter()
+    dedup_cache = TelemetryCheckpointService.get_dedup_cache()
+    dedup_cache.clear()
+
+    q = db.query(CloudTelemetryCheckpointModel).filter(
+        CloudTelemetryCheckpointModel.provider == "AWS",
+        CloudTelemetryCheckpointModel.account_id == adapter.account_id,
+    )
+    if source_identifier:
+        q = q.filter(CloudTelemetryCheckpointModel.source_identifier == source_identifier)
+
+    deleted_count = q.delete(synchronize_session=False)
+    db.commit()
+
+    return {
+        "status": "SUCCESS",
+        "provider": "AWS",
+        "account_id": adapter.account_id,
+        "checkpoints_reset": deleted_count,
+        "dedup_cache_cleared": True,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
 @router.get("/resources", response_model=List[CloudResourceSchema])
 def list_cloud_resources(
     provider: Optional[str] = Query(None, description="Filter by provider"),
     resource_type: Optional[str] = Query(None, description="Filter by type: VPC, SUBNET, GATEWAY, SECURITY_GROUP"),
+    sync_live: bool = Query(False, description="Force re-sync from active cloud providers"),
     db: Session = Depends(get_db),
 ):
     """
     List discovered network resources across clouds.
+    Preserves idempotent persistence and avoids redundant discovery on routine polls.
     """
+    if sync_live:
+        for prov in ["AWS", "GCP", "AZURE", "DOCKER_LAB"]:
+            if provider and prov != provider.upper():
+                continue
+            try:
+                if prov == "AWS":
+                    adapter = CloudConnectionManager.get_or_create_aws_adapter()
+                else:
+                    cfg = CloudAccountConfigSchema(
+                        account_id=f"{prov.lower()}-default",
+                        provider=prov,
+                        account_name=f"{prov} Account",
+                        region=("us-central1" if prov == "GCP" else ("eastus" if prov == "AZURE" else "local")),
+                        enabled=True,
+                    )
+                    adapter = CloudConnectionManager.create_adapter(cfg)
+                prov_res = adapter.list_network_resources()
+                if prov_res:
+                    CloudRegistry.sync_resources(db, adapter.account_id, prov_res)
+            except Exception as sync_err:
+                logger.debug("Live sync error for %s: %s", prov, sync_err)
+
+    # Check if AWS has zero resources in DB and sync once idempotently if requested or unpopulated
+    if not sync_live and (provider is None or provider.upper() == "AWS"):
+        aws_db = CloudRegistry.list_resources(db, provider="AWS")
+        if not aws_db:
+            try:
+                adapter = CloudConnectionManager.get_or_create_aws_adapter()
+                prov_res = adapter.list_network_resources()
+                if prov_res:
+                    CloudRegistry.sync_resources(db, adapter.account_id, prov_res)
+            except Exception as aws_err:
+                logger.debug("Auto-initialization of AWS resources omitted: %s", aws_err)
+
     db_res = CloudRegistry.list_resources(db, provider=provider, resource_type=resource_type)
-    if db_res:
-        return [
+    schemas: List[CloudResourceSchema] = []
+    for r in db_res:
+        meta = r.metadata_json or {}
+        # Determine vpc_id preserving correct resource relationships
+        if r.resource_type in ("VPC", "VNET"):
+            vpc_id = r.resource_id
+        elif "vpc_id" in meta:
+            vpc_id = meta["vpc_id"]
+        elif r.resource_type in (
+            "SUBNET",
+            "ROUTE_TABLE",
+            "SECURITY_GROUP",
+            "NETWORK_ACL",
+            "GATEWAY",
+            "INTERNET_GATEWAY",
+            "NAT_GATEWAY",
+        ):
+            vpc_id = r.parent_resource_id
+        else:
+            vpc_id = None
+
+        schemas.append(
             CloudResourceSchema(
+                id=r.id,
                 resource_id=r.resource_id,
-                account_id=r.account_id,
+                account_id=r.cloud_account_id,
+                cloud_account_id=r.cloud_account_id,
                 provider=r.provider,
                 resource_type=r.resource_type,
-                name=r.name,
+                name=r.resource_name,
+                resource_name=r.resource_name,
                 cidr_block=r.cidr_block,
                 region=r.region,
-                zone=r.zone,
-                vpc_id=r.vpc_id,
-                state=r.state,
-                tags=r.tags or {},
-                extra_data=r.extra_data or {},
-                created_at=r.created_at,
+                zone=meta.get("zone") or meta.get("AvailabilityZone"),
+                vpc_id=vpc_id,
+                parent_resource_id=r.parent_resource_id,
+                state=meta.get("state") or meta.get("State") or "available",
+                tags=meta.get("tags") or meta.get("Tags") or {},
+                extra_data=meta,
+                metadata=meta,
+                created_at=r.discovered_at,
+                discovered_at=r.discovered_at,
             )
-            for r in db_res
-        ]
-
-    # If DB has no resources yet, discover live from active adapters
-    all_res: List[CloudResourceSchema] = []
-    for prov in ["AWS", "GCP", "AZURE", "DOCKER_LAB"]:
-        if provider and prov != provider.upper():
-            continue
-        cfg = CloudAccountConfigSchema(
-            account_id=f"{prov.lower()}-default",
-            provider=prov,
-            account_name=f"{prov} Account",
-            region="us-east-1" if prov == "AWS" else ("us-central1" if prov == "GCP" else ("eastus" if prov == "AZURE" else "local")),
-            enabled=True,
         )
-        adapter = CloudConnectionManager.create_adapter(cfg)
-        prov_res = adapter.list_network_resources()
-        if resource_type:
-            prov_res = [r for r in prov_res if r.resource_type == resource_type.upper()]
-        all_res.extend(prov_res)
-
-    return all_res
+    return schemas
 
 
 @router.get("/inventory/summary", response_model=CloudInventorySummary)

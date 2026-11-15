@@ -143,6 +143,10 @@ class DashboardDataSchema(BaseModel):
     trafficPoints: List[TrafficPointSchema] = Field(default_factory=list)
     timeline: List[TimelineStepSchema] = Field(default_factory=list)
     keyMetrics: KeyMetricsSchema = Field(default_factory=KeyMetricsSchema)
+    telemetry_provenance: Dict[str, int] = Field(default_factory=dict)
+    telemetryProvenance: Dict[str, int] = Field(default_factory=dict)
+    risk_segmentation: Optional[Dict[str, Any]] = Field(default_factory=dict)
+    riskSegmentation: Optional[Dict[str, Any]] = Field(default_factory=dict)
     notifications: List[NotificationItemSchema] = Field(default_factory=list)
     unreadNotificationsCount: int = 0
 

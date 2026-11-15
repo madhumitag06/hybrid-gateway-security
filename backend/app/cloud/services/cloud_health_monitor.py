@@ -32,16 +32,7 @@ class CloudHealthMonitor:
         providers_status: Dict[str, Any] = {}
 
         # 1. AWS
-        aws_cfg = CloudAccountConfigSchema(
-            account_id=getattr(settings, "aws_account_id", "aws-production-01") or "aws-production-01",
-            provider="AWS",
-            account_name="AWS Cloud Network",
-            region=getattr(settings, "aws_region", "us-east-1") or "us-east-1",
-            role_arn=getattr(settings, "aws_role_arn", None),
-            enabled=getattr(settings, "aws_enabled", True),
-            enforcement_enabled=False,
-        )
-        aws_adapter = CloudConnectionManager.create_adapter(aws_cfg)
+        aws_adapter = CloudConnectionManager.get_or_create_aws_adapter()
         providers_status["AWS"] = aws_adapter.get_health()
 
         # 2. GCP

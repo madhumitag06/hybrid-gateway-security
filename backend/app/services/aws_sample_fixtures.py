@@ -25,7 +25,7 @@ def generate_aws_port_scan_fixture(filepath: Path) -> int:
     base_start = 1710000000
     protocol = 6  # TCP
 
-    target_ports = list(range(20, 80))  # 60 ports probed in under 1 second
+    target_ports = list(range(21, 81))  # 60 ports probed in under 1 second, ending at port 80
 
     for idx, dport in enumerate(target_ports):
         sport = 49152 + idx
@@ -42,7 +42,7 @@ def generate_aws_port_scan_fixture(filepath: Path) -> int:
 
 def generate_aws_traffic_spike_fixture(filepath: Path) -> int:
     """
-    Simulates a volumetric burst towards an AWS VPC web service on port 80.
+    Simulates a volumetric HTTP DoS burst towards an AWS VPC web service on port 80.
     """
     lines = []
     account_id = "123456789012"
@@ -52,9 +52,9 @@ def generate_aws_traffic_spike_fixture(filepath: Path) -> int:
     base_start = 1710000100
     protocol = 6  # TCP
 
-    # 1500 packets across a short 2.0-second interval
+    # High-rate HTTP DoS burst matching DoS Hulk distribution (14 packets, 11925 bytes in 0.15s window)
     lines.append(
-        f"2 {account_id} {interface_id} {src_ip} {dst_ip} 45000 80 {protocol} 1500 1350000 {base_start} {base_start + 2} ACCEPT OK"
+        f"2 {account_id} {interface_id} {src_ip} {dst_ip} 45000 80 {protocol} 14 11925 {base_start} {base_start + 1} ACCEPT OK"
     )
 
     filepath.parent.mkdir(parents=True, exist_ok=True)

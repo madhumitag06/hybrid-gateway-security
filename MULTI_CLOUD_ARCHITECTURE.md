@@ -85,6 +85,7 @@ To ensure complete provider independence and prevent vendor lock-in, the gateway
 
 ### 2.3 Core Management Services (`backend/app/cloud/services/`)
 - **`TelemetryNormalizer`**: Translates disparate provider log formats into the canonical 9-feature XGBoost V2 input schema. Computes throughput, packet rates, and stateful destination port diversity per source IP.
+- **`TelemetryCheckpointService`**: Manages persistent ingestion checkpoints (`CloudTelemetryCheckpointModel`), deduplication filter caches (`DeduplicationCache`), and batch ingestion audit records (`CloudTelemetryIngestionModel`).
 - **`CloudRegistry`**: Coordinates database-backed persistence of cloud accounts (`CloudAccountModel`) and network resources (`CloudResourceModel`), ensuring complete secret redaction.
 - **`CloudConnectionManager`**: Thread-safe adapter factory managing adapter lifecycle, caching, and health diagnostics.
 - **`CloudHealthMonitor`**: Real-time aggregator computing multi-cloud readiness, provider latencies, and degradation alerts.

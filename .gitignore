@@ -43,6 +43,11 @@ htmlcov/
 !.env.example
 !**/.env.example
 
+# Local Databases
+*.db
+*.sqlite
+*.sqlite3
+
 # PyInstaller Build Artifacts & Executables
 build/
 backend/executable/AdaptiveSecurityGateway/

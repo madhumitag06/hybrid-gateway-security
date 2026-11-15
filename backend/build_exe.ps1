@@ -85,8 +85,13 @@ Write-Host "  -> Latest CSS : $LatestCssName ($CssSizeKb KB)" -ForegroundColor G
 
 # Step 7: Run Backend Unit Tests
 Write-Host "`n[7/17] Running backend prediction and duration API test suite..." -ForegroundColor Yellow
+$origDbUrl = $env:DATABASE_URL
+$env:DATABASE_URL = "sqlite:///$($WorkspaceRoot -replace '\\', '/')/backend/tests/test_build.db"
 & $PythonExe -m pytest "$WorkspaceRoot\backend\tests\test_predict_api.py" -q
-if ($LASTEXITCODE -ne 0) {
+$testExit = $LASTEXITCODE
+if (Test-Path "$WorkspaceRoot\backend\tests\test_build.db") { Remove-Item "$WorkspaceRoot\backend\tests\test_build.db" -Force }
+$env:DATABASE_URL = $origDbUrl
+if ($testExit -ne 0) {
     Write-Error "[FAIL] Backend tests failed. Aborting executable packaging."
     exit 1
 }

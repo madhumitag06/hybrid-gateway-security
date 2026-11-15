@@ -104,15 +104,24 @@ Create a VPC Flow Log subscription targeting a CloudWatch Log Group:
 
 ## 4. Telemetry Ingestion & Parsing
 
-The `AwsTelemetryProvider` parses lines adhering to the V2 format:
-- Example Raw Line:
-  `2 123456789012 eni-0123456789abcdef0 10.20.10.15 10.20.10.2 44321 443 6 45 38500 1763160000 1763160030 ACCEPT OK`
+The `AwsTelemetryProvider` parses lines adhering to both standard Version 2 and custom format specifications:
+- Example Raw Line (Standard V2):
+  `2 698766075180 eni-0123456789abcdef0 10.20.10.15 10.20.10.2 44321 443 6 45 38500 1763160000 1763160030 ACCEPT OK`
 - Parsed Attributes:
   - Source: `10.20.10.15:44321`
   - Destination: `10.20.10.2:443` (Protocol 6: TCP)
   - Packets: `45`, Bytes: `38,500`, Duration: `30s`
   - Connection Rate: `1.5 conns/sec`, Throughput: `1,283.33 bytes/sec`
   - Canonical 9-Feature vector extracted and evaluated by authoritative XGBoost V2.
+
+### 4.1 Incremental Checkpoints & Deduplication
+- **CloudWatch Logs:** Checkpoint millisecond timestamps and `nextToken` pagination markers are stored in `cloud_telemetry_checkpoints`. A 60-second lookback overlap handles delayed deliveries, while a bounded FIFO `DeduplicationCache` (20,000 entries) eliminates duplicates.
+- **Amazon S3:** Object keys are tracked via `StartAfter` markers. Compressed `.log.gz` archives are decompressed in memory using streaming gunzip, isolating corrupted lines gracefully.
+- **REST Endpoints:**
+  - `POST /api/v1/cloud/accounts/AWS/poll-telemetry`: Polls live logs, updates checkpoints, and runs XGBoost V2 inference.
+  - `GET /api/v1/cloud/accounts/AWS/telemetry-status`: Returns health status and active source metrics.
+  - `GET /api/v1/cloud/accounts/AWS/telemetry-history`: Lists previous ingestion batch audit records.
+  - `POST /api/v1/cloud/accounts/AWS/telemetry-checkpoints/reset`: Clears checkpoints and deduplication cache.
 
 ---
 

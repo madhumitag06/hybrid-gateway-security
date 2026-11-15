@@ -45,6 +45,7 @@ class CloudAccountConfigSchema(BaseModel):
     role_arn: Optional[str] = Field(None, description="AWS IAM Role ARN or Workload Identity provider")
     oidc_role_arn: Optional[str] = None
     external_id: Optional[str] = Field(None, description="Optional STS External ID")
+    profile_name: Optional[str] = Field(None, description="AWS CLI named profile, e.g. security-gateway-readonly")
     project_id: Optional[str] = None
     workload_identity_provider: Optional[str] = None
     workload_identity_pool: Optional[str] = None

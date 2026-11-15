@@ -152,6 +152,10 @@ export interface DashboardData {
   keyMetrics?: KeyMetrics
   notifications?: NotificationItem[]
   unreadNotificationsCount?: number
+  telemetry_provenance?: Record<string, number>
+  telemetryProvenance?: Record<string, number>
+  risk_segmentation?: Record<string, any>
+  riskSegmentation?: Record<string, any>
 }
 
 export interface FlowPredictionRequest {

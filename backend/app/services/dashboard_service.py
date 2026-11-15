@@ -7,6 +7,7 @@ explainable risk reasons, persistent notifications, unified search, AI analyst c
 briefings, and handle persistent policy actions.
 """
 
+from collections import defaultdict
 from datetime import datetime, timezone, timedelta
 import uuid
 from typing import Any, Dict, List, Optional, Tuple
@@ -505,7 +506,28 @@ class DashboardService:
             src_zone = ff.get("source_zone") or NetworkZoneClassifier.classify_ip(e.source_ip)
             dst_zone = ff.get("destination_zone") or NetworkZoneClassifier.classify_ip(e.destination_ip)
             direction = ff.get("traffic_direction") or NetworkZoneClassifier.classify_direction(e.source_ip, e.destination_ip)
-            telem_src = ff.get("telemetry_source") or ("DEMO_SEED" if e.is_demo else "PCAP")
+            
+            raw_source = ff.get("telemetry_source")
+            if raw_source == "AWS_VPC_FLOW_LOG_FIXTURE" or (raw_source in ("AWS_VPC_FLOW_LOG", "AWS_CLOUDWATCH") and e.is_demo):
+                telem_src = "AWS_VPC_FLOW_LOG_FIXTURE"
+            elif (raw_source in ("AWS_VPC_FLOW_LOG", "AWS_CLOUDWATCH") or ff.get("provider") == "AWS") and not e.is_demo:
+                telem_src = "AWS_VPC_FLOW_LOG"
+            elif not e.is_demo and str(e.id).startswith("evt-cld-") and e.description and e.description.startswith("[AWS] Flow Ingestion:"):
+                telem_src = "AWS_VPC_FLOW_LOG"
+            elif raw_source in ("PCAP_INGESTION", "PCAP_REPLAY", "PCAP"):
+                telem_src = "PCAP_INGESTION"
+            elif raw_source in ("HYBRID_LAB_ROUTER", "DOCKER_LAB"):
+                telem_src = "HYBRID_LAB_ROUTER"
+            elif e.is_demo:
+                telem_src = "DEMO_SEED"
+            elif raw_source:
+                telem_src = str(raw_source)
+            else:
+                telem_src = "UNKNOWN / LEGACY"
+
+            # Safely normalize policy action to match PolicyAction schema literal
+            raw_act = (e.current_policy_action or "Allow").capitalize()
+            normalized_action = raw_act if raw_act in ("Allow", "Monitor", "Restrict", "Block") else "Allow"
 
             schema_event = SecurityEventSchema(
                 id=e.id,
@@ -515,7 +537,7 @@ class DashboardService:
                 destination=e.destination_ip,
                 risk=risk,
                 severity=severity,
-                action=e.current_policy_action,
+                action=normalized_action,
                 status=e.status,
                 description=e.description,
                 attack_type=e.attack_type,
@@ -576,14 +598,29 @@ class DashboardService:
             risk_state: PolicyAction = "Allow"
 
         # 5. Format top risk reasons for dashboard XAI panel
+        from ml.features.extractor import FEATURE_NAMES_V2
+
         reasons_list: List[RiskReasonSchema] = []
-        feature_labels = {
-            "unique_dst_ports": "Port Scan / Probing Activity",
-            "conn_rate": "Traffic Frequency Spike",
-            "failed_auth_count": "Failed Authentication Burst",
+        canonical_labels = {
+            "packet_count": "Volumetric Packet Surge",
             "byte_count": "Unusual Data Transfer Volume",
-            "dst_port": "Non-Standard / Admin Port Access",
-            "avg_packet_size": "Abnormal Payload Ratio",
+            "duration": "Extended Flow Duration",
+            "conn_rate": "Traffic Frequency Spike",
+            "dst_port": "Target Destination Port Access",
+            "unique_dst_ports": "Port Scan / Probing Activity",
+            "bytes_per_sec": "Extreme Flow Byte Volume",
+            "packets_per_sec": "High Packet Transfer Rate",
+            "avg_packet_size": "Abnormal Payload Density",
+            # Additional canonical aliases
+            "flow_duration": "Extended Flow Duration",
+            "bytes_per_packet": "Abnormal Payload Density",
+            "packet_rate": "High Packet Transfer Rate",
+            "byte_rate": "Extreme Flow Byte Volume",
+            "port_entropy": "Elevated Destination Port Entropy",
+            "syn_ratio": "Abnormal SYN Ratio / SYN Flood Indicator",
+        }
+        legacy_labels = {
+            "failed_auth_count": "[Legacy RF / Historical] Failed Authentication Burst",
         }
         tone_map = {
             "unique_dst_ports": "red",
@@ -592,12 +629,28 @@ class DashboardService:
             "byte_count": "blue",
             "dst_port": "red",
             "avg_packet_size": "blue",
+            "duration": "blue",
+            "flow_duration": "blue",
+            "packet_count": "red",
+            "bytes_per_sec": "orange",
+            "byte_rate": "orange",
+            "packets_per_sec": "red",
+            "packet_rate": "red",
+            "bytes_per_packet": "orange",
+            "port_entropy": "red",
+            "syn_ratio": "red",
         }
 
         for feat, count in sorted(reasons_counter.items(), key=lambda x: x[1], reverse=True)[:5]:
+            if feat in FEATURE_NAMES_V2:
+                lbl = canonical_labels.get(feat, feat)
+            elif feat in legacy_labels:
+                lbl = legacy_labels[feat]
+            else:
+                lbl = f"[Legacy RF / Historical] {feat}"
             reasons_list.append(
                 RiskReasonSchema(
-                    label=feature_labels.get(feat, feat),
+                    label=lbl,
                     value=min(max(count, 5), 100),
                     tone=tone_map.get(feat, "blue"),
                 )
@@ -654,6 +707,103 @@ class DashboardService:
         model_status_label = f"{act_name} active ({act_algo}, {act_feats} features)"
         connection_note_label = f"FastAPI ↔ PostgreSQL ↔ {act_algo}"
 
+        # Calculate full-window telemetry provenance strictly supported by DB metadata
+        provenance_counts: Dict[str, int] = defaultdict(int)
+        provenance_risks: Dict[str, List[int]] = defaultdict(list)
+
+        # Query all events in the active window to ensure truthful provenance counts matching total window count
+        prov_query = select(
+            SecurityEventModel.id,
+            SecurityEventModel.flow_features,
+            SecurityEventModel.is_demo,
+            SecurityEventModel.risk_score,
+            SecurityEventModel.description,
+        )
+        if cutoff:
+            prov_query = prov_query.where(SecurityEventModel.timestamp >= cutoff)
+
+        all_window_rows = db.execute(prov_query).all()
+        if not all_window_rows and events_models:
+            all_window_rows = [
+                (ev.id, ev.flow_features, ev.is_demo, ev.risk_score, ev.description) for ev in events_models
+            ]
+
+        for row_id, eff, is_demo, r_score, r_desc in all_window_rows:
+            eff = eff or {}
+            raw_s = eff.get("telemetry_source")
+            if raw_s == "AWS_VPC_FLOW_LOG_FIXTURE" or (raw_s in ("AWS_VPC_FLOW_LOG", "AWS_CLOUDWATCH") and is_demo):
+                cat = "AWS_VPC_FLOW_LOG_FIXTURE"
+            elif (raw_s in ("AWS_VPC_FLOW_LOG", "AWS_CLOUDWATCH") or eff.get("provider") == "AWS") and not is_demo:
+                cat = "AWS_VPC_FLOW_LOG"
+            elif not is_demo and str(row_id).startswith("evt-cld-") and r_desc and r_desc.startswith("[AWS] Flow Ingestion:"):
+                cat = "AWS_VPC_FLOW_LOG"
+            elif raw_s in ("PCAP_INGESTION", "PCAP_REPLAY", "PCAP"):
+                cat = "PCAP_INGESTION"
+            elif raw_s in ("HYBRID_LAB_ROUTER", "DOCKER_LAB"):
+                cat = "HYBRID_LAB_ROUTER"
+            elif is_demo:
+                cat = "DEMO_SEED"
+            elif raw_s:
+                cat = str(raw_s)
+            else:
+                cat = "UNKNOWN / LEGACY"
+            provenance_counts[cat] += 1
+            provenance_risks[cat].append(r_score)
+
+        provenance_counts_dict = dict(provenance_counts)
+
+        # Segmented Risk Attribution
+        def _calc_risk(score_list: List[int]) -> int:
+            if not score_list:
+                return 0
+            m_risk = max(score_list)
+            a_risk = sum(score_list) / len(score_list)
+            return min(max(int(m_risk * 0.7 + a_risk * 0.3), 0), 100)
+
+        def _action_for(r: int) -> PolicyAction:
+            if r >= 70:
+                return "Restrict"
+            if r >= 40:
+                return "Monitor"
+            return "Allow"
+
+        aws_scores = provenance_risks.get("AWS_VPC_FLOW_LOG", [])
+        aws_risk = _calc_risk(aws_scores)
+        aws_action = _action_for(aws_risk) if aws_scores else "Allow"
+
+        lab_scores: List[int] = []
+        for c in (
+            "AWS_VPC_FLOW_LOG_FIXTURE",
+            "PCAP_INGESTION",
+            "HYBRID_LAB_ROUTER",
+            "DEMO_SEED",
+            "UNKNOWN / LEGACY",
+        ):
+            lab_scores.extend(provenance_risks.get(c, []))
+        lab_risk = _calc_risk(lab_scores)
+        lab_action = _action_for(lab_risk) if lab_scores else "Allow"
+
+        risk_segmentation = {
+            "overall_composite": {
+                "risk_score": overall_risk,
+                "policy_action": risk_state,
+                "evaluated_flows_count": evaluated_events_count,
+                "attribution_note": "Gateway composite score (0.7*max + 0.3*avg) across historical replays and live telemetry",
+            },
+            "aws_live_cloud": {
+                "risk_score": aws_risk,
+                "policy_action": aws_action,
+                "evaluated_flows_count": len(aws_scores),
+                "attribution_note": "Evaluated strictly from genuine AWS CloudWatch VPC Flow Logs via canonical 9-feature XGBoost V2",
+            },
+            "simulated_lab": {
+                "risk_score": lab_risk,
+                "policy_action": lab_action,
+                "evaluated_flows_count": len(lab_scores),
+                "attribution_note": "Lab PCAP replays, Docker traffic fixtures, sandbox fixtures, and historical test batches",
+            },
+        }
+
         return DashboardDataSchema(
             riskScore=overall_risk,
             riskState=risk_state,
@@ -679,6 +829,10 @@ class DashboardService:
             keyMetrics=key_metrics,
             notifications=high_risk_notifications,
             unreadNotificationsCount=unread_count,
+            telemetry_provenance=provenance_counts_dict,
+            telemetryProvenance=provenance_counts_dict,
+            risk_segmentation=risk_segmentation,
+            riskSegmentation=risk_segmentation,
         )
 
     @classmethod
@@ -718,10 +872,13 @@ class DashboardService:
             b_start = now - bucket_duration * (num_buckets - i)
             b_end = now - bucket_duration * (num_buckets - 1 - i)
 
-            # Find matching events in bucket
+            # Find matching events in bucket (timezone-safe comparison)
+            def _to_utc(dt: datetime) -> datetime:
+                return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt
+
             bucket_events = [
                 e for e in events
-                if e.timestamp and b_start <= e.timestamp <= b_end
+                if e.timestamp and b_start <= _to_utc(e.timestamp) <= b_end
             ]
             anomaly_events = [e for e in bucket_events if e.is_anomaly or e.risk_score >= 70]
             anomaly_count = len(anomaly_events)

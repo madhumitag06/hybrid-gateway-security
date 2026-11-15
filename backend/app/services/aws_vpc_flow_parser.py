@@ -50,7 +50,10 @@ class AggregatedVpcFlow:
         self.total_packets += rec.packets
         self.total_bytes += rec.bytes
         self.ports_targeted.add(rec.dst_port)
-        self.primary_dst_port = rec.dst_port  # Keeps recent/primary port
+        # Prioritize standard service ports (e.g. 80, 443, 22, 21, 25, 53, 8080) if probed
+        common_ports = {80, 443, 22, 21, 25, 53, 8080, 3389, 3306, 5432, 1433}
+        if rec.dst_port in common_ports or not any(p in common_ports for p in self.ports_targeted):
+            self.primary_dst_port = rec.dst_port
         self.interface_id = rec.interface_id
         self.account_id = rec.account_id
         self.record_count += 1
@@ -68,7 +71,8 @@ class AggregatedVpcFlow:
 
     @property
     def conn_rate(self) -> float:
-        return float(self.total_packets) / self.duration_seconds
+        from ml.features.extractor import calculate_conn_rate
+        return calculate_conn_rate(self.total_packets, self.duration_seconds)
 
     @property
     def unique_dst_ports(self) -> int:

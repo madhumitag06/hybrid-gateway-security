@@ -23,6 +23,7 @@ class AuthService {
   private tokens: AuthTokens | null = null
   private user: AuthUser | null = null
   private listeners: Array<(user: AuthUser | null) => void> = []
+  private refreshPromise: Promise<boolean> | null = null
 
   constructor() {
     this.loadStoredSession()
@@ -233,19 +234,31 @@ class AuthService {
   }
 
   /**
-   * Attempt token refresh using refresh_token.
+   * Attempt token refresh using refresh_token with shared in-flight mutex lock.
    */
   public async refreshToken(): Promise<boolean> {
     if (!this.tokens?.refresh_token) {
       return false
     }
 
+    if (this.refreshPromise) {
+      return this.refreshPromise
+    }
+
+    this.refreshPromise = this.executeTokenRefresh().finally(() => {
+      this.refreshPromise = null
+    })
+
+    return this.refreshPromise
+  }
+
+  private async executeTokenRefresh(): Promise<boolean> {
     try {
       const url = getApiUrl('/auth/refresh')
       const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refresh_token: this.tokens.refresh_token }),
+        body: JSON.stringify({ refresh_token: this.tokens!.refresh_token }),
       })
 
       if (!response.ok) {

@@ -21,7 +21,11 @@ from backend.app.db.base import Base
 class PolicyAuditLogModel(Base):
     __tablename__ = "policy_audit_logs"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer, "sqlite"),
+        primary_key=True,
+        autoincrement=True,
+    )
     event_id: Mapped[str] = mapped_column(
         String(64),
         ForeignKey("security_events.id", ondelete="CASCADE"),

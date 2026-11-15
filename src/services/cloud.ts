@@ -29,6 +29,7 @@ export interface CloudAccountStatus {
 }
 
 export interface CloudResource {
+  id?: string
   resource_id: string
   account_id: string
   provider: string
@@ -38,6 +39,7 @@ export interface CloudResource {
   region: string
   zone?: string
   vpc_id?: string
+  parent_resource_id?: string
   state: string
   tags?: Record<string, string>
 }
@@ -62,6 +64,8 @@ export interface MultiCloudHealthResponse {
       status: string
       region: string
       account_id?: string
+      role?: string
+      arn?: string
       telemetry_ready: boolean
       enforcement_ready: boolean
       checked_at: string
@@ -122,10 +126,11 @@ export const cloudService = {
     })
   },
 
-  async getResources(provider?: string, resourceType?: string): Promise<CloudResource[]> {
+  async getResources(provider?: string, resourceType?: string, syncLive?: boolean): Promise<CloudResource[]> {
     const params = new URLSearchParams()
     if (provider) params.set('provider', provider)
     if (resourceType) params.set('resource_type', resourceType)
+    if (syncLive) params.set('sync_live', 'true')
     const qs = params.toString() ? `?${params.toString()}` : ''
     return request<CloudResource[]>(`/cloud/resources${qs}`)
   },
@@ -148,6 +153,49 @@ export const cloudService = {
     return request<CloudTelemetryBatchResponse>('/cloud/telemetry/ingest', {
       method: 'POST',
       body: JSON.stringify(batch),
+    })
+  },
+
+  async discoverAwsResources(region?: string): Promise<any> {
+    const qs = region ? `?region=${encodeURIComponent(region)}` : ''
+    return request<any>(`/cloud/accounts/AWS/discover${qs}`, {
+      method: 'POST',
+    })
+  },
+
+  async getAwsFlowLogs(region?: string): Promise<any> {
+    const qs = region ? `?region=${encodeURIComponent(region)}` : ''
+    return request<any>(`/cloud/accounts/AWS/flow-logs${qs}`)
+  },
+
+  async pollAwsTelemetry(options?: {
+    limit?: number
+    log_group?: string
+    s3_bucket?: string
+    mock_fallback?: boolean
+  }): Promise<CloudTelemetryBatchResponse> {
+    const params = new URLSearchParams()
+    if (options?.limit) params.set('limit', String(options.limit))
+    if (options?.log_group) params.set('log_group', options.log_group)
+    if (options?.s3_bucket) params.set('s3_bucket', options.s3_bucket)
+    if (options?.mock_fallback) params.set('mock_fallback', 'true')
+    const qs = params.toString() ? `?${params.toString()}` : ''
+    return request<CloudTelemetryBatchResponse>(`/cloud/accounts/AWS/poll-telemetry${qs}`, {
+      method: 'POST',
+    })
+  },
+
+  async getAwsTelemetryStatus(): Promise<any> {
+    return request<any>('/cloud/accounts/AWS/telemetry-status')
+  },
+
+  async getAwsTelemetryHistory(limit: number = 20): Promise<any[]> {
+    return request<any[]>(`/cloud/accounts/AWS/telemetry-history?limit=${limit}`)
+  },
+
+  async resetAwsTelemetryCheckpoint(): Promise<any> {
+    return request<any>('/cloud/accounts/AWS/telemetry-checkpoints/reset', {
+      method: 'POST',
     })
   },
 }

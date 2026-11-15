@@ -153,13 +153,32 @@ dist/assets/index-DtT5ySrs.js   482.35 kB │ gzip: 125.57 kB
 8. `CLOUD_TELEMETRY_NORMALIZATION.md`
 9. `MULTI_CLOUD_SECURITY_AND_NETWORKING.md`
 10. `MULTI_CLOUD_READINESS_REPORT.md`
+11. `AWS_READ_ONLY_CONNECTIVITY_REPORT.md`
+12. `AWS_IAM_READ_ONLY_SETUP_GUIDE.md`
+13. `AWS_VPC_INVENTORY_REPORT.md`
+14. `AWS_FLOW_LOG_INGESTION_REPORT.md`
+15. `AWS_XGBOOST_INTEGRATION_REPORT.md`
+
+---
+
+## 5. Phase 1 Update: Real AWS Read-Only Connectivity & Telemetry Integration
+
+In Phase 1 of real cloud integration:
+- **Strictly Read-Only:** Zero AWS mutating operations. Zero resource creation, zero enforcement changes.
+- **STS Authentication:** Added `AwsIdentityProvider` with STS AssumeRole, optional ExternalId, and temporary session credential caching.
+- **Topology Discovery:** Added paginated EC2 discovery for VPCs, Subnets, Route Tables, Security Groups, NACLs, and Flow Log subscriptions.
+- **Dual Telemetry Ingestion:** Added support for CloudWatch Logs (`logs:FilterLogEvents`) and Amazon S3 (`s3:GetObject` with gzip decompression).
+- **ML Parity:** Evaluated AWS VPC Flow Logs v2 telemetry via authoritative Big Data XGBoost V2 model (9 canonical features, zero synthetic authentication telemetry).
+- **Dashboard Integration:** Added dedicated AWS lifecycle state badges (Configured, Authenticated, Discovered, Flow Logs, Ingested), interactive discovery and polling triggers, and embedded IAM setup guide in `MultiCloudView.tsx`.
+- **Test Suite:** Added 11 automated unit and integration tests (`backend/tests/test_aws_read_only_integration.py` and `test_aws_adapter.py`) with 100% pass rate.
 
 ---
 
 ## 6. Next Operational Steps
 
-1. **GitHub Repository Secret Configuration:** Add `AWS_ROLE_ARN`, `GCP_WORKLOAD_IDENTITY_PROVIDER`, `GCP_SERVICE_ACCOUNT`, and Azure client IDs to GitHub repository settings.
-2. **Terraform Plan Review:** Execute `terraform plan` inside `infrastructure/environments/development` to preview target cloud resource topologies before provisioning.
-3. **Telemetry Streaming:** Configure CloudWatch log subscription filters and Google Cloud Logging sinks to forward live VPC flow logs to the gateway's `/api/v1/cloud/telemetry/ingest` endpoint.
-4. **Git Synchronization:** Review and commit all uncommitted local multi-cloud implementation changes when authorized by the user.
+1. **IAM Role Setup:** User configures `SecurityGatewayReadOnlyRole` in AWS following [AWS_IAM_READ_ONLY_SETUP_GUIDE.md](file:///c:/Users/LENOVO/Desktop/hybrid-gateway-security/AWS_IAM_READ_ONLY_SETUP_GUIDE.md).
+2. **Environment Export:** Set `AWS_ROLE_ARN` and `AWS_REGION` in local environment.
+3. **Trigger Live Discovery:** In `MultiCloudView`, click "Test STS Identity" and "Discover VPCs" to populate live AWS topology.
+4. **Poll Live VPC Flow Logs:** Click "Poll Live Logs" to stream live AWS telemetry through XGBoost V2.
+5. **Git Review & Commit:** Review local changes when approved by user.
 

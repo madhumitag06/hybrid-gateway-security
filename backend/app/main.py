@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 import threading
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from backend.app.api.health import router as health_router
@@ -216,7 +216,9 @@ def _get_root_info():
 
 
 @app.get("/api", tags=["Root"])
+@app.get("/api/info", tags=["Root"])
 def root_api():
+    """Returns gateway API discovery metadata."""
     return _get_root_info()
 
 
@@ -227,30 +229,52 @@ if _dist_dir and (_dist_dir / "index.html").is_file():
     if _assets_dir.is_dir():
         app.mount("/assets", StaticFiles(directory=str(_assets_dir)), name="assets")
 
-    @app.get("/", tags=["Root"])
-    def root(request: Request):
-        accept = request.headers.get("accept", "")
-        # Serve React frontend for browser navigation requests
-        if "text/html" in accept:
-            return FileResponse(_dist_dir / "index.html")
-        return _get_root_info()
+    # 1. Unconditionally serve the React production SPA index.html on root '/'
+    @app.get("/", tags=["Dashboard SPA"], include_in_schema=False)
+    def serve_root_dashboard():
+        return FileResponse(_dist_dir / "index.html", media_type="text/html")
 
+    # 2. SPA Catch-All for Client-Side Routing and Root Static Assets
     @app.get("/{full_path:path}", include_in_schema=False)
-    async def serve_spa(full_path: str, request: Request):
-        # Do not intercept API or docs routes
+    async def serve_spa_or_static(full_path: str):
+        # Do not intercept API, docs, redoc, openapi, or health routes
         if (
-            full_path.startswith("api/")
-            or full_path == "api"
-            or full_path.startswith("docs")
-            or full_path.startswith("redoc")
-            or full_path.startswith("openapi.json")
+            full_path == "api"
+            or full_path.startswith("api/")
+            or full_path == "docs"
+            or full_path.startswith("docs/")
+            or full_path == "redoc"
+            or full_path.startswith("redoc/")
+            or full_path == "openapi.json"
+            or full_path == "health"
+            or full_path.startswith("health/")
+            or full_path == "dashboard"
+            or full_path == "search"
         ):
             raise HTTPException(status_code=404, detail="API route not found")
+
+        # Check if the requested path corresponds to an existing static file in dist
         file_cand = _dist_dir / full_path
         if full_path and file_cand.is_file():
             return FileResponse(file_cand)
-        return FileResponse(_dist_dir / "index.html")
+
+        # For all client-side React routes (e.g. /traffic, /aws-vpc, /events), serve index.html
+        return FileResponse(_dist_dir / "index.html", media_type="text/html")
 else:
+    # Diagnostic error handler if frontend build is missing
+    print("[!] CRITICAL ERROR: Frontend production distribution ('dist/index.html') not found!")
+
     @app.get("/", tags=["Root"])
-    def root():
-        return _get_root_info()
+    def root_missing_frontend():
+        return HTMLResponse(
+            status_code=500,
+            content=(
+                "<html><body style='font-family:sans-serif;padding:40px;background:#101713;color:#e6eed6;'>"
+                "<h2>⚠️ Frontend Production Assets Missing</h2>"
+                "<p>The standalone backend is running, but <code>dist/index.html</code> was not found.</p>"
+                "<p>Please run <code>npm run build</code> and rebuild the standalone executable.</p>"
+                "<p><a href='/docs' style='color:#74b9ff;'>View API Documentation (/docs)</a> | "
+                "<a href='/api' style='color:#74b9ff;'>View API Info (/api)</a></p>"
+                "</body></html>"
+            ),
+        )

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import './App.css'
 import {
   applyAction,
@@ -43,6 +43,7 @@ import { SettingsView } from './components/SettingsView'
 import { AuthView } from './components/AuthView'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { authService } from './services/auth'
+import type { CloudTelemetryBatchResponse } from './services/cloud'
 import type {
   ActiveEnforcementRule,
   AICopilotBriefing,
@@ -439,6 +440,14 @@ export default function App() {
   const [toast, setToast] = useState('')
   const [loading, setLoading] = useState(true)
 
+  // Dashboard Telemetry Synchronization State (Phase 14)
+  const [isSyncing, setIsSyncing] = useState<boolean>(false)
+  const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null)
+  const dashboardAbortRef = useRef<AbortController | null>(null)
+  const isRefreshingRef = useRef<boolean>(false)
+  const pendingRefreshRef = useRef<boolean>(false)
+  const loadDashboardRef = useRef<((timeRangeStr?: string) => void) | null>(null)
+
   // User Authentication State (Phase 13)
   const [authUser, setAuthUser] = useState<AuthUser | null>(authService.getUser())
   const [isAuthChecked, setIsAuthChecked] = useState(false)
@@ -456,7 +465,9 @@ export default function App() {
   const [showProfileModal, setShowProfileModal] = useState(false)
   const [profile, setProfile] = useState<SystemProfile | null>(null)
   const [showEnvMenu, setShowEnvMenu] = useState(false)
-  const [currentEnv, setCurrentEnv] = useState<string>('SANDBOX')
+  const [currentEnv, setCurrentEnv] = useState<string>(() => {
+    return sessionStorage.getItem('hgs_current_env') || 'SANDBOX'
+  })
 
   // Live Threat Analyzer State
   const [showAnalyzer, setShowAnalyzer] = useState(false)
@@ -541,19 +552,72 @@ export default function App() {
     }
   }, [selected])
 
-  const loadDashboard = (timeRangeStr = range) => {
+  // Thread-safe and debounced dashboard loader with request cancellation (Phase 14)
+  const loadDashboard = useCallback((timeRangeStr = range) => {
+    if (isRefreshingRef.current) {
+      pendingRefreshRef.current = true
+      return
+    }
+
+    if (dashboardAbortRef.current) {
+      dashboardAbortRef.current.abort()
+    }
     const controller = new AbortController()
+    dashboardAbortRef.current = controller
+    isRefreshingRef.current = true
+    setIsSyncing(true)
+
     getDashboard(timeRangeStr, controller.signal)
       .then((res) => {
         setData(res.data)
         setIsLiveBackend(res.isLiveBackend)
+        setLastSyncTime(new Date())
         if (res.data.notifications) {
           setNotifications(res.data.notifications)
         }
       })
-      .catch(() => setToast('Could not load dashboard data.'))
-      .finally(() => setLoading(false))
-  }
+      .catch((err) => {
+        if (err?.name !== 'AbortError') {
+          setToast('Could not load dashboard data.')
+        }
+      })
+      .finally(() => {
+        isRefreshingRef.current = false
+        setIsSyncing(false)
+        setLoading(false)
+        if (pendingRefreshRef.current) {
+          pendingRefreshRef.current = false
+          loadDashboardRef.current?.(timeRangeStr)
+        }
+      })
+  }, [range])
+
+  useEffect(() => {
+    loadDashboardRef.current = loadDashboard
+  }, [loadDashboard])
+
+  // Ingestion completion notification handler
+  const handleTelemetryIngested = useCallback(
+    (batch: CloudTelemetryBatchResponse) => {
+      loadDashboard(range)
+      setToast(
+        `Synchronized ${batch.records_aggregated} new live AWS flows with dashboard.`
+      )
+    },
+    [range, loadDashboard]
+  )
+
+  // Global event listener for telemetry ingestion across views
+  useEffect(() => {
+    const handleGlobalIngest = (e: Event) => {
+      const detail = (e as CustomEvent).detail
+      if (detail && (detail.records_aggregated > 0 || detail.records_parsed > 0)) {
+        loadDashboard(range)
+      }
+    }
+    window.addEventListener('hgs:telemetry-ingested', handleGlobalIngest)
+    return () => window.removeEventListener('hgs:telemetry-ingested', handleGlobalIngest)
+  }, [range, loadDashboard])
 
   // Load telemetry and gateway operational data once authenticated
   useEffect(() => {
@@ -572,7 +636,10 @@ export default function App() {
     getEnforcementConfig()
       .then((cfg) => {
         setEnforcementConfig(cfg)
-        setCurrentEnv(cfg.active_mode)
+        const savedEnv = sessionStorage.getItem('hgs_current_env')
+        if (!savedEnv) {
+          setCurrentEnv(cfg.active_mode === 'DRY_RUN' ? 'LOCAL' : cfg.active_mode)
+        }
       })
       .catch(() => {})
 
@@ -876,11 +943,39 @@ export default function App() {
     }
   }
 
+  const handleSelectEnv = async (env: 'SANDBOX' | 'LOCAL' | 'AWS_FIXTURE' | 'LIVE_AWS') => {
+    setCurrentEnv(env)
+    sessionStorage.setItem('hgs_current_env', env)
+    if (env === 'SANDBOX') {
+      try {
+        const conf = await updateEnforcementMode('SANDBOX')
+        setEnforcementConfig(conf)
+        setToast('Execution mode switched to In-Memory Sandbox Lab.')
+      } catch (err) {
+        setToast(`Sandbox mode update error: ${String(err)}`)
+      }
+    } else if (env === 'LOCAL') {
+      try {
+        const conf = await updateEnforcementMode('DRY_RUN')
+        setEnforcementConfig(conf)
+        setToast('Execution mode switched to Local Dev (Dry-Run). Zero host network changes.')
+      } catch (err) {
+        setToast(`Local mode update error: ${String(err)}`)
+      }
+    } else if (env === 'AWS_FIXTURE') {
+      setActiveNav('AWS VPC Logs')
+      setToast('Switched to AWS VPC Flow Fixtures mode (Deterministic offline logs).')
+    } else if (env === 'LIVE_AWS') {
+      setActiveNav('AWS VPC Logs')
+      setToast('Connected to Live AWS CloudWatch in Read-Only mode (Account: 698766075180, Region: ap-southeast-2).')
+    }
+  }
+
   const handleToggleMode = async (mode: 'DRY_RUN' | 'SANDBOX') => {
     try {
       const conf = await updateEnforcementMode(mode)
       setEnforcementConfig(conf)
-      setCurrentEnv(mode)
+      setCurrentEnv(mode === 'DRY_RUN' ? 'LOCAL' : 'SANDBOX')
       setToast(`Enforcement adapter mode switched to ${mode}.`)
     } catch (err) {
       setToast(`Mode switch error: ${String(err)}`)
@@ -946,6 +1041,9 @@ export default function App() {
               className={activeNav === name ? 'active' : ''}
               onClick={() => {
                 setActiveNav(name)
+                if ((name === 'Dashboard' || name === 'Overview') && activeNav !== name) {
+                  loadDashboard()
+                }
               }}
               key={name}
             >
@@ -1055,27 +1153,29 @@ export default function App() {
               >
                 {currentEnv === 'SANDBOX'
                   ? '🧪 Sandbox Lab ⌄'
-                  : currentEnv === 'LOCAL'
+                  : currentEnv === 'LOCAL' || currentEnv === 'DRY_RUN'
                   ? '💻 Local Dev ⌄'
                   : currentEnv === 'AWS_FIXTURE'
                   ? '☁ AWS Fixture ⌄'
-                  : '☁ Live AWS (RO) ⌄'}
+                  : currentEnv === 'LIVE_AWS'
+                  ? '☁ Live AWS (RO) ⌄'
+                  : '🧪 Sandbox Lab ⌄'}
               </button>
               {showEnvMenu && (
                 <div className="env-dropdown-menu">
-                  <div className="env-item" onClick={() => { handleToggleMode('SANDBOX'); setShowEnvMenu(false); }}>
+                  <div className="env-item" onClick={() => { handleSelectEnv('SANDBOX'); setShowEnvMenu(false); }}>
                     <b>🧪 In-Memory Sandbox Lab</b>
                     <small>Active in-memory quarantine filtering with auto TTL</small>
                   </div>
-                  <div className="env-item" onClick={() => { handleToggleMode('DRY_RUN'); setShowEnvMenu(false); }}>
+                  <div className="env-item" onClick={() => { handleSelectEnv('LOCAL'); setShowEnvMenu(false); }}>
                     <b>💻 Local Dev (Dry-Run)</b>
                     <small>Simulation only — zero host network changes</small>
                   </div>
-                  <div className="env-item" onClick={() => { setIngestTab('AWS_VPC'); setShowIngestModal(true); setShowEnvMenu(false); }}>
+                  <div className="env-item" onClick={() => { handleSelectEnv('AWS_FIXTURE'); setShowEnvMenu(false); }}>
                     <b>☁ AWS VPC Flow Fixtures</b>
                     <small>Deterministic offline AWS CloudWatch log fixtures</small>
                   </div>
-                  <div className="env-item" onClick={() => { setToast('Live AWS CloudWatch connected in Read-Only mode.'); setShowEnvMenu(false); }}>
+                  <div className="env-item" onClick={() => { handleSelectEnv('LIVE_AWS'); setShowEnvMenu(false); }}>
                     <b>☁ Live AWS Read-Only</b>
                     <small>CloudWatch flow logs read-only ingest (Safety Gated)</small>
                   </div>
@@ -1094,6 +1194,51 @@ export default function App() {
               <option>Last 7 days</option>
               <option>Last 30 days</option>
             </select>
+
+            {/* Quick Synchronize Telemetry Button & Indicator */}
+            <button
+              className="chip"
+              onClick={() => {
+                loadDashboard(range)
+                setToast('Synchronizing gateway telemetry…')
+              }}
+              disabled={isSyncing}
+              title={
+                lastSyncTime
+                  ? `Last synchronized: ${lastSyncTime.toLocaleTimeString()}`
+                  : 'Synchronize telemetry'
+              }
+              style={{
+                fontSize: '11px',
+                padding: '5px 9px',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px',
+                background: 'var(--panel)',
+                border: '1px solid var(--line)',
+                color: isSyncing ? 'var(--terracotta)' : 'var(--warm-cream)',
+                cursor: isSyncing ? 'wait' : 'pointer',
+              }}
+            >
+              <span
+                style={{
+                  display: 'inline-block',
+                }}
+              >
+                {isSyncing ? '⏳' : '🔄'}
+              </span>
+              <span>
+                {isSyncing
+                  ? 'Updating…'
+                  : lastSyncTime
+                  ? lastSyncTime.toLocaleTimeString([], {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                      second: '2-digit',
+                    })
+                  : 'Sync'}
+              </span>
+            </button>
 
             {/* Persistent Notifications Bell & Dropdown */}
             <div style={{ position: 'relative' }}>
@@ -1191,7 +1336,11 @@ export default function App() {
             ) : activeNav === 'PCAP Ingestion' ? (
               <PcapIngestView />
             ) : activeNav === 'AWS VPC Logs' ? (
-              <AwsVpcView />
+              <AwsVpcView
+                currentEnv={currentEnv}
+                onSelectEnv={handleSelectEnv}
+                onTelemetryIngested={handleTelemetryIngested}
+              />
             ) : activeNav === 'Multi-Cloud' ? (
               <MultiCloudView />
             ) : activeNav === 'Security Events' || activeNav === 'Events' ? (
@@ -1212,7 +1361,14 @@ export default function App() {
                 <section className="intro">
                   <div>
                     <h1>SecOps Gateway Console</h1>
-                    <p>Hybrid cloud security inspection active with real-time AI anomaly evaluation and sandbox isolation.</p>
+                    <p style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                      <span>Hybrid cloud security inspection active with real-time AI anomaly evaluation and sandbox isolation.</span>
+                      {lastSyncTime && (
+                        <span style={{ fontSize: '11px', color: isSyncing ? 'var(--terracotta)' : 'var(--muted-cream)' }}>
+                          ● {isSyncing ? 'Synchronizing telemetry…' : `Synchronized at ${lastSyncTime.toLocaleTimeString()}`}
+                        </span>
+                      )}
+                    </p>
                   </div>
                   <div className="metrics">
                     <Metric icon="♢" label="Process Uptime" value={data.processUptime || data.uptime || 'Active'} />
@@ -1221,6 +1377,93 @@ export default function App() {
                     <Metric icon="●" label="Gateway Status" value={data.connectionHealth || 'Healthy'} note={data.connectionNote || 'FastAPI ↔ DB ↔ Model'} green />
                   </div>
                 </section>
+
+                {/* Telemetry Provenance Breakdown Banner */}
+                {data.telemetry_provenance && Object.keys(data.telemetry_provenance).length > 0 && (
+                  <div
+                    className="card"
+                    style={{
+                      marginTop: '12px',
+                      marginBottom: '16px',
+                      padding: '12px 16px',
+                      background: 'var(--panel)',
+                      border: '1px solid var(--line)',
+                      borderRadius: 'var(--radius-sm)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      flexWrap: 'wrap',
+                      gap: '12px',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.05em', color: 'var(--muted-cream)', textTransform: 'uppercase' }}>
+                        Telemetry Provenance
+                      </span>
+                      <small style={{ fontSize: '11px', color: 'var(--text-dim)' }}>
+                        (Data source attribution for evaluated events & risk scores)
+                      </small>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                      {Object.entries(data.telemetry_provenance).map(([source, count]) => {
+                        const isAws = source === 'AWS_VPC_FLOW_LOG'
+                        const isPcap = source === 'PCAP_INGESTION'
+                        const isLab = source === 'HYBRID_LAB_ROUTER'
+                        const isSeed = source === 'DEMO_SEED'
+                        const bg = isAws
+                          ? 'rgba(200, 117, 85, 0.16)'
+                          : isPcap
+                          ? 'rgba(92, 160, 211, 0.16)'
+                          : isLab
+                          ? 'rgba(133, 139, 89, 0.16)'
+                          : isSeed
+                          ? 'rgba(216, 201, 167, 0.15)'
+                          : 'rgba(73, 72, 61, 0.4)'
+                        const color = isAws
+                          ? 'var(--terracotta)'
+                          : isPcap
+                          ? '#5CA0D3'
+                          : isLab
+                          ? 'var(--olive-green)'
+                          : isSeed
+                          ? 'var(--pale-sand)'
+                          : 'var(--muted-cream)'
+                        const border = isAws
+                          ? '1px solid rgba(200, 117, 85, 0.3)'
+                          : isPcap
+                          ? '1px solid rgba(92, 160, 211, 0.3)'
+                          : isLab
+                          ? '1px solid rgba(133, 139, 89, 0.3)'
+                          : isSeed
+                          ? '1px solid rgba(216, 201, 167, 0.3)'
+                          : '1px solid var(--line)'
+                        return (
+                          <span
+                            key={source}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                              padding: '3px 10px',
+                              borderRadius: 'var(--radius-xs)',
+                              background: bg,
+                              color: color,
+                              border: border,
+                              fontSize: '11px',
+                              fontFamily: 'var(--font-mono)',
+                              fontWeight: 600,
+                            }}
+                          >
+                            <span>{source}</span>
+                            <b style={{ color: 'var(--warm-cream)', background: 'rgba(0,0,0,0.3)', padding: '1px 5px', borderRadius: '3px' }}>
+                              {count}
+                            </b>
+                          </span>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
 
                 <section className="top">
                   <article className="card risk">
@@ -1247,6 +1490,70 @@ export default function App() {
                         </button>
                       </div>
                     </div>
+                    {data.risk_segmentation && (
+                      <div
+                        style={{
+                          marginTop: '14px',
+                          paddingTop: '12px',
+                          borderTop: '1px solid var(--line)',
+                          display: 'grid',
+                          gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
+                          gap: '8px',
+                          fontSize: '11px',
+                        }}
+                      >
+                        <div
+                          style={{
+                            padding: '6px 8px',
+                            background: 'var(--panel-inset)',
+                            borderRadius: 'var(--radius-xs)',
+                            borderLeft: '3px solid var(--terracotta)',
+                          }}
+                        >
+                          <span style={{ color: 'var(--muted-cream)', display: 'block', fontSize: '10px' }}>AWS Live Telemetry</span>
+                          <b style={{ fontSize: '13px', color: 'var(--warm-cream)' }}>
+                            {data.risk_segmentation.aws_live_cloud?.risk_score ?? 0}/100
+                          </b>
+                          <span
+                            style={{
+                              marginLeft: '6px',
+                              fontWeight: 600,
+                              color:
+                                (data.risk_segmentation.aws_live_cloud?.risk_score ?? 0) >= 70
+                                  ? 'var(--terracotta)'
+                                  : 'var(--olive-green)',
+                            }}
+                          >
+                            {data.risk_segmentation.aws_live_cloud?.policy_action || 'Allow'}
+                          </span>
+                        </div>
+                        <div
+                          style={{
+                            padding: '6px 8px',
+                            background: 'var(--panel-inset)',
+                            borderRadius: 'var(--radius-xs)',
+                            borderLeft: '3px solid var(--olive-green)',
+                          }}
+                        >
+                          <span style={{ color: 'var(--muted-cream)', display: 'block', fontSize: '10px' }}>Simulated / Lab Replay</span>
+                          <b style={{ fontSize: '13px', color: 'var(--warm-cream)' }}>
+                            {data.risk_segmentation.simulated_lab?.risk_score ?? 0}/100
+                          </b>
+                          <span
+                            style={{
+                              marginLeft: '6px',
+                              fontWeight: 600,
+                              color:
+                                (data.risk_segmentation.simulated_lab?.risk_score ?? 0) >= 70
+                                  ? 'var(--terracotta)'
+                                  : 'var(--olive-green)',
+                            }}
+                          >
+                            {data.risk_segmentation.simulated_lab?.policy_action || 'Allow'}
+                          </span>
+                        </div>
+                      </div>
+                    )}
                   </article>
 
                   <article className="card reason-card">

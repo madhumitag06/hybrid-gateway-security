@@ -7,6 +7,9 @@ and returns real predictions, class probability estimates, and continuous risk s
 
 from fastapi.testclient import TestClient
 from backend.app.main import app
+from backend.app.db.session import init_db
+
+init_db()
 
 client = TestClient(app)
 

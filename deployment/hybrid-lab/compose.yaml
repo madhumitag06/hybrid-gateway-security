@@ -54,7 +54,7 @@ services:
       AWS_REGION: ${AWS_SIMULATED_REGION:-us-east-1}
       CORS_ORIGINS: '["http://localhost:5173","http://127.0.0.1:5173","http://localhost:8000","http://frontend"]'
     ports:
-      - "${GATEWAY_API_PORT:-8000}:8000"
+      - "${GATEWAY_API_PORT:-8001}:8000"
     volumes:
       - hybrid_lab_telemetry:/var/lib/hybrid-lab/telemetry
     networks:
@@ -83,7 +83,7 @@ services:
     hostname: frontend
     restart: unless-stopped
     ports:
-      - "${FRONTEND_PORT:-5173}:80"
+      - "${FRONTEND_PORT:-5175}:80"
     networks:
       mgmt_net:
         ipv4_address: 10.30.10.15

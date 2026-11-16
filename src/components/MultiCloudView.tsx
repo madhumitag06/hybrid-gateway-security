@@ -67,9 +67,35 @@ export const MultiCloudView: React.FC = () => {
   const [ingestLoading, setIngestLoading] = useState<boolean>(false)
   const [ingestResponse, setIngestResponse] = useState<CloudTelemetryBatchResponse | null>(null)
 
-  const loadData = async () => {
-    setLoading(true)
-    setError(null)
+  const handleLoadTelemetryHistory = async () => {
+    try {
+      const history = await cloudService.getAwsTelemetryHistory(15)
+      setAwsTelemetryHistory(history)
+    } catch (e) {
+      console.error('Failed to load telemetry history:', e)
+    }
+  }
+
+  const handleLoadTelemetryStatus = async () => {
+    try {
+      const statusData = await cloudService.getAwsTelemetryStatus()
+      setTelemetryStatusInfo(statusData)
+      if (statusData?.sources) {
+        setAwsFlowLogs({
+          subscriptions_count: statusData.active_sources_count,
+          subscriptions: statusData.sources,
+        })
+      }
+    } catch (e) {
+      console.error('Failed to load telemetry status:', e)
+    }
+  }
+
+  const loadData = async (isManual = false) => {
+    if (isManual) {
+      setLoading(true)
+      setError(null)
+    }
     try {
       const [accsRes, resListRes, summRes, hlthRes] = await Promise.allSettled([
         cloudService.getAccounts(),
@@ -113,7 +139,53 @@ export const MultiCloudView: React.FC = () => {
   }
 
   useEffect(() => {
-    loadData()
+    let mounted = true
+    Promise.allSettled([
+      cloudService.getAccounts(),
+      cloudService.getResources(),
+      cloudService.getInventorySummary(),
+      cloudService.getHealth(),
+    ])
+      .then(([accsRes, resListRes, summRes, hlthRes]) => {
+        if (!mounted) return
+        const accs = accsRes.status === 'fulfilled' ? accsRes.value : []
+        const resList = resListRes.status === 'fulfilled' ? resListRes.value : []
+        const summ = summRes.status === 'fulfilled' ? summRes.value : null
+        const hlth = hlthRes.status === 'fulfilled' ? hlthRes.value : null
+
+        setAccounts(accs)
+        setResources(resList)
+        setSummary(summ)
+        setHealth(hlth)
+
+        const awsHlth = hlth?.providers?.AWS
+        if (awsHlth && awsHlth.account_id && awsHlth.account_id !== 'aws-production-01') {
+          setAwsCallerIdentity((prev: any) => ({
+            ...prev,
+            account: awsHlth.account_id,
+            region: awsHlth.region || 'ap-southeast-2',
+            role: awsHlth.role || 'SecurityGatewayReadOnlyRole',
+            status: awsHlth.status || 'CONNECTED',
+          }))
+          setLastSyncTime(new Date().toLocaleTimeString())
+        }
+
+        void Promise.allSettled([
+          handleLoadTelemetryStatus(),
+          handleLoadTelemetryHistory(),
+        ]).finally(() => {
+          if (mounted) setLoading(false)
+        })
+      })
+      .catch((err: any) => {
+        if (mounted) {
+          setError(err?.message || 'Failed to communicate with multi-cloud registry API')
+          setLoading(false)
+        }
+      })
+    return () => {
+      mounted = false
+    }
   }, [])
 
   const handleTestConnection = async (provider: string) => {
@@ -159,30 +231,6 @@ export const MultiCloudView: React.FC = () => {
       setError(`AWS Resource Discovery error: ${err?.message || String(err)}`)
     } finally {
       setIsDiscoveringAws(false)
-    }
-  }
-
-  const handleLoadTelemetryHistory = async () => {
-    try {
-      const history = await cloudService.getAwsTelemetryHistory(15)
-      setAwsTelemetryHistory(history)
-    } catch (e) {
-      console.error('Failed to load telemetry history:', e)
-    }
-  }
-
-  const handleLoadTelemetryStatus = async () => {
-    try {
-      const statusData = await cloudService.getAwsTelemetryStatus()
-      setTelemetryStatusInfo(statusData)
-      if (statusData?.sources) {
-        setAwsFlowLogs({
-          subscriptions_count: statusData.active_sources_count,
-          subscriptions: statusData.sources,
-        })
-      }
-    } catch (e) {
-      console.error('Failed to load telemetry status:', e)
     }
   }
 
@@ -479,7 +527,7 @@ export const MultiCloudView: React.FC = () => {
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <button
-            onClick={loadData}
+            onClick={() => loadData(true)}
             disabled={loading}
             className="primary"
             style={{

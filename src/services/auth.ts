@@ -37,7 +37,13 @@ class AuthService {
       const storedTokens = localStorage.getItem(TOKEN_STORAGE_KEY)
       const storedUser = localStorage.getItem(USER_STORAGE_KEY)
       if (storedTokens && storedUser) {
-        this.tokens = JSON.parse(storedTokens)
+        const parsedTokens = JSON.parse(storedTokens)
+        // SEC-13: Sanitize legacy refresh_token from localStorage if present
+        if (parsedTokens.refresh_token) {
+          delete parsedTokens.refresh_token
+          localStorage.setItem(TOKEN_STORAGE_KEY, JSON.stringify(parsedTokens))
+        }
+        this.tokens = parsedTokens
         this.user = JSON.parse(storedUser)
       }
     } catch (e) {
@@ -48,12 +54,18 @@ class AuthService {
 
   /**
    * Persist current session into localStorage and memory.
+   * SEC-13: Does NOT persist refresh_token in localStorage to prevent XSS exfiltration.
    */
   private saveSession(tokens: AuthTokens, user: AuthUser): void {
     this.tokens = tokens
     this.user = user
     try {
-      localStorage.setItem(TOKEN_STORAGE_KEY, JSON.stringify(tokens))
+      const storageTokens: Partial<AuthTokens> = {
+        access_token: tokens.access_token,
+        token_type: tokens.token_type,
+        expires_in_seconds: tokens.expires_in_seconds,
+      }
+      localStorage.setItem(TOKEN_STORAGE_KEY, JSON.stringify(storageTokens))
       localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(user))
     } catch (e) {
       console.error('Failed to save auth session to storage:', e)
@@ -137,14 +149,14 @@ class AuthService {
       headers.set('Content-Type', 'application/json')
     }
 
-    let response = await fetch(url, { ...options, headers })
+    let response = await fetch(url, { ...options, headers, credentials: options.credentials || 'include' })
 
     // If 401 Unauthorized, attempt refresh once
-    if (response.status === 401 && this.tokens?.refresh_token) {
+    if (response.status === 401 && (this.tokens?.access_token || this.tokens?.refresh_token)) {
       const refreshed = await this.refreshToken()
       if (refreshed) {
         headers.set('Authorization', `Bearer ${this.tokens!.access_token}`)
-        response = await fetch(url, { ...options, headers })
+        response = await fetch(url, { ...options, headers, credentials: options.credentials || 'include' })
       } else {
         this.clearSession()
       }
@@ -177,6 +189,7 @@ class AuthService {
     const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
       body: JSON.stringify(payload),
     })
 
@@ -209,6 +222,7 @@ class AuthService {
     const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
       body: JSON.stringify(payload),
     })
 
@@ -234,10 +248,10 @@ class AuthService {
   }
 
   /**
-   * Attempt token refresh using refresh_token with shared in-flight mutex lock.
+   * Attempt token refresh using refresh_token or HttpOnly cookie with shared in-flight mutex lock.
    */
   public async refreshToken(): Promise<boolean> {
-    if (!this.tokens?.refresh_token) {
+    if (!this.tokens?.access_token && !this.tokens?.refresh_token) {
       return false
     }
 
@@ -258,7 +272,8 @@ class AuthService {
       const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refresh_token: this.tokens!.refresh_token }),
+        credentials: 'include',
+        body: JSON.stringify({ refresh_token: this.tokens?.refresh_token || undefined }),
       })
 
       if (!response.ok) {
@@ -322,8 +337,8 @@ class AuthService {
     const currentRefreshToken = this.tokens?.refresh_token
     const currentAccessToken = this.tokens?.access_token
 
-    // Attempt backend token revocation
-    if (currentRefreshToken || currentAccessToken) {
+    // Attempt backend token revocation (and HttpOnly cookie clearance)
+    if (currentRefreshToken || currentAccessToken || this.user) {
       try {
         const url = getApiUrl('/auth/logout')
         await fetch(url, {
@@ -332,7 +347,8 @@ class AuthService {
             'Content-Type': 'application/json',
             ...(currentAccessToken ? { Authorization: `Bearer ${currentAccessToken}` } : {}),
           },
-          body: JSON.stringify({ refresh_token: currentRefreshToken || '' }),
+          credentials: 'include',
+          body: JSON.stringify({ refresh_token: currentRefreshToken || undefined }),
         })
       } catch (e) {
         console.warn('Logout notification to backend failed:', e)
@@ -347,7 +363,7 @@ class AuthService {
    */
   public async getGoogleAuthUrl(): Promise<GoogleOAuthInitResponse> {
     const url = getApiUrl('/auth/google/login')
-    const response = await fetch(url)
+    const response = await fetch(url, { credentials: 'include' })
     const data = await response.json()
     return data as GoogleOAuthInitResponse
   }
@@ -359,7 +375,7 @@ class AuthService {
     const params = new URLSearchParams({ code })
     if (state) params.set('state', state)
     const url = getApiUrl(`/auth/google/callback?${params.toString()}`)
-    const response = await fetch(url)
+    const response = await fetch(url, { credentials: 'include' })
     const data = await response.json()
 
     if (!response.ok) {

@@ -6,7 +6,7 @@
  * text search, and deep inspection with SHAP feature attributions.
  */
 
-import React, { useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
 import { listSecurityEvents } from '../services/events'
 import { applyAction } from '../services/dashboard'
 import { getEventExplanation } from '../services/analytics'
@@ -35,7 +35,7 @@ export const EventsView: React.FC = () => {
   const [loadingExplanation, setLoadingExplanation] = useState<boolean>(false)
   const [toast, setToast] = useState<string>('')
 
-  const fetchEvents = () => {
+  const fetchEvents = useCallback(() => {
     setLoading(true)
     setError(null)
     listSecurityEvents({
@@ -52,22 +52,60 @@ export const EventsView: React.FC = () => {
       })
       .catch((err) => setError(String(err)))
       .finally(() => setLoading(false))
+  }, [threatLevel, attackType, actionFilter, search, page])
+
+  useEffect(() => {
+    let ignore = false
+    listSecurityEvents({
+      threat_level: threatLevel || undefined,
+      attack_type: attackType || undefined,
+      action: actionFilter || undefined,
+      search: search || undefined,
+      limit,
+      offset: page * limit,
+    })
+      .then((res) => {
+        if (!ignore) {
+          setEvents(res.events)
+          setTotal(res.total)
+        }
+      })
+      .catch((err) => {
+        if (!ignore) setError(String(err))
+      })
+      .finally(() => {
+        if (!ignore) setLoading(false)
+      })
+    return () => {
+      ignore = true
+    }
+  }, [threatLevel, attackType, actionFilter, search, page])
+
+  const handleSelectEvent = (event: SecurityEvent) => {
+    setSelected(event)
+    setLoadingExplanation(true)
+    setExplanation(null)
   }
 
   useEffect(() => {
-    fetchEvents()
-  }, [threatLevel, attackType, actionFilter, page])
-
-  useEffect(() => {
-    if (selected) {
-      setLoadingExplanation(true)
-      setExplanation(null)
-      getEventExplanation(selected.id)
-        .then(setExplanation)
-        .catch(() => {})
-        .finally(() => setLoadingExplanation(false))
-    } else {
-      setExplanation(null)
+    if (!selected) {
+      return
+    }
+    let ignore = false
+    getEventExplanation(selected.id)
+      .then((exp) => {
+        if (!ignore) {
+          setExplanation(exp)
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!ignore) {
+          setLoadingExplanation(false)
+        }
+      })
+    return () => {
+      ignore = true
     }
   }, [selected])
 
@@ -231,7 +269,7 @@ export const EventsView: React.FC = () => {
             {events.map((event) => (
               <button
                 className="row event-row"
-                onClick={() => setSelected(event)}
+                onClick={() => handleSelectEvent(event)}
                 key={event.id}
                 type="button"
               >

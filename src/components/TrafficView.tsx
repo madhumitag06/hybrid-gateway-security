@@ -2,16 +2,17 @@
  * Traffic View Component — Live Network Flow & Anomaly Analyzer
  * =============================================================
  * Allows analysts to inject real-time network flow vectors, evaluate
- * RandomForest threat predictions, inspect 5-class probability distributions,
+ * active Big Data XGBoost V2 threat predictions, inspect 5-class probability distributions,
  * view SHAP waterfall attributions, inspect policy engine decisions, and
  * review interactive analysis history.
  */
 
-import React, { useEffect, useState } from 'react'
-import { getPresets, predictFlow } from '../services/predictor'
+import React, { useCallback, useEffect, useState } from 'react'
+import { getBackendHealth, getPresets, predictFlow } from '../services/predictor'
 import { comparePolicies, evaluateFlowPolicy } from '../services/enforcement'
 import { listSecurityEvents } from '../services/events'
 import type {
+  BackendHealth,
   FlowPredictionRequest,
   FlowPredictionResponse,
   PolicyComparisonResult,
@@ -121,6 +122,8 @@ export const TrafficView: React.FC = () => {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  const [modelInfo, setModelInfo] = useState<BackendHealth | null>(null)
+
   // Execution tracking & dynamic feedback state
   const [analysisRunCount, setAnalysisRunCount] = useState<number>(0)
   const [lastExecution, setLastExecution] = useState<{
@@ -132,67 +135,74 @@ export const TrafficView: React.FC = () => {
   const [showFreshBanner, setShowFreshBanner] = useState<boolean>(false)
   const [analysisHistory, setAnalysisHistory] = useState<AnalysisHistoryItem[]>([])
 
-  const handlePredict = async (
-    flowInput: FlowPredictionRequest = flow,
-    presetLabel?: string
-  ) => {
-    setLoading(true)
-    setError(null)
-    const startTime = performance.now()
+  const handlePredict = useCallback(
+    async (
+      flowInput?: FlowPredictionRequest,
+      presetLabel?: string
+    ) => {
+      if (loading) return
+      setLoading(true)
+      setError(null)
+      const targetFlow = flowInput || flow
+      const startTime = performance.now()
 
-    try {
-      const [res, dec, comp] = await Promise.all([
-        predictFlow(flowInput),
-        evaluateFlowPolicy(flowInput).catch(() => null),
-        comparePolicies(flowInput).catch(() => null),
-      ])
+      try {
+        const [res, dec, comp] = await Promise.all([
+          predictFlow(targetFlow),
+          evaluateFlowPolicy(targetFlow).catch(() => null),
+          comparePolicies(targetFlow).catch(() => null),
+        ])
 
-      const latencyMs = Math.max(1, Math.round(performance.now() - startTime))
-      const nextRun = analysisRunCount + 1
-      const nowStr = new Date().toLocaleTimeString()
-      const label = presetLabel || activePreset || 'CUSTOM'
+        const latencyMs = Math.max(1, Math.round(performance.now() - startTime))
+        const nowStr = new Date().toLocaleTimeString()
+        const label = presetLabel || activePreset || 'CUSTOM'
 
-      setPredictResult(res)
-      setPolicyDecision(dec)
-      setComparisonResult(comp)
-      setAnalysisRunCount(nextRun)
-      setLastExecution({
-        runNumber: nextRun,
-        timestamp: nowStr,
-        latencyMs,
-        presetName: label,
-      })
-      setShowFreshBanner(true)
+        setPredictResult(res)
+        setPolicyDecision(dec)
+        setComparisonResult(comp)
+        setAnalysisRunCount((prev) => {
+          const nextRun = prev + 1
+          setLastExecution({
+            runNumber: nextRun,
+            timestamp: nowStr,
+            latencyMs,
+            presetName: label,
+          })
 
-      // Prepend to interactive session history
-      const historyEntry: AnalysisHistoryItem = {
-        id: `run-${Date.now()}-${nextRun}`,
-        runNumber: nextRun,
-        timestamp: nowStr,
-        presetName: label,
-        flowSummary: `Port ${flowInput.dst_port} • ${flowInput.packet_count} pkts • ${flowInput.duration}s`,
-        attack_type: res.attack_type,
-        risk_score: res.risk_score,
-        confidence: res.confidence,
-        policy_action: dec?.policy_action || res.action_recommendation,
-        is_anomaly: res.is_anomaly,
-        shap_status:
-          res.explanation_status ||
-          (res.top_contributing_features && res.top_contributing_features.length > 0
-            ? 'CALCULATED'
-            : 'SKIPPED_LOW_RISK'),
-        flow: { ...flowInput },
+          const historyEntry: AnalysisHistoryItem = {
+            id: `run-${Date.now()}-${nextRun}`,
+            runNumber: nextRun,
+            timestamp: nowStr,
+            presetName: label,
+            flowSummary: `Port ${targetFlow.dst_port} • ${targetFlow.packet_count} pkts • ${targetFlow.duration}s`,
+            attack_type: res.attack_type,
+            risk_score: res.risk_score,
+            confidence: res.confidence,
+            policy_action: dec?.policy_action || res.action_recommendation,
+            is_anomaly: res.is_anomaly,
+            shap_status:
+              res.explanation_status ||
+              (res.top_contributing_features && res.top_contributing_features.length > 0
+                ? 'CALCULATED'
+                : 'SKIPPED_LOW_RISK'),
+            flow: { ...targetFlow },
+          }
+
+          setAnalysisHistory((historyPrev) => [historyEntry, ...historyPrev.slice(0, 9)])
+          return nextRun
+        })
+        setShowFreshBanner(true)
+      } catch (err) {
+        setError(String(err))
+      } finally {
+        setLoading(false)
       }
+    },
+    [loading, flow, activePreset]
+  )
 
-      setAnalysisHistory((prev) => [historyEntry, ...prev.slice(0, 9)])
-    } catch (err) {
-      setError(String(err))
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  // Preload presets and seed initial session history from persisted database events
+  // Preload presets, model metadata, and initial session history from persisted database events
+  // Strictly runs once on mount; does NOT invoke inference automatically (Phase 22.7)
   useEffect(() => {
     getPresets()
       .then((p) => {
@@ -209,12 +219,19 @@ export const TrafficView: React.FC = () => {
           unique_dst_ports: String(initial.unique_dst_ports ?? 1),
           failed_auth_count: String(initial.failed_auth_count ?? 0),
         })
-        handlePredict(initial, 'PORT_SCAN')
       })
       .catch(() => {
         setPresets(FALLBACK_PRESETS)
-        handlePredict(FALLBACK_PRESETS.PORT_SCAN, 'PORT_SCAN')
       })
+
+    // Preload active model identity and runtime health
+    getBackendHealth()
+      .then((health) => {
+        if (health) {
+          setModelInfo(health)
+        }
+      })
+      .catch(() => {})
 
     // Preload recent backend events to populate history baseline
     listSecurityEvents({ limit: 5 })
@@ -270,7 +287,6 @@ export const TrafficView: React.FC = () => {
         failed_auth_count: String(p.failed_auth_count ?? 0),
       })
       setValidationErrors({})
-      handlePredict(p, key)
     }
   }
 
@@ -287,7 +303,6 @@ export const TrafficView: React.FC = () => {
       failed_auth_count: String(item.flow.failed_auth_count ?? 0),
     })
     setValidationErrors({})
-    handlePredict(item.flow, item.presetName)
   }
 
   const handleInputChange = (field: string, val: string) => {
@@ -411,8 +426,10 @@ export const TrafficView: React.FC = () => {
         <div>
           <h1>⚡ Live Flow Inspector & Threat Classifier</h1>
           <p>
-            Evaluate raw network flow vectors in real-time through the trained RandomForest model,
-            view exact multi-class probabilities, SHAP feature attributions, and adaptive policy decisions.
+            Evaluate raw network flow vectors in real-time through the active{' '}
+            <strong>{modelInfo?.model_name || 'Big Data XGBoost V2 (Clean Schema)'}</strong> model{' '}
+            ({modelInfo?.feature_count || 9}-feature schema), view exact multi-class probabilities, SHAP
+            feature attributions, and adaptive policy decisions.
           </p>
         </div>
       </section>
@@ -688,7 +705,13 @@ export const TrafficView: React.FC = () => {
 
               {/* Class Probability Distribution across all 5 classes */}
               <div className="prob-breakdown" style={{ marginTop: '14px' }}>
-                <h4>Multi-Class Probability Distribution (RandomForest)</h4>
+                <h4>
+                  Multi-Class Probability Distribution (
+                  {modelInfo?.model_type
+                    ? `${modelInfo.model_name || 'Big Data XGBoost V2'} (${modelInfo.model_type})`
+                    : predictResult.model_name || 'XGBClassifier'}
+                  )
+                </h4>
                 {['BENIGN', 'PORT_SCAN', 'BRUTE_FORCE', 'TRAFFIC_SPIKE', 'SUSPICIOUS_TRANSFER'].map((cls) => {
                   const prob = predictResult.class_probabilities[cls] ?? 0.0
                   const isWinner = cls === predictResult.attack_type
@@ -836,6 +859,46 @@ export const TrafficView: React.FC = () => {
                 </div>
               )}
             </div>
+          </div>
+        )}
+
+        {/* Empty state when no analysis has been run in current session */}
+        {!predictResult && (
+          <div
+            className="card traffic-results-placeholder"
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              minHeight: '340px',
+              textAlign: 'center',
+              color: 'var(--muted-cream)',
+              padding: '32px',
+            }}
+          >
+            <div style={{ fontSize: '36px', marginBottom: '12px' }}>📊</div>
+            <h3 style={{ margin: '0 0 8px', color: 'var(--warm-cream)' }}>
+              Ready for Threat Evaluation
+            </h3>
+            <p style={{ maxWidth: '440px', fontSize: '13px', margin: '0 0 16px', lineHeight: '1.5' }}>
+              Select a standard test scenario or customize flow vector parameters on the left, then click{' '}
+              <strong>Run ML Anomaly Inference &amp; Policy Trace</strong> to evaluate the flow through the active{' '}
+              <strong>{modelInfo?.model_name || 'Big Data XGBoost V2'}</strong> model.
+            </p>
+            <span
+              style={{
+                fontSize: '11px',
+                fontFamily: 'var(--font-mono)',
+                color: 'var(--muted-clay)',
+                background: 'var(--panel-inset)',
+                padding: '4px 12px',
+                borderRadius: '12px',
+                border: '1px solid var(--line)',
+              }}
+            >
+              Model: {modelInfo?.model_name || 'Big Data XGBoost V2 (Clean Schema)'} • {modelInfo?.feature_count || 9} Features • DRY_RUN Mode
+            </span>
           </div>
         )}
       </div>

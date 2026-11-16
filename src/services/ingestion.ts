@@ -63,10 +63,26 @@ export async function uploadPcapFile(
 
   try {
     const url = getApiUrl('v1/ingest/pcap')
+    let authHeader: Record<string, string> = {}
+    try {
+      const rawTokens = localStorage.getItem('hgs_auth_tokens')
+      if (rawTokens) {
+        const parsed = JSON.parse(rawTokens)
+        if (parsed?.access_token) {
+          authHeader = { Authorization: `Bearer ${parsed.access_token}` }
+        }
+      }
+    } catch {
+      // ignore
+    }
+
     const response = await fetch(url, {
       method: 'POST',
       body: formData,
       signal: controller.signal,
+      headers: {
+        ...authHeader,
+      },
     })
 
     if (!response.ok) {

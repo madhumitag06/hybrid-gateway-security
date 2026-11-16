@@ -34,9 +34,28 @@ export const SystemHealthView: React.FC = () => {
   }
 
   useEffect(() => {
-    fetchHealth()
+    let mounted = true
+    getInfrastructureHealth()
+      .then((data) => {
+        if (mounted) {
+          setHealthData(data)
+          setLoading(false)
+          setRefreshing(false)
+        }
+      })
+      .catch((err) => {
+        if (mounted) {
+          setError(String(err))
+          setLoading(false)
+          setRefreshing(false)
+        }
+      })
+
     const timer = setInterval(() => fetchHealth(true), 15000)
-    return () => clearInterval(timer)
+    return () => {
+      mounted = false
+      clearInterval(timer)
+    }
   }, [])
 
   return (

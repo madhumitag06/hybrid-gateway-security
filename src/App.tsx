@@ -450,7 +450,7 @@ export default function App() {
 
   // User Authentication State (Phase 13)
   const [authUser, setAuthUser] = useState<AuthUser | null>(authService.getUser())
-  const [isAuthChecked, setIsAuthChecked] = useState(false)
+  const [isAuthChecked, setIsAuthChecked] = useState(() => !authService.isAuthenticated())
 
   // Search Results Dropdown State
   const [searchResults, setSearchResults] = useState<SearchResults | null>(null)
@@ -523,8 +523,6 @@ export default function App() {
             setIsAuthChecked(true)
           }
         })
-    } else {
-      setIsAuthChecked(true)
     }
 
     const unsubscribe = authService.subscribe((u) => {
@@ -538,17 +536,27 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    if (selected) {
-      setLoadingExplanation(true)
-      setSelectedExplanation(null)
-      setAiBriefing(null)
-      getEventExplanation(selected.id)
-        .then(setSelectedExplanation)
-        .catch(() => {})
-        .finally(() => setLoadingExplanation(false))
-    } else {
-      setSelectedExplanation(null)
-      setAiBriefing(null)
+    if (!selected) {
+      return
+    }
+    let ignore = false
+    queueMicrotask(() => {
+      if (!ignore) {
+        setLoadingExplanation(true)
+        setSelectedExplanation(null)
+        setAiBriefing(null)
+      }
+    })
+    getEventExplanation(selected.id)
+      .then((exp) => {
+        if (!ignore) setSelectedExplanation(exp)
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!ignore) setLoadingExplanation(false)
+      })
+    return () => {
+      ignore = true
     }
   }, [selected])
 
@@ -658,7 +666,7 @@ export default function App() {
     getSystemProfile()
       .then(setProfile)
       .catch(() => {})
-  }, [authUser])
+  }, [authUser, loadDashboard, range])
 
   const handleRangeChange = (newRange: string) => {
     setRange(newRange)

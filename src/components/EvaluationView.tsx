@@ -35,12 +35,12 @@ export const EvaluationView: React.FC = () => {
   const [sampleCount, setSampleCount] = useState<number>(200)
   const [includeShap, setIncludeShap] = useState<boolean>(true)
   const [evaluation, setEvaluation] = useState<EvaluationRunResponse | null>(null)
-  const [loading, setLoading] = useState<boolean>(false)
+  const [loading, setLoading] = useState<boolean>(true)
   const [error, setError] = useState<string | null>(null)
 
   // Shadow Mode state
   const [shadowData, setShadowData] = useState<ShadowComparisonResponse | null>(null)
-  const [loadingShadow, setLoadingShadow] = useState<boolean>(false)
+  const [loadingShadow, setLoadingShadow] = useState<boolean>(true)
   const [shadowError, setShadowError] = useState<string | null>(null)
 
   // Adaptive Learning & Feedback state
@@ -185,15 +185,45 @@ export const EvaluationView: React.FC = () => {
   }
 
   useEffect(() => {
+    let mounted = true
     fetchEvaluationSuites()
       .then((data) => {
-        setSuites(data)
+        if (mounted) setSuites(data)
       })
       .catch((err) => console.error('Failed to load suites:', err))
 
     // Automatically trigger initial default benchmark
-    handleRunBenchmark('FULL_BENCHMARK', 200, true)
-    loadShadowData()
+    runEvaluation('FULL_BENCHMARK', 200, true)
+      .then((res) => {
+        if (mounted) {
+          setEvaluation(res)
+          setLoading(false)
+        }
+      })
+      .catch((err) => {
+        if (mounted) {
+          setError(String(err))
+          setLoading(false)
+        }
+      })
+
+    fetchShadowComparison(50)
+      .then((data) => {
+        if (mounted) {
+          setShadowData(data)
+          setLoadingShadow(false)
+        }
+      })
+      .catch((err) => {
+        if (mounted) {
+          setShadowError(String(err))
+          setLoadingShadow(false)
+        }
+      })
+
+    return () => {
+      mounted = false
+    }
   }, [])
 
   return (

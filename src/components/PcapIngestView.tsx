@@ -98,7 +98,11 @@ export const PcapIngestView: React.FC = () => {
         if (mounted) setLoading(false)
       })
 
-    reloadHistoryAndLatest()
+    queueMicrotask(() => {
+      if (mounted) {
+        void reloadHistoryAndLatest()
+      }
+    })
 
     return () => {
       mounted = false
@@ -151,7 +155,7 @@ export const PcapIngestView: React.FC = () => {
       setToast(
         `PCAP processed in ${res.metrics.total_duration_ms} ms: ${res.metrics.packets_processed} packets, ${res.metrics.flows_generated} flows evaluated (${res.high_risk_flows_count} high risk). Persisted to database.`
       )
-      reloadHistoryAndLatest()
+      await reloadHistoryAndLatest()
     } catch (err: any) {
       setToast(`PCAP Ingestion error: ${err.message || String(err)}`)
     } finally {
@@ -172,7 +176,7 @@ export const PcapIngestView: React.FC = () => {
       setToast(
         `Benchmark '${filename}' completed: ${res.metrics.packets_processed} packets, ${res.flows_evaluated} flows evaluated. Persisted to database.`
       )
-      reloadHistoryAndLatest()
+      await reloadHistoryAndLatest()
     } catch (err: any) {
       setToast(`Sample PCAP error: ${err.message || String(err)}`)
     } finally {

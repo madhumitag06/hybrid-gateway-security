@@ -9,7 +9,10 @@ interface AuthViewProps {
 export const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess }) => {
   const [activeTab, setActiveTab] = useState<'signin' | 'signup'>('signin')
   const [loading, setLoading] = useState(false)
-  const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [errorMessage, setErrorMessage] = useState<string | null>(() => {
+    const err = new URLSearchParams(window.location.search).get('auth_error')
+    return err ? decodeURIComponent(err) : null
+  })
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
 
   // Sign In Form State
@@ -27,7 +30,7 @@ export const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess }) => {
 
   // Google OAuth Status
   const [googleOAuthEnabled, setGoogleOAuthEnabled] = useState(false)
-  const [googleLoading, setGoogleLoading] = useState(false)
+  const [googleLoading, setGoogleLoading] = useState(() => !!new URLSearchParams(window.location.search).get('code'))
 
   // Check Google OAuth status on mount
   useEffect(() => {
@@ -55,10 +58,9 @@ export const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess }) => {
     const authError = params.get('auth_error')
 
     if (authError) {
-      setErrorMessage(decodeURIComponent(authError))
       window.history.replaceState({}, document.title, window.location.pathname)
     } else if (code) {
-      setGoogleLoading(true)
+      let mounted = true
       authService
         .handleGoogleCallback(code, state || undefined)
         .then((res) => {
@@ -66,10 +68,15 @@ export const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess }) => {
           onAuthSuccess(res.user)
         })
         .catch((err) => {
-          setErrorMessage(err.message || 'Google OAuth authentication failed.')
-          setGoogleLoading(false)
+          if (mounted) {
+            setErrorMessage(err.message || 'Google OAuth authentication failed.')
+            setGoogleLoading(false)
+          }
           window.history.replaceState({}, document.title, window.location.pathname)
         })
+      return () => {
+        mounted = false
+      }
     }
   }, [onAuthSuccess])
 

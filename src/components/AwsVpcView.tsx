@@ -28,19 +28,10 @@ interface AwsVpcViewProps {
 }
 
 export const AwsVpcView: React.FC<AwsVpcViewProps> = ({ currentEnv, onSelectEnv, onTelemetryIngested }) => {
-  // Mode selection: default based on currentEnv
-  const [activeTab, setActiveTab] = useState<AwsVpcViewMode>(
-    currentEnv === 'LIVE_AWS' ? 'LIVE_AWS' : 'FIXTURES'
-  )
-
-  // Keep activeTab in sync if currentEnv changes from top menu
-  useEffect(() => {
-    if (currentEnv === 'LIVE_AWS') {
-      setActiveTab('LIVE_AWS')
-    } else if (currentEnv === 'AWS_FIXTURE') {
-      setActiveTab('FIXTURES')
-    }
-  }, [currentEnv])
+  // Mode selection: derive based on currentEnv or explicit user selection
+  const [userTabOverride, setUserTabOverride] = useState<AwsVpcViewMode | null>(null)
+  const activeTab: AwsVpcViewMode = userTabOverride ?? (currentEnv === 'LIVE_AWS' ? 'LIVE_AWS' : 'FIXTURES')
+  const setActiveTab = (tab: AwsVpcViewMode) => setUserTabOverride(tab)
 
   // Toast notifications
   const [toast, setToast] = useState<string | null>(null)
@@ -124,9 +115,37 @@ export const AwsVpcView: React.FC<AwsVpcViewProps> = ({ currentEnv, onSelectEnv,
 
   useEffect(() => {
     if (activeTab === 'LIVE_AWS') {
-      refreshLiveTelemetryStatus()
+      let mounted = true
+      Promise.all([
+        cloudService.getAwsTelemetryStatus().catch((e: any) => ({ error: e.message || String(e) })),
+        cloudService.getAwsTelemetryHistory(10).catch(() => []),
+      ])
+        .then(([statusRes, historyRes]) => {
+          if (!mounted) return
+          if (statusRes && !statusRes.error) {
+            setTelemetryStats(statusRes)
+            setTelemetryStatus((prev) => (prev === 'EVENTS_RETRIEVED' ? 'EVENTS_RETRIEVED' : 'CONNECTED'))
+            setLastPollingError(null)
+          } else if (statusRes && statusRes.error) {
+            setTelemetryStats(null)
+            setTelemetryStatus('INGESTION_FAILED')
+            setLastPollingError(statusRes.error)
+          }
+          if (Array.isArray(historyRes)) {
+            setHistoryRuns(historyRes)
+          }
+        })
+        .catch((err: any) => {
+          if (!mounted) return
+          setTelemetryStats(null)
+          setTelemetryStatus('INGESTION_FAILED')
+          setLastPollingError(err.message || String(err))
+        })
+      return () => {
+        mounted = false
+      }
     }
-  }, [activeTab, refreshLiveTelemetryStatus])
+  }, [activeTab])
 
   // Handle Poll CloudWatch Logs
   const handlePollCloudWatch = async () => {

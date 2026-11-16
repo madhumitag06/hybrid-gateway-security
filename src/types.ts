@@ -191,6 +191,7 @@ export interface FlowPredictionResponse {
   top_contributing_features: ContributingFeature[]
   explanation_status?: string
   model_version?: string
+  model_name?: string
 }
 
 export interface BackendHealth {
@@ -199,6 +200,10 @@ export interface BackendHealth {
   version: string
   model_loaded: boolean
   model_type: string
+  model_name?: string
+  active_model_version?: string
+  standby_model_version?: string
+  feature_count?: number
   model_features: string[]
   classes: string[]
   timestamp_utc: string

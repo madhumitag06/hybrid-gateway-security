@@ -9,7 +9,7 @@
  * 5. Audit History (PostgreSQL Persisted Policy Audit Trail)
  */
 
-import React, { useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
 import {
   comparePolicies,
   getEnforcementConfig,
@@ -137,7 +137,7 @@ export const PoliciesView: React.FC = () => {
   const [compResult, setCompResult] = useState<PolicyComparisonResult | null>(null)
   const [comparing, setComparing] = useState<boolean>(false)
 
-  const loadData = () => {
+  const loadData = useCallback(() => {
     setLoading(true)
     setError(null)
     Promise.all([
@@ -150,23 +150,54 @@ export const PoliciesView: React.FC = () => {
       })
       .catch((err) => setError(String(err)))
       .finally(() => setLoading(false))
-  }
+  }, [statusFilter])
 
-  const loadAuditLogs = () => {
+  const loadAuditLogs = useCallback(() => {
     setAuditLoading(true)
     getPolicyAuditLogs(50)
       .then((logs) => setAuditLogs(logs))
       .catch((err) => setToast(`Failed to load audit history: ${String(err)}`))
       .finally(() => setAuditLoading(false))
-  }
+  }, [])
 
   useEffect(() => {
-    loadData()
+    let ignore = false
+    Promise.all([
+      getEnforcementConfig(),
+      listEnforcementRules(statusFilter || undefined),
+    ])
+      .then(([cfg, r]) => {
+        if (!ignore) {
+          setConfig(cfg)
+          setRules(r)
+        }
+      })
+      .catch((err) => {
+        if (!ignore) setError(String(err))
+      })
+      .finally(() => {
+        if (!ignore) setLoading(false)
+      })
+    return () => {
+      ignore = true
+    }
   }, [statusFilter])
 
   useEffect(() => {
-    if (activeSubTab === 'audit') {
-      loadAuditLogs()
+    if (activeSubTab !== 'audit') return
+    let ignore = false
+    getPolicyAuditLogs(50)
+      .then((logs) => {
+        if (!ignore) setAuditLogs(logs)
+      })
+      .catch((err) => {
+        if (!ignore) setToast(`Failed to load audit history: ${String(err)}`)
+      })
+      .finally(() => {
+        if (!ignore) setAuditLoading(false)
+      })
+    return () => {
+      ignore = true
     }
   }, [activeSubTab])
 

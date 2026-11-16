@@ -8,6 +8,7 @@
 
 import React, { useEffect, useState } from 'react'
 import {
+  DEFAULT_HYBRID_SCENARIOS,
   getHybridScenarios,
   runHybridScenario,
   type HybridScenarioInfo,
@@ -15,25 +16,46 @@ import {
 } from '../services/hybrid'
 
 export const SimulationView: React.FC = () => {
-  const [scenarios, setScenarios] = useState<HybridScenarioInfo[]>([])
-  const [loadingScenarios, setLoadingScenarios] = useState(true)
+  const [scenarios, setScenarios] = useState<HybridScenarioInfo[]>(DEFAULT_HYBRID_SCENARIOS)
+  const [isRefreshing, setIsRefreshing] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [activeRunningId, setActiveRunningId] = useState<string | null>(null)
   const [lastResult, setLastResult] = useState<ScenarioRunResult | null>(null)
   const [toastMessage, setToastMessage] = useState<string | null>(null)
   const [executionHistory, setExecutionHistory] = useState<ScenarioRunResult[]>([])
 
+  const handleReload = async () => {
+    setIsRefreshing(true)
+    setLoadError(null)
+    try {
+      const data = await getHybridScenarios()
+      if (Array.isArray(data) && data.length > 0) {
+        setScenarios(data)
+      } else {
+        console.warn('API returned empty scenario list, retaining verified defaults.')
+      }
+    } catch (err: any) {
+      console.error('Failed to reload scenarios from backend API:', err)
+      setLoadError(err.message || String(err))
+    } finally {
+      setIsRefreshing(false)
+    }
+  }
+
   useEffect(() => {
     let mounted = true
     getHybridScenarios()
       .then((data) => {
-        if (mounted) {
+        if (mounted && Array.isArray(data) && data.length > 0) {
           setScenarios(data)
-          setLoadingScenarios(false)
+          setLoadError(null)
         }
       })
-      .catch((err) => {
-        console.error('Failed to load scenarios:', err)
-        if (mounted) setLoadingScenarios(false)
+      .catch((err: any) => {
+        if (mounted) {
+          console.error('Failed to sync scenarios from backend API:', err)
+          setLoadError(err.message || String(err))
+        }
       })
     return () => {
       mounted = false
@@ -47,9 +69,23 @@ export const SimulationView: React.FC = () => {
       const res = await runHybridScenario(scenarioId)
       setLastResult(res)
       setExecutionHistory((prev) => [res, ...prev.slice(0, 9)])
-      setToastMessage(
-        `Scenario '${scenarioId}' completed in ${res.duration_ms} ms. Traffic generated across lab-router.`
-      )
+      if (res.status === 'COMPLETED' || res.status === 'LATE_COMPLETION') {
+        setToastMessage(
+          `Scenario '${scenarioId}' completed (${res.duration_ms} ms)${res.status === 'LATE_COMPLETION' ? ' [LATE COMPLETION RECONCILED]' : ''}. Traffic generated across lab-router.`
+        )
+      } else if (res.status === 'TIMED_OUT') {
+        setToastMessage(
+          `Scenario '${scenarioId}' timed out (${res.duration_ms} ms): ${res.message || 'Trigger daemon did not respond.'}`
+        )
+      } else if (res.status === 'FAILED') {
+        setToastMessage(
+          `Scenario '${scenarioId}' failed (${res.duration_ms} ms): ${res.message || res.output?.error || 'Execution failed.'}`
+        )
+      } else {
+        setToastMessage(
+          `Scenario '${scenarioId}' status: ${res.status}. ${res.message || ''}`
+        )
+      }
     } catch (err: any) {
       setToastMessage(`Scenario dispatch error: ${err.message || String(err)}`)
     } finally {
@@ -82,10 +118,15 @@ export const SimulationView: React.FC = () => {
           </p>
         </div>
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          {isRefreshing && (
+            <span style={{ fontSize: '11px', color: 'var(--muted-cream)', fontFamily: 'var(--font-mono)' }}>
+              ↻ Syncing...
+            </span>
+          )}
           <button
             type="button"
             className="primary"
-            disabled={activeRunningId !== null}
+            disabled={activeRunningId !== null || scenarios.length === 0}
             onClick={() => handleExecuteScenario('all')}
             style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
           >
@@ -93,6 +134,43 @@ export const SimulationView: React.FC = () => {
           </button>
         </div>
       </section>
+
+      {loadError && (
+        <div
+          className="auth-alert"
+          style={{
+            background: 'rgba(217, 83, 79, 0.15)',
+            border: '1px solid var(--terracotta)',
+            color: 'var(--warm-cream)',
+            padding: '10px 14px',
+            borderRadius: 'var(--radius-sm)',
+            fontSize: '12px',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: '12px',
+          }}
+        >
+          <span>⚠️ Scenario API synchronization issue: {loadError}. Displaying verified built-in scenarios.</span>
+          <button
+            type="button"
+            onClick={handleReload}
+            disabled={isRefreshing}
+            style={{
+              background: 'var(--panel-elevated)',
+              border: '1px solid var(--line-strong)',
+              color: 'var(--warm-cream)',
+              padding: '4px 10px',
+              borderRadius: 'var(--radius-xs)',
+              fontSize: '11px',
+              cursor: isRefreshing ? 'wait' : 'pointer',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {isRefreshing ? 'Retrying...' : '↻ Retry Sync'}
+          </button>
+        </div>
+      )}
 
       {toastMessage && (
         <div
@@ -120,10 +198,21 @@ export const SimulationView: React.FC = () => {
         </div>
       )}
 
-      {/* 6 Scenarios Interactive Grid */}
-      {loadingScenarios ? (
-        <div className="card" style={{ padding: '24px', textAlign: 'center', color: 'var(--muted-cream)' }}>
-          Loading hybrid cloud traffic scenarios...
+      {/* 6 Scenarios Interactive Grid or Explicit Empty State */}
+      {scenarios.length === 0 ? (
+        <div className="card" style={{ padding: '32px', textAlign: 'center', color: 'var(--muted-cream)' }}>
+          <p style={{ margin: '0 0 12px', fontSize: '13px' }}>
+            No hybrid cloud traffic scenarios available.
+          </p>
+          <button
+            type="button"
+            className="primary"
+            onClick={handleReload}
+            disabled={isRefreshing}
+            style={{ padding: '6px 14px', fontSize: '12px' }}
+          >
+            {isRefreshing ? 'Loading Scenarios...' : '↻ Reload Scenarios'}
+          </button>
         </div>
       ) : (
         <div
@@ -205,7 +294,7 @@ export const SimulationView: React.FC = () => {
               <button
                 type="button"
                 className="primary"
-                disabled={activeRunningId !== null}
+                disabled={activeRunningId !== null || scenarios.length === 0}
                 onClick={() => handleExecuteScenario(sc.id)}
                 style={{
                   width: '100%',
@@ -289,7 +378,21 @@ export const SimulationView: React.FC = () => {
                 <span style={{ color: 'var(--warm-cream)' }}>
                   <b>{item.scenario}</b> ({item.run_id})
                 </span>
-                <span style={{ color: 'var(--olive-green)' }}>
+                <span
+                  style={{
+                    color:
+                      item.status === 'COMPLETED'
+                        ? 'var(--olive-green)'
+                        : item.status === 'LATE_COMPLETION'
+                        ? '#4ade80'
+                        : item.status === 'TIMED_OUT'
+                        ? '#e0a96d'
+                        : item.status === 'FAILED'
+                        ? 'var(--terracotta)'
+                        : 'var(--warm-cream)',
+                    fontWeight: 600,
+                  }}
+                >
                   {item.status} in {item.duration_ms} ms
                 </span>
               </div>

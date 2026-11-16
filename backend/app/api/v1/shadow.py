@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import desc, func, select
 from sqlalchemy.orm import Session
 
-from backend.app.api.deps import require_admin
+from backend.app.api.deps import require_admin, require_analyst
 from backend.app.db.session import get_db
 from backend.app.models.shadow_prediction import ShadowPredictionModel
 from backend.app.models.user import UserModel
@@ -24,7 +24,7 @@ router = APIRouter(prefix="/v1/shadow", tags=["Shadow Mode (XGBoost V2 Candidate
     summary="Get Shadow Mode Candidate Model Status",
     description="Returns the operational status, feature schema, and configuration of the candidate XGBoost V2 model.",
 )
-def get_shadow_status() -> Dict[str, Any]:
+def get_shadow_status(_user=Depends(require_analyst)) -> Dict[str, Any]:
     return ShadowService.get_status()
 
 
@@ -36,6 +36,7 @@ def get_shadow_status() -> Dict[str, Any]:
 def get_shadow_comparison(
     limit: int = Query(default=20, ge=1, le=100),
     db: Session = Depends(get_db),
+    _user=Depends(require_analyst),
 ) -> Dict[str, Any]:
     # Total evaluated
     total_count = db.scalar(select(func.count(ShadowPredictionModel.id))) or 0
@@ -136,6 +137,7 @@ def get_shadow_records(
     page_size: int = Query(default=25, ge=1, le=100),
     disagreement_only: bool = Query(default=False),
     db: Session = Depends(get_db),
+    _user=Depends(require_analyst),
 ) -> Dict[str, Any]:
     query = select(ShadowPredictionModel)
     if disagreement_only:
@@ -181,7 +183,7 @@ def get_shadow_records(
     summary="Get Model Lifecycle Registry and Promotion History",
     description="Returns active and standby model versions, feature schemas, algorithms, and promotion audit trail.",
 )
-def get_model_registry() -> Dict[str, Any]:
+def get_model_registry(_user=Depends(require_analyst)) -> Dict[str, Any]:
     from backend.app.services.ml_service import MLService
     return MLService.get_registry_status()
 

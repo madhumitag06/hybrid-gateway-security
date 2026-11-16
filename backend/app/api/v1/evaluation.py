@@ -9,6 +9,7 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
 
+from backend.app.api.deps import require_analyst, require_operator
 from backend.app.db.session import get_db
 from backend.app.schemas.evaluation import (
     EvaluationRunRequest,
@@ -26,7 +27,7 @@ router = APIRouter(prefix="/evaluation", tags=["Evaluation & Benchmarking"])
     summary="List available benchmark scenario suites",
     description="Returns predefined benchmark scenario suites with their default sample counts and descriptions.",
 )
-def list_suites() -> List[EvaluationSuiteInfo]:
+def list_suites(_user=Depends(require_analyst)) -> List[EvaluationSuiteInfo]:
     return ComparativeEvaluationService.list_suites()
 
 
@@ -39,6 +40,7 @@ def list_suites() -> List[EvaluationSuiteInfo]:
 def run_evaluation(
     req: EvaluationRunRequest,
     db: Session = Depends(get_db),
+    _user=Depends(require_operator),
 ) -> EvaluationRunResponse:
     if req.sample_count < 10 or req.sample_count > 500:
         raise HTTPException(
@@ -66,6 +68,7 @@ def export_evaluation(
     sample_count: int = Query(200, ge=10, le=500, description="Sample count"),
     export_format: str = Query("json", description="Export format: 'json' or 'csv'"),
     db: Session = Depends(get_db),
+    _user=Depends(require_analyst),
 ) -> Response:
     req = EvaluationRunRequest(
         suite_name=suite_name,  # type: ignore

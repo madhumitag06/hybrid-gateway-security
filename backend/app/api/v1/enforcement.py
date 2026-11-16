@@ -10,7 +10,12 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
-from backend.app.api.deps import require_admin, require_operator
+from backend.app.api.deps import (
+    require_admin,
+    require_analyst,
+    require_operator,
+    require_service_or_trusted_network,
+)
 from backend.app.config import settings
 from backend.app.db.session import get_db
 from backend.app.models.user import UserModel
@@ -46,6 +51,7 @@ def list_enforcement_rules(
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
+    _user=Depends(require_analyst),
 ) -> List[ActiveEnforcementRule]:
     repo = EnforcementRepository(db)
     repo.prune_expired_rules()
@@ -128,7 +134,10 @@ def revoke_containment_rule(
     summary="Get active enforcement configuration",
     description="Returns current operating mode (DRY_RUN vs SANDBOX), management allowlist, and active rule counts.",
 )
-def get_enforcement_config(db: Session = Depends(get_db)) -> EnforcementConfigSchema:
+def get_enforcement_config(
+    db: Session = Depends(get_db),
+    _user=Depends(require_analyst),
+) -> EnforcementConfigSchema:
     repo = EnforcementRepository(db)
     active_count = len(repo.list_active_rules())
     return EnforcementConfigSchema(
@@ -157,7 +166,7 @@ def update_enforcement_config(
     if update.management_allowlist is not None:
         settings.management_allowlist = update.management_allowlist
 
-    return get_enforcement_config(db=db)
+    return get_enforcement_config(db=db, _user=current_user)
 
 
 @router.post(
@@ -168,6 +177,7 @@ def update_enforcement_config(
 )
 def evaluate_flow_policy(
     flow_request: NetworkFlowRequest,
+    _auth=Depends(require_service_or_trusted_network),
 ) -> PolicyDecision:
     pred: PredictionResponse = MLService.predict(flow_request)
     source_ip = flow_request.source_ip or "192.168.1.100"
@@ -190,6 +200,7 @@ def evaluate_flow_policy(
 )
 def compare_policies(
     flow_request: NetworkFlowRequest,
+    _auth=Depends(require_service_or_trusted_network),
 ) -> PolicyComparisonResult:
     source_ip = flow_request.source_ip or "192.168.1.100"
     destination_ip = flow_request.destination_ip or "10.100.1.10"
@@ -221,6 +232,7 @@ def compare_policies(
 def get_policy_audit_logs(
     limit: int = Query(50, ge=1, le=200),
     db: Session = Depends(get_db),
+    _user=Depends(require_analyst),
 ) -> List[PolicyAuditLogSchema]:
     repo = PolicyAuditRepository(db)
     logs = repo.get_recent_logs(limit=limit)

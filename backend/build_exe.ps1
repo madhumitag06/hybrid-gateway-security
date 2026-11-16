@@ -111,7 +111,7 @@ Write-Host "`n[9/17] Preparing distribution paths and safe backup..." -Foregroun
 $DistPath = "$WorkspaceRoot\backend\executable"
 $BuildTempPath = "$WorkspaceRoot\build"
 $ExeDir = "$DistPath\AdaptiveSecurityGateway"
-$BackupDir = "$DistPath\AdaptiveSecurityGateway_backup"
+$BackupDir = "$DistPath\AdaptiveSecurityGateway_phase22_8_backup"
 
 # Terminate any running executable instances to release Windows DLL/file locks
 Get-Process -Name "AdaptiveSecurityGateway" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
@@ -149,11 +149,27 @@ if (-not (Test-Path $ExePath)) {
     exit 1
 }
 
-# Synchronize .env configuration directly into the standalone distribution folder
-if (Test-Path "$WorkspaceRoot\.env") {
-    Copy-Item -Path "$WorkspaceRoot\.env" -Destination "$DistPath\AdaptiveSecurityGateway\.env" -Force
-    Write-Host "  -> Active .env configuration synchronized alongside executable." -ForegroundColor Green
+# SEC-04: Exclude local .env and developer secrets from the packaged executable.
+# Synchronize only the safe non-sensitive template .env.example alongside executable.
+if (Test-Path "$WorkspaceRoot\.env.example") {
+    Copy-Item -Path "$WorkspaceRoot\.env.example" -Destination "$DistPath\AdaptiveSecurityGateway\.env.example" -Force
+    Write-Host "  -> Safe template .env.example synchronized alongside executable." -ForegroundColor Green
 }
+
+# Strictly verify and guarantee that no active .env file exists in the package
+$PackagedEnv = "$DistPath\AdaptiveSecurityGateway\.env"
+$InternalEnv = "$DistPath\AdaptiveSecurityGateway\_internal\.env"
+if (Test-Path $PackagedEnv) {
+    Remove-Item -Path $PackagedEnv -Force
+}
+if (Test-Path $InternalEnv) {
+    Remove-Item -Path $InternalEnv -Force
+}
+if ((Test-Path $PackagedEnv) -or (Test-Path $InternalEnv)) {
+    Write-Error "[FAIL] SEC-04 VIOLATION: Packaged executable distribution contains an embedded .env file!"
+    exit 1
+}
+Write-Host "  -> SEC-04 Verified: Zero .env secret files present in packaged output." -ForegroundColor Green
 
 $ExeItem = Get-Item -Path $ExePath
 $BundledAssetsDir = "$DistPath\AdaptiveSecurityGateway\_internal\dist\assets"
@@ -224,7 +240,7 @@ Write-Host "  -> Executable Size : $ExeMb MB ($($ExeItem.Length) bytes)" -Foregr
 Write-Host "  -> Last Modified   : $($ExeItem.LastWriteTime)" -ForegroundColor Green
 Write-Host "  -> Bundled JS Asset: $($BundledJs.Name) (MATCHED)" -ForegroundColor Green
 Write-Host "  -> Bundled CSS Asset: $($BundledCss.Name) (MATCHED)" -ForegroundColor Green
-Write-Host "  -> Active Config   : $DistPath\AdaptiveSecurityGateway\.env (VERIFIED)" -ForegroundColor Green
+Write-Host "  -> Template Config : $DistPath\AdaptiveSecurityGateway\.env.example (VERIFIED)" -ForegroundColor Green
 
 # Step 16: Verify Packaged Application Metadata via CLI
 Write-Host "`n[16/17] Verifying packaged application CLI startup metadata..." -ForegroundColor Yellow

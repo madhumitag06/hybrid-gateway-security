@@ -127,6 +127,9 @@ async def lifespan(app: FastAPI):
             db.commit()
         print("[+] PostgreSQL database initialized, admin verified, and rules reconciled.")
     except Exception as e:
+        if settings.is_production:
+            print(f"[X] FATAL: Production database initialization failed: {e}")
+            raise
         print(f"[!] Warning: Database initialization notice: {e}")
 
     stop_event = threading.Event()
@@ -154,13 +157,16 @@ async def lifespan(app: FastAPI):
     print("[*] Shutting down gateway backend.")
 
 
+enable_docs = (not settings.is_production) or getattr(settings, "enable_production_docs", False)
+
 app = FastAPI(
     title=settings.app_name,
     version=settings.app_version,
     description="Adaptive AI-Powered Security Gateway backend exposing real-time ML anomaly detection, continuous risk scoring, and PostgreSQL event history.",
     lifespan=lifespan,
-    docs_url="/docs",
-    redoc_url="/redoc",
+    docs_url="/docs" if enable_docs else None,
+    redoc_url="/redoc" if enable_docs else None,
+    openapi_url="/openapi.json" if enable_docs else None,
 )
 
 # Configure CORS for local frontend communication
@@ -182,6 +188,8 @@ async def add_security_headers(request: Request, call_next):
     - X-XSS-Protection: 1; mode=block (cross-site scripting filter)
     - Referrer-Policy: strict-origin-when-cross-origin
     - Permissions-Policy: geolocation=(), camera=(), microphone=()
+    - Content-Security-Policy: default-src 'self'; ... (SEC-11)
+    - Strict-Transport-Security: max-age=31536000; ... (SEC-11)
     """
     response = await call_next(request)
     response.headers["X-Content-Type-Options"] = "nosniff"
@@ -189,6 +197,25 @@ async def add_security_headers(request: Request, call_next):
     response.headers["X-XSS-Protection"] = "1; mode=block"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["Permissions-Policy"] = "geolocation=(), camera=(), microphone=()"
+
+    # SEC-11: Content-Security-Policy
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+        "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com; "
+        "font-src 'self' data: https://fonts.gstatic.com https://cdn.jsdelivr.net; "
+        "img-src 'self' data: https://fastapi.tiangolo.com; "
+        "connect-src 'self' http: https: ws: wss:; "
+        "frame-ancestors 'none'; "
+        "object-src 'none'; "
+        "base-uri 'self';"
+    )
+
+    # SEC-11: Strict-Transport-Security (enforced over HTTPS or in production)
+    is_https = request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https"
+    if is_https or settings.is_production:
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains; preload"
+
     return response
 
 # Register routes with /api prefix (for standard frontend integration)
@@ -224,7 +251,7 @@ def _get_root_info():
         "version": settings.app_version,
         "status": "online",
         "database": "PostgreSQL Connected",
-        "docs": "/docs",
+        "docs": "/docs" if enable_docs else None,
         "health": "/api/health",
         "prediction_endpoint": "/api/v1/predict",
         "events_endpoint": "/api/v1/events",

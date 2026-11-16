@@ -5,6 +5,7 @@ Loads environment variables and sets path references for ML artifacts, database 
 security secrets, and CORS settings with robust comma-delimited/JSON list parsing.
 """
 
+import ipaddress
 import json
 import os
 from pathlib import Path
@@ -167,7 +168,13 @@ DEFAULT_SHADOW_ARTIFACTS_DIR = get_default_shadow_artifacts_dir()
 class Settings(BaseSettings):
     app_name: str = "Adaptive AI Hybrid Security Gateway API"
     app_version: str = "1.0.0"
+    app_env: str = "development"
     debug: bool = False
+    enable_production_docs: bool = False
+
+    @property
+    def is_production(self) -> bool:
+        return self.app_env.lower() == "production"
 
     # Server binding
     host: str = "127.0.0.1"
@@ -209,6 +216,15 @@ class Settings(BaseSettings):
         "http://127.0.0.1:5175",
         "http://localhost:3000",
         "http://127.0.0.1:3000",
+    ]
+
+    # Dedicated Management Network Trust Configuration (Phase 22.3 SEC-09)
+    # Explicitly permitted CIDR blocks for machine-to-machine API administration.
+    # Independent of firewall traffic allowlists. Defaults to loopback only.
+    trusted_management_networks: Union[List[str], str] = [
+        "127.0.0.1/32",
+        "::1/128",
+        "10.30.10.0/24",
     ]
 
     # Enforcement Configuration (Phase 5)
@@ -293,6 +309,8 @@ class Settings(BaseSettings):
     google_client_id: str = ""
     google_client_secret: str = ""
     google_redirect_uri: str = "http://localhost:5173/auth/google/callback"
+    gateway_service_key: Optional[str] = None
+    allow_mock_auth: bool = False
 
     # Default Administrator Bootstrap Credentials
     admin_email: str = "test10@gmail.com"
@@ -305,6 +323,7 @@ class Settings(BaseSettings):
     @field_validator(
         "cors_origins",
         "management_allowlist",
+        "trusted_management_networks",
         "on_prem_cidrs",
         "aws_vpc_cidrs",
         "lab_allowed_target_cidrs",
@@ -360,6 +379,149 @@ class Settings(BaseSettings):
         if self.aws_vpc_flow_log_group and self.aws_vpc_flow_log_group.strip():
             self.aws_cloudwatch_log_group = self.aws_vpc_flow_log_group.strip()
         return self
+
+    @model_validator(mode="after")
+    def validate_production_security(self) -> "Settings":
+        """
+        Enforce fail-closed production security posture:
+        - In production, GATEWAY_SERVICE_KEY, AUTH_JWT_SECRET, and SECRET_KEY must be explicitly
+          provided, non-empty, minimum 32 characters, and cannot equal any development default string.
+        - In production, if ADMIN_EMAIL is set, ADMIN_PASSWORD must be at least 12 characters and
+          cannot use development defaults ('test@123', etc.).
+        - In production, allow_mock_auth cannot be True.
+        - In development / testing, explicitly marked development keys are used if not provided,
+          preserving local developer ergonomics.
+        """
+        env_raw = os.getenv("APP_ENV") or os.getenv("ENVIRONMENT") or os.getenv("ENV") or self.app_env or "development"
+        env_lower = env_raw.strip().lower()
+        self.app_env = env_lower
+        is_production = env_lower in ("production", "prod")
+
+        raw_key = self.gateway_service_key
+        key_str = raw_key.strip() if isinstance(raw_key, str) else ""
+
+        insecure_dev_keys = {
+            "adaptive-gateway-internal-service-key-2026",
+            "dev-insecure-gateway-service-key-local-testing-only",
+            "changeme",
+            "secret",
+            "password",
+            "admin",
+        }
+        insecure_jwt_secrets = {
+            "adaptive-gateway-jwt-super-secret-key-change-in-production-min-32-chars",
+            "hybrid-gateway-production-jwt-signing-key-replace-with-entropy-secret",
+            "replace-with-high-entropy-lab-jwt-signing-secret-key-2026",
+            "secret",
+            "changeme",
+            "password",
+            "default",
+        }
+        insecure_secret_keys = {
+            "adaptive-hybrid-gateway-dev-insecure-secret-key-change-in-prod",
+            "replace-with-high-entropy-lab-secret-key-min-32-chars",
+            "secret",
+            "changeme",
+            "password",
+            "default",
+        }
+        insecure_admin_passwords = {
+            "test@123",
+            "AdminSecOps2026!",
+            "AdminSecret2026!",
+            "admin",
+            "password",
+            "ChangeMe_SecOpsAdmin2026!",
+            "ChangeMe_HybridLabDbPass_2026!",
+        }
+
+        if is_production:
+            if self.allow_mock_auth:
+                raise RuntimeError(
+                    "CRITICAL PRODUCTION CONFIGURATION ERROR: allow_mock_auth cannot be True in production. Refusing to start."
+                )
+
+            # Validate GATEWAY_SERVICE_KEY
+            if not key_str:
+                raise RuntimeError(
+                    "CRITICAL PRODUCTION CONFIGURATION ERROR: GATEWAY_SERVICE_KEY is missing or empty. "
+                    "Production deployments require an explicitly configured, high-entropy service key. "
+                    "Refusing to start."
+                )
+            if key_str in insecure_dev_keys or len(key_str) < 32:
+                raise RuntimeError(
+                    "CRITICAL PRODUCTION CONFIGURATION ERROR: GATEWAY_SERVICE_KEY cannot use development "
+                    "defaults and must be at least 32 characters in production. Refusing to start."
+                )
+            self.gateway_service_key = key_str
+
+            # Validate AUTH_JWT_SECRET
+            raw_jwt_secret = self.auth_jwt_secret.strip() if isinstance(self.auth_jwt_secret, str) else ""
+            if not raw_jwt_secret:
+                raise RuntimeError(
+                    "CRITICAL PRODUCTION CONFIGURATION ERROR: AUTH_JWT_SECRET is missing or empty. "
+                    "Production deployments require an explicitly configured, high-entropy JWT secret. "
+                    "Refusing to start."
+                )
+            if raw_jwt_secret in insecure_jwt_secrets or len(raw_jwt_secret) < 32:
+                raise RuntimeError(
+                    "CRITICAL PRODUCTION CONFIGURATION ERROR: AUTH_JWT_SECRET cannot use development "
+                    "defaults and must be at least 32 characters in production. Refusing to start."
+                )
+            self.auth_jwt_secret = raw_jwt_secret
+
+            # Validate SECRET_KEY
+            raw_secret_key = self.secret_key.strip() if isinstance(self.secret_key, str) else ""
+            if not raw_secret_key:
+                raise RuntimeError(
+                    "CRITICAL PRODUCTION CONFIGURATION ERROR: SECRET_KEY is missing or empty. "
+                    "Production deployments require an explicitly configured, high-entropy secret key. "
+                    "Refusing to start."
+                )
+            if raw_secret_key in insecure_secret_keys or len(raw_secret_key) < 32:
+                raise RuntimeError(
+                    "CRITICAL PRODUCTION CONFIGURATION ERROR: SECRET_KEY cannot use development "
+                    "defaults and must be at least 32 characters in production. Refusing to start."
+                )
+            self.secret_key = raw_secret_key
+
+            # Validate ADMIN_PASSWORD if automated admin bootstrap is configured
+            if self.admin_email and self.admin_email.strip():
+                raw_admin_pwd = self.admin_password.strip() if isinstance(self.admin_password, str) else ""
+                if not raw_admin_pwd or raw_admin_pwd in insecure_admin_passwords or len(raw_admin_pwd) < 12:
+                    raise RuntimeError(
+                        "CRITICAL PRODUCTION CONFIGURATION ERROR: ADMIN_PASSWORD cannot use development "
+                        "defaults ('test@123') and must be at least 12 characters in production. "
+                        "Set an explicit, strong ADMIN_PASSWORD or unset ADMIN_EMAIL to disable automated bootstrap."
+                    )
+                self.admin_password = raw_admin_pwd
+        else:
+            if not key_str:
+                self.gateway_service_key = "dev-insecure-gateway-service-key-local-testing-only"
+            else:
+                self.gateway_service_key = key_str
+
+        return self
+
+    def get_trusted_management_networks(self) -> List[Union[ipaddress.IPv4Network, ipaddress.IPv6Network]]:
+        """
+        Parses and returns validated IPv4/IPv6 networks configured for trusted API access (SEC-09).
+        Fails safely if any entry is invalid by ignoring malformed strings.
+        """
+        raw_list = self.trusted_management_networks
+        if isinstance(raw_list, str):
+            raw_list = [item.strip() for item in raw_list.split(",") if item.strip()]
+        networks: List[Union[ipaddress.IPv4Network, ipaddress.IPv6Network]] = []
+        for item in raw_list:
+            if not isinstance(item, str) or not item.strip():
+                continue
+            try:
+                net = ipaddress.ip_network(item.strip(), strict=False)
+                networks.append(net)
+            except ValueError:
+                # Invalid CIDR: fail safely by ignoring
+                pass
+        return networks
 
     model_config = SettingsConfigDict(
         env_file=get_env_file_path(),

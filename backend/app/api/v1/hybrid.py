@@ -9,6 +9,11 @@ from typing import Any, Dict, List
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
 
+from backend.app.api.deps import (
+    require_analyst,
+    require_operator,
+    require_service_or_trusted_network,
+)
 from backend.app.db.session import get_db
 from backend.app.schemas.aws_flow import (
     AwsVpcIngestionRequest,
@@ -35,7 +40,7 @@ router = APIRouter(prefix="/hybrid", tags=["Hybrid Cloud & AWS Telemetry"])
     summary="Get Hybrid Network Topology Configuration",
     description="Returns configured On-Premises and AWS VPC CIDR ranges and cloud security boundaries.",
 )
-def get_hybrid_topology() -> HybridTopologySummary:
+def get_hybrid_topology(_user=Depends(require_analyst)) -> HybridTopologySummary:
     return NetworkZoneClassifier.get_topology_summary()
 
 
@@ -45,7 +50,7 @@ def get_hybrid_topology() -> HybridTopologySummary:
     summary="Get AWS Telemetry Ingestion Status",
     description="Reports whether AWS integration is in offline fixture mode or read-only CloudWatch/S3 mode.",
 )
-def get_telemetry_status() -> Dict[str, Any]:
+def get_telemetry_status(_user=Depends(require_analyst)) -> Dict[str, Any]:
     return AwsTelemetryClient.get_status()
 
 
@@ -55,7 +60,10 @@ def get_telemetry_status() -> Dict[str, Any]:
     summary="Get Virtual Hybrid-Cloud Lab & Telemetry Status",
     description="Returns configured hybrid lab topology, real PCAP/VPC ingestion counters, persisted event statistics, and enforcement state.",
 )
-def get_hybrid_lab_status(db: Session = Depends(get_db)) -> Dict[str, Any]:
+def get_hybrid_lab_status(
+    db: Session = Depends(get_db),
+    _user=Depends(require_analyst),
+) -> Dict[str, Any]:
     from sqlalchemy import func
     from backend.app.config import settings
     from backend.app.models.security_event import SecurityEventModel
@@ -115,7 +123,7 @@ def get_hybrid_lab_status(db: Session = Depends(get_db)) -> Dict[str, Any]:
     summary="List Benchmark AWS VPC Flow Log Fixtures",
     description="Returns metadata for pre-packaged reproducible AWS VPC Flow Log benchmark test scenarios.",
 )
-def list_sample_fixtures() -> List[AwsVpcSampleFixtureInfo]:
+def list_sample_fixtures(_user=Depends(require_analyst)) -> List[AwsVpcSampleFixtureInfo]:
     return ensure_aws_sample_fixtures()
 
 
@@ -128,6 +136,7 @@ def list_sample_fixtures() -> List[AwsVpcSampleFixtureInfo]:
 def ingest_vpc_flow_logs(
     payload: AwsVpcIngestionRequest,
     db: Session = Depends(get_db),
+    _auth=Depends(require_service_or_trusted_network),
 ) -> AwsVpcIngestionResponse:
     if not payload.raw_log_content or not payload.raw_log_content.strip():
         raise HTTPException(
@@ -157,6 +166,7 @@ async def upload_vpc_log_file(
     is_fixture: bool = Form(default=False, description="Whether this is a synthetic benchmark fixture"),
     persist: bool = Form(default=True, description="Whether to store security events in PostgreSQL"),
     db: Session = Depends(get_db),
+    _auth=Depends(require_service_or_trusted_network),
 ) -> AwsVpcIngestionResponse:
     if not file.filename:
         raise HTTPException(
@@ -198,6 +208,7 @@ def ingest_sample_fixture(
     sample_id: str,
     persist: bool = True,
     db: Session = Depends(get_db),
+    _user=Depends(require_operator),
 ) -> AwsVpcIngestionResponse:
     samples = ensure_aws_sample_fixtures()
     target_sample = next((s for s in samples if s.sample_id == sample_id), None)
@@ -231,7 +242,7 @@ def ingest_sample_fixture(
     summary="List Hybrid-Cloud Traffic Generation Scenarios",
     description="Returns metadata for the 6 real cross-network traffic scenarios available in the virtual hybrid lab.",
 )
-def list_hybrid_scenarios() -> List[Dict[str, Any]]:
+def list_hybrid_scenarios(_user=Depends(require_analyst)) -> List[Dict[str, Any]]:
     from backend.app.services.hybrid_traffic_service import HybridTrafficService
     return HybridTrafficService.list_scenarios()
 
@@ -242,7 +253,10 @@ def list_hybrid_scenarios() -> List[Dict[str, Any]]:
     summary="Trigger Hybrid-Cloud Network Traffic Scenario",
     description="Dispatches a real cross-boundary traffic generation scenario to the traffic-generator container and reports execution results.",
 )
-def run_hybrid_scenario(scenario_id: str) -> Dict[str, Any]:
+def run_hybrid_scenario(
+    scenario_id: str,
+    _user=Depends(require_operator),
+) -> Dict[str, Any]:
     from backend.app.services.hybrid_traffic_service import HybridTrafficService
     try:
         return HybridTrafficService.run_scenario(scenario_id)
@@ -258,6 +272,6 @@ def run_hybrid_scenario(scenario_id: str) -> Dict[str, Any]:
     summary="Get Hybrid Lab 13-Container Infrastructure Health",
     description="Probes the lab-router agent, database connection, and returns verified status of all 13 Docker services.",
 )
-def get_infrastructure_health() -> Dict[str, Any]:
+def get_infrastructure_health(_user=Depends(require_analyst)) -> Dict[str, Any]:
     from backend.app.services.hybrid_traffic_service import HybridTrafficService
     return HybridTrafficService.get_infrastructure_health()

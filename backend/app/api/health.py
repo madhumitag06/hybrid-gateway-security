@@ -30,8 +30,8 @@ def get_health() -> Dict[str, Any]:
         from sqlalchemy import text
         with SessionLocal() as db:
             db.execute(text("SELECT 1"))
-    except Exception as exc:
-        db_status = f"unreachable: {str(exc)}"
+    except Exception:
+        db_status = "unreachable"
 
     is_healthy = model_loaded and db_status == "connected"
 

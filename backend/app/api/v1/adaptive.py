@@ -9,7 +9,12 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
-from backend.app.api.deps import get_current_active_user, require_admin, require_operator
+from backend.app.api.deps import (
+    get_current_active_user,
+    require_admin,
+    require_analyst,
+    require_operator,
+)
 from backend.app.db.session import get_db
 from backend.app.models.user import UserModel
 from backend.app.services.adaptive_learning_service import AdaptiveLearningService
@@ -22,7 +27,10 @@ router = APIRouter(prefix="/v1/adaptive", tags=["Adaptive ML Learning"])
     summary="Get Adaptive Learning Telemetry",
     description="Returns aggregate counts of ingested traffic, verified feedback labels, class distribution, and candidate training runs.",
 )
-def get_adaptive_telemetry(db: Session = Depends(get_db)) -> Dict[str, Any]:
+def get_adaptive_telemetry(
+    db: Session = Depends(get_db),
+    _user=Depends(require_analyst),
+) -> Dict[str, Any]:
     return AdaptiveLearningService.get_telemetry(db)
 
 
@@ -37,6 +45,7 @@ def list_feedbacks(
     status_filter: Optional[str] = Query(None, description="Filter by status: UNVERIFIED, CONFIRMED, CORRECTED, EXCLUDED"),
     ingestion_id: Optional[str] = Query(None, description="Filter by source PCAP ingestion ID"),
     db: Session = Depends(get_db),
+    _user=Depends(require_analyst),
 ) -> Dict[str, Any]:
     return AdaptiveLearningService.get_feedbacks(
         db=db,
@@ -54,7 +63,7 @@ def list_feedbacks(
 )
 def submit_flow_feedback(
     payload: Dict[str, Any] = Body(...),
-    current_user: UserModel = Depends(get_current_active_user),
+    current_user: UserModel = Depends(require_analyst),
     db: Session = Depends(get_db),
 ) -> Dict[str, Any]:
     feedback_id = payload.get("feedback_id")
@@ -124,6 +133,7 @@ def trigger_retraining(
 def list_training_runs(
     limit: int = Query(20, ge=1, le=50),
     db: Session = Depends(get_db),
+    _user=Depends(require_analyst),
 ) -> List[Dict[str, Any]]:
     return AdaptiveLearningService.list_runs(db=db, limit=limit)
 

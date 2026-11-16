@@ -269,6 +269,10 @@ class MLService:
             ]
             explanation_status = "SKIPPED_LOW_RISK"
 
+        active_ver = cls._active_version
+        active_details = cls.get_registry().get(active_ver, {})
+        model_name = active_details.get("name", active_ver)
+
         return PredictionResponse(
             risk_score=pred_output.risk_score,
             threat_level=pred_output.threat_level,
@@ -279,6 +283,8 @@ class MLService:
             class_probabilities=pred_output.class_probabilities,
             top_contributing_features=contributing,
             explanation_status=explanation_status,
+            model_version=active_ver,
+            model_name=model_name,
         )
 
     @classmethod

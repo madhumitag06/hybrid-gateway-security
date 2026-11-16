@@ -33,11 +33,14 @@ datas = [
     (str(WORKSPACE_ROOT / "dist"), "dist"),
     (str(WORKSPACE_ROOT / "ml" / "models"), "ml/models"),
     (str(WORKSPACE_ROOT / "backend" / "alembic"), "backend/alembic"),
+    (str(WORKSPACE_ROOT / "backend" / "alembic.ini"), "backend"),
     (str(WORKSPACE_ROOT / "backend" / "app" / "data"), "backend/app/data"),
     (str(WORKSPACE_ROOT / "backend" / "app" / "services" / "evaluation" / "benchmark_dataset_representative.json"), "backend/app/services/evaluation"),
 ]
-if (WORKSPACE_ROOT / ".env").is_file():
-    datas.append((str(WORKSPACE_ROOT / ".env"), "."))
+# SEC-04: Exclude active .env files containing local secrets from the packaged binary.
+# Include only the safe non-sensitive template .env.example
+if (WORKSPACE_ROOT / ".env.example").is_file():
+    datas.append((str(WORKSPACE_ROOT / ".env.example"), "."))
 datas += collect_data_files("shap")
 datas += collect_data_files("xgboost")
 datas += collect_data_files("lightgbm")

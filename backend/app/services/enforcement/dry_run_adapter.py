@@ -43,7 +43,8 @@ class DryRunAdapter(EnforcementAdapter):
         return EnforcementResult(
             success=True,
             rule_id=rule_id,
-            target_ip="0.0.0.0",
+            # Simulated rule representation, not socket binding
+            target_ip="0.0.0.0",  # nosec B104
             target_port=None,
             action="Allow",
             status="REVOKED",

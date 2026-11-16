@@ -9,6 +9,11 @@ system identity profiles, and persists policy action updates.
 from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, Path, Query
 from sqlalchemy.orm import Session
+from backend.app.api.deps import (
+    get_current_active_user,
+    require_analyst,
+    require_operator,
+)
 from backend.app.db.session import get_db
 from backend.app.schemas.dashboard import (
     AICopilotBriefingResponse,
@@ -35,6 +40,7 @@ router = APIRouter(tags=["Dashboard"])
 def get_dashboard(
     time_range: Optional[str] = Query(None, alias="range", description="Time filter: '1h', '24h', '7d', '30d', 'all'"),
     db: Session = Depends(get_db),
+    _user=Depends(require_analyst),
 ) -> DashboardDataSchema:
     return DashboardService.get_dashboard_data(db=db, time_range=time_range)
 
@@ -49,6 +55,7 @@ def get_dashboard(
 def search_gateway(
     q: str = Query(..., min_length=1, description="Search query term (IP, event ID, domain, attack type, rule)"),
     db: Session = Depends(get_db),
+    _user=Depends(require_analyst),
 ) -> SearchResultsSchema:
     return DashboardService.search_gateway(db=db, query=q)
 
@@ -60,7 +67,10 @@ def search_gateway(
     description="Returns console profile identity, active execution environments, process uptime metrics, and safety guardrail statuses.",
 )
 @router.get("/v1/system/profile", response_model=SystemProfileSchema, include_in_schema=False)
-def get_system_profile(db: Session = Depends(get_db)) -> SystemProfileSchema:
+def get_system_profile(
+    db: Session = Depends(get_db),
+    _user=Depends(require_analyst),
+) -> SystemProfileSchema:
     return DashboardService.get_system_profile(db=db)
 
 
@@ -70,7 +80,9 @@ def get_system_profile(db: Session = Depends(get_db)) -> SystemProfileSchema:
     description="Returns the configured LLM provider (none, groq, openai), model identifier, and active advisory role.",
 )
 @router.get("/v1/system/ai-status", include_in_schema=False)
-def get_ai_status() -> Dict[str, Any]:
+def get_ai_status(
+    _user=Depends(require_analyst),
+) -> Dict[str, Any]:
     return LLMService.get_instance().get_status()
 
 
@@ -84,6 +96,7 @@ def get_ai_status() -> Dict[str, Any]:
 def get_event_ai_briefing(
     event_id: str = Path(..., description="ID of the security event to analyze"),
     db: Session = Depends(get_db),
+    _user=Depends(require_analyst),
 ) -> AICopilotBriefingResponse:
     return DashboardService.generate_ai_briefing(db=db, event_id=event_id)
 
@@ -97,6 +110,7 @@ def get_event_ai_briefing(
 def mark_notification_read(
     event_id: str = Path(...),
     db: Session = Depends(get_db),
+    _user=Depends(get_current_active_user),
 ) -> Dict[str, Any]:
     success = DashboardService.mark_notification_read(db=db, event_id=event_id)
     return {"event_id": event_id, "is_read": True, "success": success}
@@ -110,6 +124,7 @@ def mark_notification_read(
 @router.post("/v1/notifications/read-all", include_in_schema=False)
 def mark_all_notifications_read(
     db: Session = Depends(get_db),
+    _user=Depends(get_current_active_user),
 ) -> Dict[str, Any]:
     count = DashboardService.mark_all_notifications_read(db=db)
     return {"marked_read_count": count, "success": True}
@@ -124,6 +139,7 @@ def mark_all_notifications_read(
 @router.get("/v1/notifications", response_model=List[NotificationItemSchema], include_in_schema=False)
 def list_notifications(
     db: Session = Depends(get_db),
+    _user=Depends(require_analyst),
 ) -> List[NotificationItemSchema]:
     data = DashboardService.get_dashboard_data(db=db, time_range="30d")
     return data.notifications
@@ -140,6 +156,7 @@ def update_event_action(
     event_id: str = Path(..., description="ID of the security event to update"),
     request: PolicyActionRequest = ...,
     db: Session = Depends(get_db),
+    _user=Depends(require_operator),
 ) -> PolicyActionResponse:
     return DashboardService.apply_policy_action(
         db=db,

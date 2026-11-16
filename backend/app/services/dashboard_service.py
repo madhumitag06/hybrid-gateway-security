@@ -332,14 +332,35 @@ class DashboardService:
         results: List[Tuple[PredictionResponse, SecurityEventModel]] = []
 
         try:
-            for idx, (flow_request, source_ip, destination_ip, protocol) in enumerate(items):
+            for idx, item in enumerate(items):
+                if len(item) >= 5:
+                    flow_request, source_ip, destination_ip, protocol, custom_id = item[:5]
+                else:
+                    flow_request, source_ip, destination_ip, protocol = item
+                    custom_id = None
+
+                event_id = custom_id or f"evt-{uuid.uuid4().hex[:8]}"
+
+                # Database uniqueness & idempotency guard:
+                # If custom_id is supplied and already persisted, reuse existing record to prevent duplicate events
+                if custom_id:
+                    existing_event = db.get(SecurityEventModel, event_id)
+                    if existing_event is not None:
+                        pred: PredictionResponse = MLService.predict(
+                            flow_request,
+                            enable_shap=enable_shap,
+                            shap_threshold=shap_threshold,
+                        )
+                        pred.event_id = existing_event.id
+                        results.append((pred, existing_event))
+                        continue
+
                 pred: PredictionResponse = MLService.predict(
                     flow_request,
                     enable_shap=enable_shap,
                     shap_threshold=shap_threshold,
                 )
 
-                event_id = f"evt-{uuid.uuid4().hex[:8]}"
                 risk = pred.risk_score
 
                 # Evaluate Context-Aware Policy Decision
@@ -434,7 +455,11 @@ class DashboardService:
                 from backend.app.services.shadow_service import ShadowService
                 if ShadowService.is_available():
                     shadow_evals = []
-                    for idx, (flow_req, s_ip, d_ip, proto) in enumerate(items):
+                    for idx, item in enumerate(items):
+                        flow_req = item[0]
+                        s_ip = item[1]
+                        d_ip = item[2]
+                        proto = item[3]
                         p_pred, _ = results[idx]
                         sh_eval = ShadowService.evaluate_shadow_flow(
                             flow_request=flow_req,

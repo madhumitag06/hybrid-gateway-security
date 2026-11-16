@@ -74,6 +74,8 @@ class PredictionResponse(BaseModel):
         default="CALCULATED",
         description="Status of SHAP explanation: 'CALCULATED', 'SKIPPED_LOW_RISK', or 'UNAVAILABLE'",
     )
+    model_version: Optional[str] = Field(default=None, description="Active model version used for inference")
+    model_name: Optional[str] = Field(default=None, description="Active model display name")
 
 
 class BatchPredictionRequest(BaseModel):

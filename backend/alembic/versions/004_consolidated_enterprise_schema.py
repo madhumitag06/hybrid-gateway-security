@@ -22,6 +22,13 @@ def upgrade() -> None:
     inspector = sa.inspect(bind)
     existing_tables = set(inspector.get_table_names())
 
+    # Create internal tracking table for tracking ownership of tables created by this revision
+    if "_alembic_004_created_tables" not in existing_tables:
+        op.create_table(
+            "_alembic_004_created_tables",
+            sa.Column("table_name", sa.String(length=64), primary_key=True, nullable=False),
+        )
+
     # 1. policy_audit_logs
     if "policy_audit_logs" not in existing_tables:
         op.create_table(
@@ -47,6 +54,7 @@ def upgrade() -> None:
         )
         op.create_index("ix_policy_audit_logs_event_id", "policy_audit_logs", ["event_id"], unique=False)
         op.create_index("ix_policy_audit_logs_timestamp", "policy_audit_logs", ["timestamp"], unique=False)
+        op.execute(sa.text("INSERT INTO _alembic_004_created_tables (table_name) VALUES ('policy_audit_logs')"))
 
     # 2. shadow_predictions
     if "shadow_predictions" not in existing_tables:
@@ -88,6 +96,7 @@ def upgrade() -> None:
         op.create_index("ix_shadow_predictions_candidate_risk_score", "shadow_predictions", ["candidate_risk_score"], unique=False)
         op.create_index("ix_shadow_predictions_agreement", "shadow_predictions", ["agreement"], unique=False)
         op.create_index("ix_shadow_predictions_disagreement_type", "shadow_predictions", ["disagreement_type"], unique=False)
+        op.execute(sa.text("INSERT INTO _alembic_004_created_tables (table_name) VALUES ('shadow_predictions')"))
 
     # 3. pcap_ingestions
     if "pcap_ingestions" not in existing_tables:
@@ -118,6 +127,7 @@ def upgrade() -> None:
         op.create_index("ix_pcap_ingestions_id", "pcap_ingestions", ["id"], unique=False)
         op.create_index("ix_pcap_ingestions_uploaded_at", "pcap_ingestions", ["uploaded_at"], unique=False)
         op.create_index("ix_pcap_ingestions_status", "pcap_ingestions", ["status"], unique=False)
+        op.execute(sa.text("INSERT INTO _alembic_004_created_tables (table_name) VALUES ('pcap_ingestions')"))
 
     # 4. adaptive_flow_feedbacks
     if "adaptive_flow_feedbacks" not in existing_tables:
@@ -157,6 +167,7 @@ def upgrade() -> None:
         op.create_index("ix_adaptive_flow_feedbacks_verified_label", "adaptive_flow_feedbacks", ["verified_label"], unique=False)
         op.create_index("ix_adaptive_flow_feedbacks_feedback_status", "adaptive_flow_feedbacks", ["feedback_status"], unique=False)
         op.create_index("ix_adaptive_flow_feedbacks_is_training_eligible", "adaptive_flow_feedbacks", ["is_training_eligible"], unique=False)
+        op.execute(sa.text("INSERT INTO _alembic_004_created_tables (table_name) VALUES ('adaptive_flow_feedbacks')"))
 
     # 5. adaptive_training_runs
     if "adaptive_training_runs" not in existing_tables:
@@ -181,6 +192,7 @@ def upgrade() -> None:
         op.create_index("ix_adaptive_training_runs_id", "adaptive_training_runs", ["id"], unique=False)
         op.create_index("ix_adaptive_training_runs_candidate_version", "adaptive_training_runs", ["candidate_version"], unique=True)
         op.create_index("ix_adaptive_training_runs_status", "adaptive_training_runs", ["status"], unique=False)
+        op.execute(sa.text("INSERT INTO _alembic_004_created_tables (table_name) VALUES ('adaptive_training_runs')"))
 
     # 6. cloud_accounts
     if "cloud_accounts" not in existing_tables:
@@ -205,6 +217,7 @@ def upgrade() -> None:
         op.create_index("ix_cloud_accounts_provider", "cloud_accounts", ["provider"], unique=False)
         op.create_index("ix_cloud_accounts_account_id", "cloud_accounts", ["account_id"], unique=False)
         op.create_index("ix_cloud_accounts_status", "cloud_accounts", ["status"], unique=False)
+        op.execute(sa.text("INSERT INTO _alembic_004_created_tables (table_name) VALUES ('cloud_accounts')"))
 
     # 7. cloud_resources
     if "cloud_resources" not in existing_tables:
@@ -234,6 +247,7 @@ def upgrade() -> None:
         op.create_index("ix_cloud_resources_provider", "cloud_resources", ["provider"], unique=False)
         op.create_index("ix_cloud_resources_resource_type", "cloud_resources", ["resource_type"], unique=False)
         op.create_index("ix_cloud_resources_resource_id", "cloud_resources", ["resource_id"], unique=False)
+        op.execute(sa.text("INSERT INTO _alembic_004_created_tables (table_name) VALUES ('cloud_resources')"))
 
     # 8. cloud_telemetry_checkpoints
     if "cloud_telemetry_checkpoints" not in existing_tables:
@@ -256,6 +270,7 @@ def upgrade() -> None:
         op.create_index("ix_cloud_telemetry_checkpoints_id", "cloud_telemetry_checkpoints", ["id"], unique=False)
         op.create_index("ix_cloud_telemetry_checkpoints_provider", "cloud_telemetry_checkpoints", ["provider"], unique=False)
         op.create_index("ix_cloud_telemetry_checkpoints_account_id", "cloud_telemetry_checkpoints", ["account_id"], unique=False)
+        op.execute(sa.text("INSERT INTO _alembic_004_created_tables (table_name) VALUES ('cloud_telemetry_checkpoints')"))
 
     # 9. cloud_telemetry_ingestions
     if "cloud_telemetry_ingestions" not in existing_tables:
@@ -283,12 +298,20 @@ def upgrade() -> None:
         op.create_index("ix_cloud_telemetry_ingestions_id", "cloud_telemetry_ingestions", ["id"], unique=False)
         op.create_index("ix_cloud_telemetry_ingestions_provider", "cloud_telemetry_ingestions", ["provider"], unique=False)
         op.create_index("ix_cloud_telemetry_ingestions_account_id", "cloud_telemetry_ingestions", ["account_id"], unique=False)
+        op.execute(sa.text("INSERT INTO _alembic_004_created_tables (table_name) VALUES ('cloud_telemetry_ingestions')"))
 
 
 def downgrade() -> None:
     bind = op.get_bind()
     inspector = sa.inspect(bind)
     existing_tables = set(inspector.get_table_names())
+
+    # Only drop tables that were explicitly created by this revision (004)
+    # This prevents dropping pre-existing tables that revision 004 skipped.
+    created_by_004: set[str] = set()
+    if "_alembic_004_created_tables" in existing_tables:
+        res = bind.execute(sa.text("SELECT table_name FROM _alembic_004_created_tables")).fetchall()
+        created_by_004 = {row[0] for row in res}
 
     tables_to_drop = [
         "cloud_telemetry_ingestions",
@@ -303,5 +326,8 @@ def downgrade() -> None:
     ]
 
     for table in tables_to_drop:
-        if table in existing_tables:
+        if table in created_by_004 and table in existing_tables:
             op.drop_table(table)
+
+    if "_alembic_004_created_tables" in existing_tables:
+        op.drop_table("_alembic_004_created_tables")

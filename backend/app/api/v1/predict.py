@@ -5,9 +5,10 @@ Handles network flow threat analysis requests using the Phase 1 machine learning
 and persists results into PostgreSQL.
 """
 
-from typing import Dict, List
+from typing import Any, Dict, List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
+from backend.app.api.deps import require_service_or_trusted_network
 from backend.app.db.session import get_db
 from backend.app.schemas.predict import (
     BatchPredictionRequest,
@@ -29,6 +30,7 @@ router = APIRouter(prefix="/v1/predict", tags=["Prediction"])
 )
 def predict_flow(
     request: NetworkFlowRequest,
+    _auth: Any = Depends(require_service_or_trusted_network),
     db: Session = Depends(get_db),
 ) -> PredictionResponse:
     try:
@@ -58,6 +60,7 @@ def predict_flow(
 )
 def predict_flow_batch(
     request: BatchPredictionRequest,
+    _auth: Any = Depends(require_service_or_trusted_network),
     db: Session = Depends(get_db),
 ) -> BatchPredictionResponse:
     try:
@@ -88,7 +91,9 @@ def predict_flow_batch(
     summary="Get sample flow presets for interactive testing",
     description="Returns verified baseline and anomaly flow vectors for interactive testing.",
 )
-def get_test_presets() -> Dict[str, NetworkFlowRequest]:
+def get_test_presets(
+    _auth: Any = Depends(require_service_or_trusted_network),
+) -> Dict[str, NetworkFlowRequest]:
     return {
         "BENIGN_HTTPS": NetworkFlowRequest(
             packet_count=25,

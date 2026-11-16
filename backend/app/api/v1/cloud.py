@@ -32,14 +32,24 @@ try:
     from backend.app.cloud.services.cloud_connection_manager import CloudConnectionManager
     from backend.app.cloud.services.cloud_health_monitor import CloudHealthMonitor
     from backend.app.cloud.services.cloud_registry import CloudRegistry
-    from backend.app.api.deps import require_admin, require_operator
+    from backend.app.api.deps import (
+        require_admin,
+        require_analyst,
+        require_operator,
+        require_service_or_trusted_network,
+    )
     from backend.app.cloud.services.telemetry_checkpoint_service import TelemetryCheckpointService
     from backend.app.cloud.services.telemetry_normalizer import TelemetryNormalizer
     from backend.app.db.session import get_db
     from backend.app.models.cloud_account import CloudTelemetryCheckpointModel
     from ml.features.extractor import FEATURE_NAMES_V2
 except ImportError:
-    from app.api.deps import require_admin, require_operator
+    from app.api.deps import (
+        require_admin,
+        require_analyst,
+        require_operator,
+        require_service_or_trusted_network,
+    )
     from app.cloud.schemas.cloud_account import (
         CloudAccountConfigSchema,
         CloudAccountCreateRequest,
@@ -71,7 +81,7 @@ router = APIRouter(prefix="/cloud", tags=["Multi-Cloud Architecture"])
 
 
 @router.get("/providers", response_model=Dict[str, Any])
-def list_supported_providers():
+def list_supported_providers(_user=Depends(require_analyst)):
     """
     List supported cloud providers and their static capability matrix.
     """
@@ -113,6 +123,7 @@ def list_supported_providers():
 def list_accounts(
     provider: Optional[str] = Query(None, description="Filter by provider: AWS, GCP, AZURE, DOCKER_LAB"),
     db: Session = Depends(get_db),
+    _user=Depends(require_analyst),
 ):
     """
     List configured cloud accounts with current connection statuses.
@@ -207,6 +218,7 @@ def register_or_update_account(
 def test_provider_connection(
     provider: str,
     config: Optional[CloudAccountConfigSchema] = None,
+    _user=Depends(require_operator),
 ):
     """
     Test connectivity and caller identity for a specific provider.
@@ -279,6 +291,7 @@ def test_provider_connection(
 def discover_aws_network_resources(
     region: Optional[str] = Query(None, description="Optional region override"),
     db: Session = Depends(get_db),
+    _user=Depends(require_operator),
 ):
     """
     Triggers read-only AWS EC2 discovery of VPCs, Subnets, Route Tables, Security Groups, NACLs, and Flow Logs.
@@ -325,6 +338,7 @@ def discover_aws_network_resources(
 @router.get("/accounts/AWS/flow-logs", response_model=Dict[str, Any])
 def get_aws_flow_log_subscriptions(
     region: Optional[str] = Query(None, description="Optional region override"),
+    _user=Depends(require_analyst),
 ):
     """
     Inspects active VPC Flow Log subscriptions on AWS, identifying destinations (CloudWatch Logs vs S3).
@@ -346,6 +360,7 @@ def poll_aws_telemetry(
     s3_bucket: Optional[str] = Query(None, description="Specific S3 bucket destination"),
     mock_fallback: bool = Query(False, description="Allow mock fixture fallback if no live AWS flow logs exist"),
     db: Session = Depends(get_db),
+    _user=Depends(require_operator),
 ):
     """
     Polls real AWS VPC flow log events from CloudWatch Logs or Amazon S3,
@@ -452,6 +467,7 @@ def poll_aws_telemetry(
 @router.get("/accounts/AWS/telemetry-status", response_model=Dict[str, Any])
 def get_aws_telemetry_status(
     db: Session = Depends(get_db),
+    _user=Depends(require_analyst),
 ):
     """
     Returns live ingestion health metrics, source identifier, and last checkpoint information.
@@ -536,6 +552,7 @@ def get_aws_telemetry_status(
 def get_aws_telemetry_history(
     limit: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
+    _user=Depends(require_analyst),
 ):
     """
     Returns historical ingestion audit logs for AWS telemetry.
@@ -607,6 +624,7 @@ def list_cloud_resources(
     resource_type: Optional[str] = Query(None, description="Filter by type: VPC, SUBNET, GATEWAY, SECURITY_GROUP"),
     sync_live: bool = Query(False, description="Force re-sync from active cloud providers"),
     db: Session = Depends(get_db),
+    _user=Depends(require_analyst),
 ):
     """
     List discovered network resources across clouds.
@@ -695,7 +713,10 @@ def list_cloud_resources(
 
 
 @router.get("/inventory/summary", response_model=CloudInventorySummary)
-def get_inventory_summary(db: Session = Depends(get_db)):
+def get_inventory_summary(
+    db: Session = Depends(get_db),
+    _user=Depends(require_analyst),
+):
     """
     Return summary counts of VPCs, Subnets, Gateways, and Firewalls across all clouds.
     """
@@ -706,6 +727,7 @@ def get_inventory_summary(db: Session = Depends(get_db)):
 def ingest_cloud_telemetry(
     batch: CloudTelemetryBatchRequest,
     db: Session = Depends(get_db),
+    _auth=Depends(require_service_or_trusted_network),
 ):
     """
     Ingest, normalize, evaluate via XGBoost V2, and persist a batch of cloud flow telemetry.
@@ -752,7 +774,10 @@ def ingest_cloud_telemetry(
 
 
 @router.get("/health", response_model=Dict[str, Any])
-def get_multi_cloud_health(db: Session = Depends(get_db)):
+def get_multi_cloud_health(
+    db: Session = Depends(get_db),
+    _user=Depends(require_analyst),
+):
     """
     Real-time health check across AWS, GCP, Azure, and Docker Lab adapters.
     """

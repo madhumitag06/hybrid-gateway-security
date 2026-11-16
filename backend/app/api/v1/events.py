@@ -7,6 +7,7 @@ Provides historical querying, filtering, pagination, and audit logs for PostgreS
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
+from backend.app.api.deps import require_analyst
 from backend.app.db.session import get_db
 from backend.app.repositories.policy_audit_repo import PolicyAuditRepository
 from backend.app.repositories.security_event_repo import SecurityEventRepository
@@ -76,6 +77,7 @@ def list_events(
     limit: int = Query(50, ge=1, le=500, description="Page limit"),
     offset: int = Query(0, ge=0, description="Page offset"),
     db: Session = Depends(get_db),
+    _user=Depends(require_analyst),
 ) -> EventListResponseSchema:
     repo = SecurityEventRepository(db)
     events, total = repo.list_events(
@@ -106,6 +108,7 @@ def list_events(
 def get_event_detail(
     event_id: str,
     db: Session = Depends(get_db),
+    _user=Depends(require_analyst),
 ) -> SecurityEventDetailSchema:
     repo = SecurityEventRepository(db)
     event = repo.get_by_id(event_id)
@@ -135,6 +138,7 @@ def get_event_detail(
 def get_event_history(
     event_id: str,
     db: Session = Depends(get_db),
+    _user=Depends(require_analyst),
 ) -> EventHistoryResponseSchema:
     repo = SecurityEventRepository(db)
     if not repo.get_by_id(event_id):
@@ -172,6 +176,7 @@ def get_event_history(
 def get_event_explanation(
     event_id: str,
     db: Session = Depends(get_db),
+    _user=Depends(require_analyst),
 ) -> EventExplanationResponse:
     repo = SecurityEventRepository(db)
     event = repo.get_by_id(event_id)

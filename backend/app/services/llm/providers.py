@@ -168,7 +168,8 @@ class GroqLLMProvider(LLMProvider):
                 method="POST",
             )
 
-            with urllib.request.urlopen(req, timeout=8) as resp:
+            # HTTPS endpoint with fixed trusted provider URL
+            with urllib.request.urlopen(req, timeout=8) as resp:  # nosec B310
                 result = json.loads(resp.read().decode("utf-8"))
                 content = json.loads(result["choices"][0]["message"]["content"])
                 return {
@@ -280,7 +281,8 @@ class OpenAILLMProvider(LLMProvider):
                 method="POST",
             )
 
-            with urllib.request.urlopen(req, timeout=8) as resp:
+            # HTTPS endpoint with fixed trusted provider URL
+            with urllib.request.urlopen(req, timeout=8) as resp:  # nosec B310
                 result = json.loads(resp.read().decode("utf-8"))
                 content = json.loads(result["choices"][0]["message"]["content"])
                 return {

@@ -30,34 +30,42 @@ jobs:
           node-version: "20"
           cache: "npm"
 
-      - name: Build Frontend Distribution
-        run: |
-          npm ci
-          npm run build
+      - name: Install Frontend Dependencies
+        run: npm ci
 
       - name: Install Python & PyInstaller Dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r backend/requirements.txt
-          pip install pyinstaller xgboost
+          pip install -r ml/requirements.txt
+          pip install pyinstaller xgboost scikit-learn
 
-      - name: Build Standalone Executable
+      - name: Execute Automated 17-Step Packaging Pipeline
+        shell: powershell
         run: |
-          pyinstaller gateway.spec --clean --noconfirm
+          powershell.exe -ExecutionPolicy Bypass -File backend/build_exe.ps1
 
-      - name: Verify Packaged XGBoost Native DLL
+      - name: Verify Packaged Distribution & Secret Hygiene
+        shell: powershell
         run: |
-          $exe = "dist\AdaptiveSecurityGateway.exe"
-          if (Test-Path $exe) {
-            Write-Host "Executable generated successfully: $exe"
-          } else {
-            Write-Error "Executable generation failed."
+          $exe = "backend\executable\AdaptiveSecurityGateway\AdaptiveSecurityGateway.exe"
+          if (-not (Test-Path $exe)) {
+            Write-Error "Executable generation failed: $exe not found."
+            exit 1
           }
+          if (Test-Path "backend\executable\AdaptiveSecurityGateway\.env") {
+            Write-Error "SEC-04 Violation: Embedded .env detected in root output."
+            exit 1
+          }
+          if (Test-Path "backend\executable\AdaptiveSecurityGateway\_internal\.env") {
+            Write-Error "SEC-04 Violation: Embedded .env detected in _internal."
+            exit 1
+          }
+          Write-Host "Executable and asset distribution successfully verified: $exe"
 
-      - name: Upload Windows Executable Artifact
+      - name: Upload Windows Executable Distribution Artifact
         uses: actions/upload-artifact@v4
         with:
           name: AdaptiveSecurityGateway-Windows-x64
-          path: dist/AdaptiveSecurityGateway.exe
+          path: backend/executable/AdaptiveSecurityGateway/
           retention-days: 14
-

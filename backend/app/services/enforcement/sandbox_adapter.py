@@ -147,7 +147,8 @@ class SandboxAdapter(EnforcementAdapter):
             method="POST",
         )
         try:
-            with urllib.request.urlopen(req, timeout=1.5) as resp:
+            # Internal isolated lab router HTTP endpoint
+            with urllib.request.urlopen(req, timeout=1.5) as resp:  # nosec B310
                 if 200 <= resp.status < 300:
                     return True, "Synchronized with isolated lab-router FORWARD firewall chain."
                 return False, f"lab-router returned HTTP {resp.status}."
@@ -300,10 +301,11 @@ class SandboxAdapter(EnforcementAdapter):
                             "lab_router_note": lab_sync_msg,
                         },
                     )
+                # Fallback placeholder IP for failed lookup, not socket binding
                 return EnforcementResult(
                     success=False,
                     rule_id=rule_id,
-                    target_ip="0.0.0.0",
+                    target_ip="0.0.0.0",  # nosec B104
                     target_port=None,
                     action="Allow",
                     status="FAILED",
@@ -402,7 +404,8 @@ class SandboxAdapter(EnforcementAdapter):
             if "localhost" in router_url.lower() or "127.0.0.1" in router_url or "::1" in router_url:
                 return 0
             try:
-                with urllib.request.urlopen(f"{router_url}/api/status", timeout=1.5) as resp:
+                # Internal isolated lab router HTTP endpoint
+                with urllib.request.urlopen(f"{router_url}/api/status", timeout=1.5) as resp:  # nosec B310
                     status_data = json.loads(resp.read().decode("utf-8"))
                 router_rules = list(status_data.get("active_containment_rules", []))
                 router_rule_ids = {str(r.get("rule_id")) for r in router_rules}

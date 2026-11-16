@@ -8,11 +8,16 @@ import os
 from pathlib import Path
 import shutil
 import tempfile
-from typing import List, Optional
+from typing import Any, List, Optional
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
+from backend.app.api.deps import (
+    require_analyst,
+    require_operator,
+    require_service_or_trusted_network,
+)
 from backend.app.db.session import get_db
 from backend.app.schemas.ingest import (
     IngestionStatusResponse,
@@ -33,7 +38,9 @@ ALLOWED_EXTENSIONS = {".pcap", ".pcapng", ".cap"}
     summary="Get traffic ingestion engine status",
     description="Returns operational status, cumulative counters, and platform capture support details.",
 )
-def get_ingestion_status() -> IngestionStatusResponse:
+def get_ingestion_status(
+    _user=Depends(require_analyst),
+) -> IngestionStatusResponse:
     return IngestionService.get_status()
 
 
@@ -43,7 +50,9 @@ def get_ingestion_status() -> IngestionStatusResponse:
     summary="List available sample PCAP test fixtures",
     description="Returns metadata for pre-packaged reproducible PCAP captures for demonstrations and tests.",
 )
-def list_sample_pcaps() -> List[SamplePcapInfo]:
+def list_sample_pcaps(
+    _user=Depends(require_analyst),
+) -> List[SamplePcapInfo]:
     return IngestionService.list_samples()
 
 
@@ -57,6 +66,7 @@ def ingest_sample_pcap(
     sample_filename: str,
     persist: bool = Query(True, description="Whether to persist evaluated flow events into PostgreSQL"),
     db: Session = Depends(get_db),
+    _user=Depends(require_operator),
 ) -> PcapIngestionResponse:
     target_path = IngestionService.get_sample_path(sample_filename)
     return IngestionService.ingest_pcap_file(
@@ -77,6 +87,7 @@ async def upload_and_ingest_pcap(
     file: UploadFile = File(..., description="PCAP or PCAPNG network trace file"),
     persist: bool = Form(True, description="Whether to persist evaluated flows into PostgreSQL"),
     db: Session = Depends(get_db),
+    _auth=Depends(require_service_or_trusted_network),
 ) -> PcapIngestionResponse:
     filename = file.filename or "uploaded_capture.pcap"
     ext = Path(filename).suffix.lower()
@@ -135,7 +146,10 @@ async def upload_and_ingest_pcap(
     summary="Get Most Recent PCAP Ingestion Record",
     description="Returns the most recent completed or active PCAP ingestion record from PostgreSQL.",
 )
-def get_latest_pcap_ingestion(db: Session = Depends(get_db)):
+def get_latest_pcap_ingestion(
+    db: Session = Depends(get_db),
+    _user=Depends(require_analyst),
+):
     rec = IngestionService.get_latest_ingestion(db)
     if not rec:
         return {"status": "NO_PREVIOUS_INGESTION", "ingestion": None}
@@ -151,6 +165,7 @@ def list_pcap_ingestion_history(
     page: int = Query(1, ge=1),
     page_size: int = Query(10, ge=1, le=50),
     db: Session = Depends(get_db),
+    _user=Depends(require_analyst),
 ):
     return IngestionService.get_history(db=db, page=page, page_size=page_size)
 
@@ -163,6 +178,7 @@ def list_pcap_ingestion_history(
 def get_pcap_ingestion_details(
     ingestion_id: str,
     db: Session = Depends(get_db),
+    _user=Depends(require_analyst),
 ):
     rec = IngestionService.get_ingestion_by_id(db, ingestion_id)
     if not rec:

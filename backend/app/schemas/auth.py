@@ -72,7 +72,7 @@ class TokenResponse(BaseModel):
 
 
 class RefreshTokenRequest(BaseModel):
-    refresh_token: str = Field(..., description="Signed refresh token string")
+    refresh_token: Optional[str] = Field(None, description="Signed refresh token string (optional if provided via HttpOnly cookie)")
 
 
 class PasswordChangeRequest(BaseModel):
@@ -101,6 +101,21 @@ class GoogleTokenExchangeRequest(BaseModel):
     id_token: Optional[str] = None
     code: Optional[str] = None
     state: Optional[str] = None
+
+
+class AdminUserCreateRequest(BaseModel):
+    full_name: str = Field(..., min_length=2, max_length=100, description="Full name of operator")
+    email: str = Field(..., min_length=3, max_length=255, description="Unique email address")
+    password: str = Field(..., min_length=8, max_length=128, description="Initial password (min 8 chars)")
+    role: UserRole = Field("ANALYST", description="Assigned authorization role")
+
+    @field_validator("email")
+    @classmethod
+    def normalize_email(cls, v: str) -> str:
+        clean = v.strip().lower()
+        if "@" not in clean or len(clean.split("@")) != 2 or not clean.split("@")[0] or not clean.split("@")[1]:
+            raise ValueError("Invalid email format")
+        return clean
 
 
 class AdminUserListResponse(BaseModel):

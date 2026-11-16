@@ -8,6 +8,7 @@ and on-demand SHAP explanations for arbitrary network flow vectors.
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
+from backend.app.api.deps import require_analyst
 from backend.app.db.session import get_db
 from backend.app.schemas.analytics import (
     AnalyticsSummaryResponse,
@@ -29,7 +30,10 @@ router = APIRouter(prefix="/analytics", tags=["Security Analytics & Explainabili
     summary="Get Security Analytics Summary",
     description="Returns historical distributions across Analytics Histogram Buckets, attack types, hybrid zones, and telemetry provenance.",
 )
-def get_analytics_summary(db: Session = Depends(get_db)) -> AnalyticsSummaryResponse:
+def get_analytics_summary(
+    db: Session = Depends(get_db),
+    _user=Depends(require_analyst),
+) -> AnalyticsSummaryResponse:
     return AnalyticsService.get_summary(db)
 
 
@@ -39,7 +43,10 @@ def get_analytics_summary(db: Session = Depends(get_db)) -> AnalyticsSummaryResp
     summary="Explain Flow Vector Inference via SHAP",
     description="Computes full 10-feature Shapley attributions, predicted class probability baseline, and policy engine decision trace for an arbitrary flow vector.",
 )
-def explain_arbitrary_flow(req: FlowExplanationRequest) -> FlowExplanationResponse:
+def explain_arbitrary_flow(
+    req: FlowExplanationRequest,
+    _user=Depends(require_analyst),
+) -> FlowExplanationResponse:
     # 1. Real ML Inference
     pred = MLService.predict(req.flow)
 

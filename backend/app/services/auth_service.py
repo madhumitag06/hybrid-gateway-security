@@ -78,7 +78,13 @@ class AuthService:
             )
 
         hashed = hash_password(req.password)
-        effective_role = req.role if req.role in ("OPERATOR", "ANALYST", "AUDITOR", "USER") else "ANALYST"
+        # SEC-02: Public self-registration is strictly forced to least-privileged non-mutating roles (USER or ANALYST).
+        # Anonymous public callers can NEVER obtain OPERATOR, ADMIN, or AUDITOR privileges via self-registration.
+        if req.role == "USER":
+            effective_role = "USER"
+        else:
+            effective_role = "ANALYST"
+
         new_user = UserModel(
             email=req.email,
             password_hash=hashed,
@@ -91,6 +97,33 @@ class AuthService:
         )
         user_repo.create(new_user)
         return cls._create_token_response(new_user, db)
+
+    @classmethod
+    def admin_provision_user(cls, req: Any, db: Session) -> UserResponse:
+        """
+        SEC-02: Authorized administrator user provisioning.
+        Allows authenticated operators with ADMIN role to provision accounts with any role.
+        """
+        user_repo = UserRepository(db)
+        existing = user_repo.get_by_email(req.email)
+        if existing:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="An account with this email address already exists.",
+            )
+        hashed = hash_password(req.password)
+        new_user = UserModel(
+            email=req.email,
+            password_hash=hashed,
+            full_name=req.full_name,
+            role=req.role,
+            auth_provider="LOCAL",
+            is_active=True,
+            is_verified=True,
+            last_login_at=None,
+        )
+        user_repo.create(new_user)
+        return UserResponse.model_validate(new_user)
 
     @classmethod
     def login(cls, req: UserLoginRequest, db: Session) -> TokenResponse:
@@ -315,8 +348,17 @@ class AuthService:
         if not id_token_str:
             raise HTTPException(status_code=400, detail="Missing Google ID token.")
 
-        # Test/Mock hook for automated test suites
-        if id_token_str.startswith("mock_google_"):
+        # SEC-01: Development-only mock token handling.
+        # Strictly forbidden in production (APP_ENV in ("production", "prod")).
+        # In non-production, disabled by default unless allow_mock_auth is explicitly enabled.
+        is_production = settings.app_env.strip().lower() in ("production", "prod")
+        if id_token_str.startswith("mock_") or id_token_str.startswith("mock_google_"):
+            if is_production or not getattr(settings, "allow_mock_auth", False):
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Mock Google authentication is disabled or forbidden in production.",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
             parts = id_token_str.split(":")
             email_part = parts[1] if len(parts) > 1 else "google_test@example.com"
             name_part = parts[2] if len(parts) > 2 else "Google Operator"
@@ -334,14 +376,32 @@ class AuthService:
                 if token_info_res.status_code != 200:
                     raise HTTPException(
                         status_code=status.HTTP_401_UNAUTHORIZED,
-                        detail="Invalid Google ID token signature.",
+                        detail="Invalid Google ID token signature or token expired.",
+                        headers={"WWW-Authenticate": "Bearer"},
                     )
                 user_info = token_info_res.json()
                 if settings.google_client_id and user_info.get("aud") != settings.google_client_id:
                     raise HTTPException(
                         status_code=status.HTTP_401_UNAUTHORIZED,
                         detail="Google token audience mismatch.",
+                        headers={"WWW-Authenticate": "Bearer"},
                     )
+                iss = user_info.get("iss")
+                if iss not in ("accounts.google.com", "https://accounts.google.com"):
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="Invalid Google token issuer.",
+                        headers={"WWW-Authenticate": "Bearer"},
+                    )
+                email_verified = user_info.get("email_verified")
+                if email_verified not in (True, "true", "True", 1):
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="Google account email is not verified.",
+                        headers={"WWW-Authenticate": "Bearer"},
+                    )
+        except HTTPException:
+            raise
         except httpx.RequestError as exc:
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
@@ -364,13 +424,26 @@ class AuthService:
         user = user_repo.get_by_email(email)
 
         if user:
-            # Safe account linking: link Google subject ID if not present
+            # SEC-01: Ensure Google authentication cannot grant ADMIN, OPERATOR, or other privileged roles
+            # based solely on email matching. Local accounts cannot be claimed without prior authorization.
+            if user.auth_provider == "LOCAL" and user.role in ("ADMIN", "OPERATOR"):
+                if not user.google_subject_id or user.google_subject_id != google_sub:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Administrative and Operator accounts cannot be claimed via external OAuth without prior administrator authorization.",
+                    )
+            if user.google_subject_id and user.google_subject_id != google_sub:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Google subject identifier mismatch for this account.",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
             if not user.google_subject_id and google_sub:
                 user.google_subject_id = google_sub
             user.last_login_at = datetime.now(timezone.utc)
             user_repo.update(user)
         else:
-            # Create new user via Google
+            # Create new user via Google - always least-privileged "ANALYST"
             user = UserModel(
                 email=email,
                 password_hash=None,  # No local password for OAuth accounts

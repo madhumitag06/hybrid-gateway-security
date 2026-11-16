@@ -17,6 +17,8 @@ fi
 mkdir -p /var/lib/hybrid-lab/telemetry/pcaps
 mkdir -p /var/lib/hybrid-lab/telemetry/flowlogs
 mkdir -p /var/lib/hybrid-lab/telemetry/metadata
+mkdir -p /var/lib/hybrid-lab/telemetry/triggers
+chmod 0777 /var/lib/hybrid-lab/telemetry/triggers 2>/dev/null || true
 
 touch /tmp/traffic_gen_ready
 
@@ -24,5 +26,5 @@ if [ "$#" -gt 0 ]; then
     exec "$@"
 fi
 
-echo "[+] traffic-generator ready in standby mode. Run scenarios via scripts/generate-traffic.ps1"
-exec tail -f /dev/null
+echo "[+] Starting traffic trigger daemon on /var/lib/hybrid-lab/telemetry/triggers..."
+exec python3 /app/trigger_daemon.py

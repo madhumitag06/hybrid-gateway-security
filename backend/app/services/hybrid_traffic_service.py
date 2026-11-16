@@ -6,12 +6,14 @@ between On-Premises (10.10.10.0/24) and Simulated Cloud VPC (10.20.10.0/24)
 via the shared telemetry volume trigger bus.
 """
 
+from __future__ import annotations
+
 from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 import uuid
 import httpx
 
@@ -19,6 +21,16 @@ from backend.app.config import settings
 
 TELEMETRY_DIR = Path(getattr(settings, "lab_telemetry_dir", "/var/lib/hybrid-lab/telemetry"))
 TRIGGERS_DIR = TELEMETRY_DIR / "triggers"
+
+DEFAULT_SCENARIO_TIMEOUTS: Dict[str, float] = {
+    "containment": 8.0,          # Measured ~0.9s
+    "suspicious_transfer": 10.0, # Measured ~3.0s
+    "port_scan": 10.0,           # Measured ~3.9s
+    "benign": 15.0,              # Measured ~8.7s
+    "traffic_spike": 15.0,       # Measured ~8.7s
+    "brute_force": 22.0,         # Measured ~12.5-13.5s; 22.0s ensures safe operational headroom
+    "all": 50.0,                 # Full 6-scenario sequential benchmark suite
+}
 
 SCENARIO_METADATA = [
     {
@@ -114,52 +126,174 @@ class HybridTrafficService:
         return SCENARIO_METADATA
 
     @classmethod
+    def is_daemon_online(cls) -> Tuple[bool, Optional[Dict[str, Any]]]:
+        """
+        Checks whether the background traffic-generator daemon is actively heartbeat-reporting.
+        """
+        hb_file = TRIGGERS_DIR / ".daemon_heartbeat.json"
+        if not hb_file.exists():
+            return False, None
+        try:
+            data = json.loads(hb_file.read_text(encoding="utf-8"))
+            hb_ts = float(data.get("timestamp", 0.0))
+            if (time.time() - hb_ts) <= 30.0:
+                return True, data
+            return False, data
+        except Exception:
+            return False, None
+
+    @classmethod
+    def reconcile_orphaned_responses(cls, scenario_key: Optional[str] = None) -> List[Dict[str, Any]]:
+        """
+        Reconciles and safely clears orphaned .res response files from prior runs that completed late.
+        Prevents stale response accumulation in the shared telemetry volume.
+        """
+        reconciled = []
+        if not TRIGGERS_DIR.exists():
+            return reconciled
+        pattern = f"run_{scenario_key}_*.res" if scenario_key else "*.res"
+        for res_f in list(TRIGGERS_DIR.glob(pattern)):
+            try:
+                res_data = json.loads(res_f.read_text(encoding="utf-8"))
+                reconciled.append({
+                    "res_file": res_f.name,
+                    "scenario": res_data.get("scenario"),
+                    "status": res_data.get("status", "COMPLETED"),
+                    "completed_at": res_data.get("completed_at"),
+                })
+                res_f.unlink(missing_ok=True)
+            except Exception:
+                res_f.unlink(missing_ok=True)
+        return reconciled
+
+    @classmethod
     def run_scenario(cls, scenario_id: str, timeout_seconds: float = 12.0) -> Dict[str, Any]:
         """
         Dispatches a scenario trigger to traffic-generator via shared volume and awaits execution.
+        Distinguishes QUEUED, RUNNING, COMPLETED, FAILED, TIMED_OUT, and LATE_COMPLETION states.
+        Applies scenario-specific timeouts based on empirical execution profiles with safe margins.
         """
         scenario_key = scenario_id.strip().lower()
         valid_keys = {s["id"] for s in SCENARIO_METADATA} | {"all", "1", "2", "3", "4", "5", "6"}
         if scenario_key not in valid_keys:
             raise ValueError(f"Unknown scenario '{scenario_id}'. Valid choices: {list(valid_keys)}")
 
+        # Scenario-specific timeout adaptation:
+        # Respect caller's custom timeout if higher; otherwise allocate empirical scenario requirement
+        default_sc_timeout = DEFAULT_SCENARIO_TIMEOUTS.get(scenario_key, 15.0)
+        if timeout_seconds <= 12.0:
+            timeout_seconds = default_sc_timeout
+        else:
+            timeout_seconds = max(timeout_seconds, default_sc_timeout)
+
         TRIGGERS_DIR.mkdir(parents=True, exist_ok=True)
+        try:
+            os.chmod(TRIGGERS_DIR, 0o777)  # nosec: B103
+        except Exception:
+            pass
+
+        # Reconcile any prior orphaned .res files for this scenario before starting
+        cls.reconcile_orphaned_responses(scenario_key)
+
+        daemon_online, _ = cls.is_daemon_online()
+
         run_id = f"run_{scenario_key}_{uuid.uuid4().hex[:8]}"
         req_path = TRIGGERS_DIR / f"{run_id}.req"
+        run_path = TRIGGERS_DIR / f"{run_id}.run"
         res_path = TRIGGERS_DIR / f"{run_id}.res"
 
-        # Write request
+        # Write request file atomically with permissive mode for container UID compatibility
         payload = {"id": run_id, "scenario": scenario_key, "requested_at": datetime.now(timezone.utc).isoformat()}
-        req_path.write_text(json.dumps(payload), encoding="utf-8")
+        tmp_req_path = req_path.with_suffix(".tmp")
+        tmp_req_path.write_text(json.dumps(payload), encoding="utf-8")
+        try:
+            os.chmod(tmp_req_path, 0o666)  # nosec: B103
+        except Exception:
+            pass
+        tmp_req_path.replace(req_path)
 
         start_time = time.time()
-        # Poll for completion
+        was_running = False
+
+        # Poll for daemon acknowledgment and completion
         while time.time() - start_time < timeout_seconds:
+            if run_path.exists():
+                was_running = True
+
             if res_path.exists():
-                try:
-                    res_data = json.loads(res_path.read_text(encoding="utf-8"))
-                    res_path.unlink(missing_ok=True)
-                    return {
-                        "run_id": run_id,
-                        "scenario": scenario_key,
-                        "status": "COMPLETED",
-                        "duration_ms": round((time.time() - start_time) * 1000, 2),
-                        "output": res_data,
-                        "timestamp": datetime.now(timezone.utc).isoformat(),
-                    }
-                except Exception:
-                    pass
+                break
             time.sleep(0.3)
 
-        # Cleanup if timed out
+        # Grace check: If actively running when nominal timeout elapsed, grant a brief 2.0s grace window
+        # to capture near-deadline completions rather than falsely declaring TIMED_OUT
+        if was_running and not res_path.exists():
+            grace_deadline = time.time() + 2.0
+            while time.time() < grace_deadline:
+                if res_path.exists():
+                    break
+                time.sleep(0.2)
+
+        # Handle completion response if present
+        if res_path.exists():
+            try:
+                res_data = json.loads(res_path.read_text(encoding="utf-8"))
+                res_path.unlink(missing_ok=True)
+                req_path.unlink(missing_ok=True)
+                run_path.unlink(missing_ok=True)
+
+                is_success = res_data.get("success", False) is True or res_data.get("status") == "COMPLETED"
+                duration_ms = round((time.time() - start_time) * 1000, 2)
+                is_late = (time.time() - start_time) > timeout_seconds
+                status_label = "LATE_COMPLETION" if (is_late and is_success) else ("COMPLETED" if is_success else "FAILED")
+
+                msg = (
+                    f"Scenario '{scenario_key}' completed late ({round(duration_ms)} ms). Traffic generated across lab-router."
+                    if is_late
+                    else (res_data.get("error") if not is_success else "Traffic generated across lab-router successfully.")
+                )
+
+                return {
+                    "run_id": run_id,
+                    "scenario": scenario_key,
+                    "status": status_label,
+                    "message": msg,
+                    "duration_ms": duration_ms,
+                    "output": res_data,
+                    "late_completion": is_late,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                }
+            except Exception:
+                pass
+
+        # Cleanup markers upon definitive timeout
         req_path.unlink(missing_ok=True)
+        run_path.unlink(missing_ok=True)
         res_path.unlink(missing_ok=True)
+
+        if was_running:
+            state_at_timeout = "RUNNING"
+            timeout_msg = (
+                f"Scenario '{scenario_key}' timed out after {timeout_seconds}s while actively running "
+                "in traffic-generator container."
+            )
+        elif not daemon_online:
+            state_at_timeout = "DAEMON_OFFLINE"
+            timeout_msg = (
+                f"Traffic generator daemon is offline or did not acknowledge scenario '{scenario_key}' "
+                f"within {timeout_seconds}s. Verify the hybrid-lab-traffic-generator container is running."
+            )
+        else:
+            state_at_timeout = "QUEUED"
+            timeout_msg = (
+                f"Scenario '{scenario_key}' timed out after {timeout_seconds}s in QUEUED state (not yet acknowledged by daemon)."
+            )
 
         return {
             "run_id": run_id,
             "scenario": scenario_key,
-            "status": "DISPATCHED_ASYNC",
-            "message": "Scenario was queued for traffic-generator execution.",
+            "status": "TIMED_OUT",
+            "state_at_timeout": state_at_timeout,
+            "message": timeout_msg,
             "duration_ms": round((time.time() - start_time) * 1000, 2),
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }

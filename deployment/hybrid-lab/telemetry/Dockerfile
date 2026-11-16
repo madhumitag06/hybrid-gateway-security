@@ -12,6 +12,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 COPY entrypoint.sh /app/entrypoint.sh
+COPY ingestion_ledger.py /app/ingestion_ledger.py
 COPY sensor_service.py /app/sensor_service.py
 COPY capture/ /app/capture/
 COPY flowlog-generator/ /app/flowlog-generator/

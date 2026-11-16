@@ -15,6 +15,7 @@ WORKDIR /app
 
 COPY entrypoint.sh /app/entrypoint.sh
 COPY run_scenario.py /app/run_scenario.py
+COPY trigger_daemon.py /app/trigger_daemon.py
 COPY scenarios/ /app/scenarios/
 
 RUN sed -i 's/\r$//' /app/entrypoint.sh && chmod +x /app/entrypoint.sh

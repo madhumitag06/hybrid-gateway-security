@@ -6,6 +6,8 @@ Phase 1 ML inference, and PostgreSQL persistence with comprehensive performance 
 """
 
 from datetime import datetime, timezone
+import hashlib
+import logging
 import os
 from pathlib import Path
 import platform
@@ -147,6 +149,86 @@ class IngestionService:
         return selected[:max_eval]
 
     @classmethod
+    def _build_idempotent_response(
+        cls,
+        existing: Any,
+        file_sha256: str,
+    ) -> PcapIngestionResponse:
+        """
+        Constructs an idempotent PcapIngestionResponse from an existing completed ingestion record.
+        Guarantees events_persisted = 0 so no duplicate security events are created.
+        """
+        reconstructed_results: List[IngestedFlowResult] = []
+        for item in (existing.summary_results or []):
+            ff_sum = FlowFeatureSummary(
+                flow_id=item.get("flow_id", ""),
+                source_ip=item.get("src_ip", ""),
+                destination_ip=item.get("dst_ip", ""),
+                protocol=item.get("protocol", "TCP"),
+                dst_port=item.get("dst_port", 0),
+                packet_count=item.get("packet_count", 0),
+                byte_count=item.get("byte_count", 0),
+                duration=item.get("duration", 0.0),
+                conn_rate=0.0,
+                unique_dst_ports=1,
+                failed_auth_count=0,
+            )
+            attack_type = item.get("attack_type", "BENIGN")
+            confidence = float(item.get("confidence", 1.0))
+            pred_resp = PredictionResponse(
+                attack_type=attack_type,
+                threat_level=item.get("threat_level", "LOW"),
+                confidence=confidence,
+                risk_score=int(item.get("risk_score", 0)),
+                action_recommendation=item.get("action", "Allow"),
+                is_anomaly=attack_type != "BENIGN",
+                class_probabilities={attack_type: confidence},
+                model_name="Big Data XGBoost V2 (Clean Schema)",
+                model_version=existing.model_version,
+                event_id=item.get("event_id"),
+            )
+            reconstructed_results.append(
+                IngestedFlowResult(
+                    flow_id=item.get("flow_id", ""),
+                    flow_features=ff_sum,
+                    prediction=pred_resp,
+                    persisted_event_id=item.get("event_id"),
+                )
+            )
+
+        metrics = IngestionMetrics(
+            packets_read=existing.total_packets,
+            packets_processed=existing.total_packets,
+            packets_skipped=0,
+            flows_generated=existing.total_flows,
+            parse_duration_ms=0.0,
+            inference_duration_ms=0.0,
+            persist_duration_ms=0.0,
+            total_duration_ms=0.0,
+            throughput_packets_per_sec=0.0,
+            flows_selected_for_evaluation=existing.flows_evaluated,
+            flows_skipped_limit=max(0, existing.total_flows - existing.flows_evaluated),
+            events_persisted=0,  # 0 new events created on idempotent skip!
+        )
+
+        return PcapIngestionResponse(
+            source_type="PCAP_INGESTION",
+            filename=existing.filename,
+            file_size_bytes=existing.file_size_bytes,
+            is_demo=False,
+            metrics=metrics,
+            flows_generated=existing.total_flows,
+            flows_selected_for_evaluation=existing.flows_evaluated,
+            flows_evaluated=existing.flows_evaluated,
+            events_persisted=0,
+            flows_skipped_limit=max(0, existing.total_flows - existing.flows_evaluated),
+            high_risk_flows_count=existing.high_risk_count,
+            results_omitted_count=max(0, existing.flows_evaluated - len(reconstructed_results)),
+            is_sampled=False,
+            results=reconstructed_results,
+        )
+
+    @classmethod
     def ingest_pcap_file(
         cls,
         filepath: Path,
@@ -180,23 +262,41 @@ class IngestionService:
                 detail="Uploaded PCAP file is empty (0 bytes).",
             )
 
-        ingest_id = f"ingest-{uuid.uuid4().hex[:12]}"
+        file_sha256 = hashlib.sha256(filepath.read_bytes()).hexdigest()
+        deterministic_ingest_id = f"ingest-{file_sha256[:16]}"
+        ingest_id = deterministic_ingest_id
         ingest_rec = None
+
         if db is not None:
             try:
                 from backend.app.models.pcap_ingestion import PcapIngestionModel
-                ingest_rec = PcapIngestionModel(
-                    id=ingest_id,
-                    filename=filename,
-                    file_type="SAMPLE" if "sample" in filename.lower() else "PCAP",
-                    file_size_bytes=file_size_bytes,
-                    uploaded_at=datetime.now(timezone.utc),
-                    processing_started_at=datetime.now(timezone.utc),
-                    status="PROCESSING",
-                    model_version=MLService.get_active_version(),
-                )
-                db.add(ingest_rec)
-                db.commit()
+                existing = db.get(PcapIngestionModel, deterministic_ingest_id)
+                if existing is not None and existing.status == "COMPLETED" and persist:
+                    # Update uploaded_at to reflect latest ingestion access
+                    existing.uploaded_at = datetime.now(timezone.utc)
+                    db.commit()
+                    # Idempotent deduplication: exact same PCAP content hash already ingested
+                    return cls._build_idempotent_response(existing, file_sha256)
+
+                if existing is not None:
+                    existing.status = "PROCESSING"
+                    existing.processing_started_at = datetime.now(timezone.utc)
+                    existing.error_message = None
+                    db.commit()
+                    ingest_rec = existing
+                else:
+                    ingest_rec = PcapIngestionModel(
+                        id=deterministic_ingest_id,
+                        filename=filename,
+                        file_type="SAMPLE" if "sample" in filename.lower() else "PCAP",
+                        file_size_bytes=file_size_bytes,
+                        uploaded_at=datetime.now(timezone.utc),
+                        processing_started_at=datetime.now(timezone.utc),
+                        status="PROCESSING",
+                        model_version=MLService.get_active_version(),
+                    )
+                    db.add(ingest_rec)
+                    db.commit()
             except Exception:
                 db.rollback()
                 ingest_rec = None
@@ -286,6 +386,13 @@ class IngestionService:
                         continue
 
         except Exception as e:
+            if ingest_rec is not None and db is not None:
+                try:
+                    ingest_rec.status = "FAILED"
+                    ingest_rec.error_message = str(e)
+                    db.commit()
+                except Exception:
+                    db.rollback()
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=f"Failed to read PCAP packet stream: {str(e)}",
@@ -344,7 +451,8 @@ class IngestionService:
                 persist=persist,
             )
 
-            flow_items_to_evaluate.append((flow_req, src_ip, dst_ip, session.protocol))
+            custom_event_id = f"evt-{hashlib.sha256(f'{file_sha256}_{flow_id}'.encode()).hexdigest()[:16]}"
+            flow_items_to_evaluate.append((flow_req, src_ip, dst_ip, session.protocol, custom_event_id))
             flow_summaries.append(flow_summary)
             flow_ids.append(flow_id)
 
@@ -380,7 +488,8 @@ class IngestionService:
                 )
         else:
             # Non-persisted fast evaluation with conditional SHAP
-            for i, (flow_req, _, _, _) in enumerate(flow_items_to_evaluate):
+            for i, item in enumerate(flow_items_to_evaluate):
+                flow_req = item[0]
                 pred = MLService.predict(flow_req)
                 if pred.risk_score >= 70:
                     high_risk_count += 1
@@ -471,7 +580,9 @@ class IngestionService:
                 ingest_rec.suspicious_count = susp_cnt
                 ingest_rec.high_risk_count = high_risk_count
                 ingest_rec.attack_distribution = attack_dist
-                ingest_rec.metrics = metrics.model_dump()
+                metrics_dict = metrics.model_dump()
+                metrics_dict["file_sha256"] = file_sha256
+                ingest_rec.metrics = metrics_dict
                 ingest_rec.summary_results = summary_payload
                 db.commit()
 

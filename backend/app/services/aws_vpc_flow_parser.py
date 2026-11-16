@@ -8,6 +8,7 @@ threats via ThreatPredictor and PolicyEngine, and persists security events to Po
 
 from collections import defaultdict
 from datetime import datetime, timezone
+import hashlib
 import time
 from typing import Dict, List, Optional, Tuple
 from sqlalchemy.orm import Session
@@ -294,85 +295,90 @@ class AwsVpcFlowParser:
             persisted_event_id: Optional[str] = None
 
             if persist and db is not None:
-                import uuid
-                event_id = f"evt-aws-{int(time.time())}-{uuid.uuid4().hex[:6]}"
+                content_sig = hashlib.sha256(raw_content.strip().encode("utf-8")).hexdigest()[:12]
+                session_sig = hashlib.sha256(f"{key}".encode("utf-8")).hexdigest()[:8]
+                event_id = f"evt-vpc-{content_sig}-{session_sig}"
                 policy_decision.event_id = event_id
 
-                event_model = SecurityEventModel(
-                    id=event_id,
-                    timestamp=datetime.now(timezone.utc),
-                    source_ip=session.src_ip,
-                    destination_ip=session.dst_ip,
-                    attack_type=prediction.attack_type,
-                    risk_score=prediction.risk_score,
-                    threat_level=prediction.threat_level,
-                    confidence=prediction.confidence,
-                    action_recommendation=prediction.action_recommendation,
-                    current_policy_action=policy_decision.policy_action,
-                    status="Monitoring",
-                    description=f"AWS VPC Flow Ingestion: {policy_decision.reason}",
-                    is_anomaly=prediction.is_anomaly,
-                    is_demo=is_fixture,
-                    flow_features={
-                        "telemetry_source": telemetry_source,
-                        "source_zone": src_zone,
-                        "destination_zone": dst_zone,
-                        "traffic_direction": direction,
-                        "interface_id": session.interface_id,
-                        "account_id": session.account_id,
-                        "packet_count": session.total_packets,
-                        "byte_count": session.total_bytes,
-                        "duration": session.duration_seconds,
-                        "conn_rate": conn_rate,
-                        "dst_port": session.dst_port,
-                        "unique_dst_ports": unique_dst_ports,
-                        "failed_auth_count": 0,
-                        "bytes_per_sec": float(session.total_bytes) / dur_safe,
-                        "packets_per_sec": float(session.total_packets) / dur_safe,
-                        "avg_packet_size": float(session.total_bytes) / float(pkt_safe),
-                    },
-                    class_probabilities=prediction.class_probabilities,
-                    top_contributing_features=[
-                        f.model_dump() for f in prediction.top_contributing_features
-                    ],
-                )
+                existing_event = db.get(SecurityEventModel, event_id)
+                if existing_event is not None:
+                    persisted_event_id = existing_event.id
+                else:
+                    event_model = SecurityEventModel(
+                        id=event_id,
+                        timestamp=datetime.now(timezone.utc),
+                        source_ip=session.src_ip,
+                        destination_ip=session.dst_ip,
+                        attack_type=prediction.attack_type,
+                        risk_score=prediction.risk_score,
+                        threat_level=prediction.threat_level,
+                        confidence=prediction.confidence,
+                        action_recommendation=prediction.action_recommendation,
+                        current_policy_action=policy_decision.policy_action,
+                        status="Monitoring",
+                        description=f"AWS VPC Flow Ingestion: {policy_decision.reason}",
+                        is_anomaly=prediction.is_anomaly,
+                        is_demo=is_fixture,
+                        flow_features={
+                            "telemetry_source": telemetry_source,
+                            "source_zone": src_zone,
+                            "destination_zone": dst_zone,
+                            "traffic_direction": direction,
+                            "interface_id": session.interface_id,
+                            "account_id": session.account_id,
+                            "packet_count": session.total_packets,
+                            "byte_count": session.total_bytes,
+                            "duration": session.duration_seconds,
+                            "conn_rate": conn_rate,
+                            "dst_port": session.dst_port,
+                            "unique_dst_ports": unique_dst_ports,
+                            "failed_auth_count": 0,
+                            "bytes_per_sec": float(session.total_bytes) / dur_safe,
+                            "packets_per_sec": float(session.total_packets) / dur_safe,
+                            "avg_packet_size": float(session.total_bytes) / float(pkt_safe),
+                        },
+                        class_probabilities=prediction.class_probabilities,
+                        top_contributing_features=[
+                            f.model_dump() for f in prediction.top_contributing_features
+                        ],
+                    )
 
-                repo = SecurityEventRepository(db)
-                repo.create(event_model)
+                    repo = SecurityEventRepository(db)
+                    repo.create(event_model)
 
-                enforce_res, _ = EnforcementService.execute_decision(
-                    decision=policy_decision,
-                    db=db,
-                    actor="aws_vpc_ingestion_pipeline",
-                )
+                    enforce_res, _ = EnforcementService.execute_decision(
+                        decision=policy_decision,
+                        db=db,
+                        actor="aws_vpc_ingestion_pipeline",
+                    )
 
-                # Determine final event status and audit trace
-                is_synced = bool(enforce_res.metadata and enforce_res.metadata.get("lab_router_synced"))
-                if enforce_res.status in ["ACTIVE", "SIMULATED"]:
-                    if is_synced:
-                        final_status = "Enforced"
-                    elif enforce_res.status == "SIMULATED":
-                        final_status = "Simulated"
+                    # Determine final event status and audit trace
+                    is_synced = bool(enforce_res.metadata and enforce_res.metadata.get("lab_router_synced"))
+                    if enforce_res.status in ["ACTIVE", "SIMULATED"]:
+                        if is_synced:
+                            final_status = "Enforced"
+                        elif enforce_res.status == "SIMULATED":
+                            final_status = "Simulated"
+                        else:
+                            final_status = (
+                                "Applied"
+                                if policy_decision.policy_action in ["Restrict", "Block"]
+                                else "Monitoring"
+                            )
                     else:
                         final_status = (
-                            "Applied"
-                            if policy_decision.policy_action in ["Restrict", "Block"]
-                            else "Monitoring"
+                            "Allowed" if policy_decision.policy_action == "Allow" else "Monitoring"
                         )
-                else:
-                    final_status = (
-                        "Allowed" if policy_decision.policy_action == "Allow" else "Monitoring"
-                    )
-                event_model.status = final_status
+                    event_model.status = final_status
 
-                if isinstance(event_model.flow_features, dict):
-                    updated_ff = dict(event_model.flow_features)
-                    updated_ff["router_synced"] = is_synced
-                    updated_ff["rule_id"] = enforce_res.rule_id
-                    event_model.flow_features = updated_ff
+                    if isinstance(event_model.flow_features, dict):
+                        updated_ff = dict(event_model.flow_features)
+                        updated_ff["router_synced"] = is_synced
+                        updated_ff["rule_id"] = enforce_res.rule_id
+                        event_model.flow_features = updated_ff
 
-                db.flush()
-                persisted_event_id = event_id
+                    db.flush()
+                    persisted_event_id = event_id
 
             results.append(
                 AwsVpcFlowItemResult(

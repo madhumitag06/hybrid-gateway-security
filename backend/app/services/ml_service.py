@@ -62,7 +62,7 @@ class MLService:
                 "schema_version": "v2",
                 "feature_count": 9,
                 "role": "ACTIVE_PRIMARY" if cls._active_version == "candidate_xgboost_v2" else "STANDBY_ROLLBACK",
-                "description": "Authoritative production-grade XGBoost trained on 6.49M multi-dataset records with clean 9-feature schema." if cls._active_version == "candidate_xgboost_v2" else "Candidate XGBoost V2 model available for promotion.",
+                "description": "Authoritative production-grade XGBoost trained on 6,593,274 cleaned multi-dataset records with clean 9-feature schema." if cls._active_version == "candidate_xgboost_v2" else "Candidate XGBoost V2 model available for promotion.",
             },
         }
         base_reg.update(cls._custom_models)

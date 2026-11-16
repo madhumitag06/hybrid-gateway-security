@@ -84,6 +84,7 @@ The prototype is now formally declared **FROZEN** for academic presentation and 
 - **Executable File Path:** `backend\executable\AdaptiveSecurityGateway\AdaptiveSecurityGateway.exe`
 - **File Size:** `39,241,266 bytes` (37.42 MB)
 - **SHA-256 Hash:** `EDD8B360738A37C60E8CF084A3A5711D9542EFF52CD4B6C5EBEA48C7BD092279`
+- **Reconciliation with Phase 22.8.4:** Phase 22.8.4 hash (`A2511F2D...`) reflected the pre-Bandit build (39,241,266 bytes). Adding `# nosec: B103` in `hybrid_traffic_service.py` during Phase 22.8.5 triggered PyInstaller repackaging, yielding the authoritative hash `EDD8B360...` with identical byte length (39,241,266 bytes).
 - **Build Timestamp:** `11/17/2026 01:34:04`
 - **Bundled Frontend Assets:** `index-BE1lsIoz.js` (533.9 KB), `index-DgMRxSro.css` (61.0 KB)
 - **Bundled ML Artifacts:**

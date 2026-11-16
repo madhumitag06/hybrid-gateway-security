@@ -11,7 +11,7 @@
 ## 1. Machine Learning & Threat Detection Boundaries
 
 ### 1.1 Cross-Dataset Domain Generalization
-- **Training Foundation:** The Big Data XGBoost V2 model was trained on 6.49 million flow records aggregated from three benchmark academic corpora: CIC-IDS2017, UNSW-NB15, and CSE-CIC-IDS2018.
+- **Training Foundation:** The Big Data XGBoost V2 model was trained on 6,593,274 cleaned flow records (retained from 11,397,869 raw records after purging non-finite values and exact duplicates) across four standardized intrusion corpora: UNSW-NB15 (1,365,612), CIC-IDS2017 (1,783,439), CSE-CIC-IDS2018 (1,689,814), and CIC-DDoS2019 (1,754,409).
 - **Limitation:** In real-world enterprise deployments, network background noise, emerging application protocols (e.g., HTTP/3 QUIC, TLS 1.3 encrypted SNI), and non-standard packet fragmentations may induce distribution shift.
 - **Operational Impact:** While the model achieves >98% accuracy on representative benchmark evaluation splits, novel zero-day attack vectors not present in the training corpora may be classified as `BENIGN` or produce lower confidence scores.
 - **Mitigation:** The system retains the 100-tree Random Forest model as a zero-downtime standby rollback (`production_rf`) and supports periodic offline retraining via the model registry.

@@ -14,8 +14,12 @@
 - **File Name:** `AdaptiveSecurityGateway.exe`
 - **Relative Path:** `backend/executable/AdaptiveSecurityGateway/AdaptiveSecurityGateway.exe`
 - **File Size:** `39,241,266 bytes` (37.42 MB)
-- **SHA-256 Checksum:** `EDD8B360738A37C60E8CF084A3A5711D9542EFF52CD4B6C5EBEA48C7BD092279`
+- **Authoritative SHA-256 Checksum:** `EDD8B360738A37C60E8CF084A3A5711D9542EFF52CD4B6C5EBEA48C7BD092279`
 - **Build Timestamp:** `11/17/2026 01:34:04`
+- **Checksum Reconciliation Note:** 
+  - *Phase 22.8.4 Hash:* `A2511F2DC11E60389E724E8472D0FDF89CB079D444C23C2FD6D403EA713DFE99` (built at 01:12:11, 39,241,266 bytes)
+  - *Phase 22.8.5 / 22.9 Hash:* `EDD8B360738A37C60E8CF084A3A5711D9542EFF52CD4B6C5EBEA48C7BD092279` (built at 01:34:04, 39,241,266 bytes)
+  - *Root Cause of Hash Difference:* In Phase 22.8.5, Bandit flagged two permissive chmod masks in `backend/app/services/hybrid_traffic_service.py`. Adding `# nosec: B103` triggered PyInstaller's incremental PYZ repackaging (`AdaptiveSecurityGateway\PYZ-00.pyz`). The resulting binary has identical byte length (39,241,266 bytes) but updated internal archive timestamps, producing the final authoritative hash `EDD8B360...`.
 - **Bundled Frontend Assets:**
   - `dist/assets/index-BE1lsIoz.js` (546.73 kB)
   - `dist/assets/index-DgMRxSro.css` (62.50 kB)

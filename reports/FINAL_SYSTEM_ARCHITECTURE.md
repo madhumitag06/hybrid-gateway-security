@@ -85,7 +85,7 @@ flowchart TD
 
 ### 2.3 Machine Learning & Explainability Engine
 - **Primary Model:** Big Data XGBoost V2 (`candidate_xgboost_v2`):
-  - Architecture: Gradient-boosted decision trees (`XGBClassifier`) trained on 6.49 million multi-dataset network flow records (CIC-IDS2017, UNSW-NB15, CSE-CIC-IDS2018).
+  - Architecture: Gradient-boosted decision trees (`XGBClassifier`) trained on 6,593,274 cleaned multi-dataset network flow records (retained from 11,397,869 raw records across UNSW-NB15, CIC-IDS2017, CSE-CIC-IDS2018, and CIC-DDoS2019; split 70% train / 15% val / 15% test).
   - Schema Version: Clean v2 schema featuring **exactly nine features** without synthetic artifacts:
     1. `packet_count`: Total bidirectional packets in flow.
     2. `byte_count`: Total bidirectional volume in bytes.

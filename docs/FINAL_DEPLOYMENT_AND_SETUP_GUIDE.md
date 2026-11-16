@@ -47,9 +47,9 @@ docker compose -f deployment/hybrid-lab/compose.yaml ps
 Open your web browser and navigate to:
 **`http://localhost:5175`**
 
-### Step 4 — Log In with Default Administrative Credentials
-- **Username / Email:** `admin@secops.local`
-- **Password:** `SecOpsAdmin2026!#`
+### Step 4 — Log In with Administrative Credentials
+- **Username / Email:** `<ADMIN_EMAIL>` (e.g., configured administrator account)
+- **Password:** `<ADMIN_PASSWORD>` (configured during deployment)
 - The system issues a secure JWT access token and sets an HttpOnly refresh cookie.
 
 ### Step 5 — Inspect Ingested Security Events

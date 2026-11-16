@@ -368,24 +368,24 @@ def test_authentication_session_handling_integrity(sync_db):
     Test 9: Verifies user authentication, token issuance, and password verification
     remain fully operational and unaffected by dashboard synchronization enhancements.
     """
-    # 1. Sign up new operator user
+    # 1. Sign up new analyst user
     signup_req = UserSignUpRequest(
-        email="operator_tester@gateway.local",
+        email="analyst_tester@gateway.local",
         password="TestSecurePassword123!",
         confirm_password="TestSecurePassword123!",
-        full_name="SecOps Operator Tester",
-        role="OPERATOR",
+        full_name="SecOps Analyst Tester",
+        role="ANALYST",
     )
     token_resp = AuthService.signup(signup_req, sync_db)
     assert token_resp.access_token is not None
     assert token_resp.refresh_token is not None
-    assert token_resp.user.email == "operator_tester@gateway.local"
+    assert token_resp.user.email == "analyst_tester@gateway.local"
 
     # 2. Login with valid credentials
     login_req = UserLoginRequest(
-        email="operator_tester@gateway.local",
+        email="analyst_tester@gateway.local",
         password="TestSecurePassword123!",
     )
     login_resp = AuthService.login(login_req, sync_db)
     assert login_resp.access_token is not None
-    assert login_resp.user.role == "OPERATOR"
+    assert login_resp.user.role == "ANALYST"

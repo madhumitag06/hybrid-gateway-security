@@ -1799,6 +1799,7 @@ header {
   background: rgba(242, 235, 221, 0.12);
   position: relative;
   margin-bottom: 6px;
+  overflow: visible;
 }
 
 .conduit-pulse {
@@ -1809,28 +1810,194 @@ header {
   border-radius: 3px;
   background: var(--terracotta);
   box-shadow: 0 0 8px var(--terracotta);
+  transition: opacity var(--duration-normal) ease;
 }
 
 .conduit-pulse.forward {
-  animation: conduit-flow 2s infinite linear;
+  animation: conduit-flow 2.2s infinite linear;
 }
 
 .conduit-pulse.reverse {
-  animation: conduit-flow-reverse 2s infinite linear;
+  animation: conduit-flow-reverse 2.2s infinite linear;
+}
+
+/* Micro packet indicators along directional conduit */
+.conduit-packet {
+  position: absolute;
+  top: -1.5px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--warm-cream);
+  box-shadow: 0 0 6px rgba(242, 235, 221, 0.9);
+  pointer-events: none;
+}
+
+.conduit-packet.p1 {
+  animation: conduit-flow 2.2s infinite linear;
+  animation-delay: 0s;
+}
+
+.conduit-packet.p2 {
+  animation: conduit-flow 2.2s infinite linear;
+  animation-delay: 1.1s;
+}
+
+.conduit-packet.p1.reverse {
+  animation: conduit-flow-reverse 2.2s infinite linear;
+  animation-delay: 0s;
+}
+
+.conduit-packet.p2.reverse {
+  animation: conduit-flow-reverse 2.2s infinite linear;
+  animation-delay: 1.1s;
 }
 
 @keyframes conduit-flow {
-  0% { left: 0%; opacity: 0; }
-  20% { opacity: 1; }
-  80% { opacity: 1; }
-  100% { left: 85%; opacity: 0; }
+  0% { left: 0%; opacity: 0; transform: scale(0.6); }
+  15% { opacity: 0.95; transform: scale(1); }
+  85% { opacity: 0.95; transform: scale(1); }
+  100% { left: 88%; opacity: 0; transform: scale(0.6); }
 }
 
 @keyframes conduit-flow-reverse {
-  0% { right: 0%; opacity: 0; }
-  20% { opacity: 1; }
-  80% { opacity: 1; }
-  100% { right: 85%; opacity: 0; }
+  0% { right: 0%; opacity: 0; transform: scale(0.6); }
+  15% { opacity: 0.95; transform: scale(1); }
+  85% { opacity: 0.95; transform: scale(1); }
+  100% { right: 88%; opacity: 0; transform: scale(0.6); }
+}
+
+/* Idle state when no traffic flows or captures */
+.topology-stage.idle .conduit-pulse,
+.topology-stage.idle .conduit-packet {
+  animation-play-state: paused;
+  opacity: 0.18;
+}
+
+.topology-stage.idle .gateway-pulse-ring {
+  animation-play-state: paused;
+  opacity: 0.15;
+}
+
+/* Interactive Enclave Pods */
+.enclave-interactive {
+  cursor: pointer;
+  outline: none;
+  transition: transform var(--duration-fast) var(--ease-tactile),
+              border-color var(--duration-fast) var(--ease-smooth),
+              box-shadow var(--duration-fast) var(--ease-smooth);
+}
+
+.enclave-interactive:hover {
+  transform: translateY(-2px);
+  border-color: rgba(200, 117, 85, 0.45);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+}
+
+.enclave-interactive:focus-visible {
+  outline: 2px solid var(--terracotta);
+  outline-offset: 2px;
+}
+
+.enclave-interactive.selected {
+  border-color: var(--terracotta) !important;
+  box-shadow: 0 0 18px rgba(200, 117, 85, 0.35), 0 6px 20px rgba(0, 0, 0, 0.5) !important;
+}
+
+/* Topology Segment Inspector Callout */
+.topology-segment-inspector {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 14px;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(135deg, rgba(30, 34, 40, 0.95) 0%, rgba(23, 27, 32, 0.98) 100%);
+  border: 1px solid rgba(200, 117, 85, 0.35);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  animation: inspectorSlideDown var(--duration-normal) var(--ease-smooth);
+}
+
+@keyframes inspectorSlideDown {
+  0% { opacity: 0; transform: translateY(-6px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+.segment-chip {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 700;
+  color: var(--terracotta);
+  letter-spacing: 0.08em;
+  padding: 2px 6px;
+  background: rgba(200, 117, 85, 0.15);
+  border-radius: 3px;
+  margin-right: 8px;
+}
+
+.segment-inspector-header strong {
+  font-size: 13px;
+  color: #FAF6EE;
+}
+
+.segment-inspector-header p {
+  font-size: 11px;
+  color: var(--text-dim);
+  margin: 2px 0 0;
+}
+
+.segment-metrics-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.segment-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.segment-metric small {
+  font-size: 9px;
+  font-family: var(--font-mono);
+  color: var(--text-dim);
+  letter-spacing: 0.05em;
+}
+
+.segment-metric span {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--warm-cream);
+}
+
+.segment-metric .metric-val-ok {
+  color: var(--olive-green);
+}
+
+.segment-close-btn {
+  background: transparent;
+  border: 1px solid rgba(242, 235, 221, 0.15);
+  color: var(--text-dim);
+  border-radius: 4px;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all var(--duration-fast) ease;
+}
+
+.segment-close-btn:hover {
+  color: var(--warm-cream);
+  border-color: rgba(242, 235, 221, 0.35);
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .conduit-badge {
@@ -6030,6 +6197,116 @@ table tbody tr:hover,
   }
 }
 
+/* ==========================================================================
+   MOTION DESIGN SYSTEM & INTERACTIVE FEEDBACK
+   ========================================================================== */
+
+/* Anomaly Pulse Ring for SVG Telemetry Point */
+.anomaly-pulse-ring {
+  animation: anomaly-beacon var(--duration-ambient, 2.2s) infinite cubic-bezier(0.16, 1, 0.3, 1);
+  transform-origin: center;
+  pointer-events: none;
+}
+
+@keyframes anomaly-beacon {
+  0% {
+    r: 6;
+    opacity: 0.85;
+    stroke-width: 2px;
+  }
+  50% {
+    opacity: 0.35;
+  }
+  100% {
+    r: 16;
+    opacity: 0;
+    stroke-width: 0.5px;
+  }
+}
+
+/* Gateway Health & Service Heartbeat Pulses */
+.service-status-dot.healthy,
+.health-dot.ok {
+  animation: subtle-pulse var(--duration-heartbeat, 3.2s) infinite ease-in-out;
+}
+
+@keyframes subtle-pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+    box-shadow: 0 0 6px rgba(133, 139, 89, 0.6);
+  }
+  50% {
+    opacity: 0.7;
+    transform: scale(0.92);
+    box-shadow: 0 0 2px rgba(133, 139, 89, 0.2);
+  }
+}
+
+.service-status-dot.degraded,
+.health-dot.warn {
+  animation: amber-breathe 2s infinite ease-in-out;
+}
+
+@keyframes amber-breathe {
+  0%, 100% {
+    opacity: 1;
+    box-shadow: 0 0 8px rgba(200, 117, 85, 0.7);
+  }
+  50% {
+    opacity: 0.6;
+    box-shadow: 0 0 2px rgba(200, 117, 85, 0.2);
+  }
+}
+
+.service-status-dot.offline,
+.health-dot.crit {
+  /* Static muted red - no animation */
+  animation: none;
+  box-shadow: 0 0 4px rgba(224, 108, 117, 0.5);
+}
+
+/* PCAP & Ingestion Upload Progress Shimmer */
+.pcap-progress-bar-fill,
+.upload-progress-fill,
+.progress-fill {
+  background-size: 200% 100%;
+  transition: width var(--duration-normal) var(--ease-smooth);
+}
+
+.pcap-progress-bar-fill.active,
+.upload-progress-fill.active {
+  animation: shimmer-slide 2.4s infinite linear;
+}
+
+@keyframes shimmer-slide {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+/* Tactile Micro-Interactions for Buttons */
+button:not(:disabled):active {
+  transform: scale(0.985);
+  transition: transform var(--duration-instant) var(--ease-tactile);
+}
+
+/* Modal and Drawer Smooth Transitions */
+.modal-backdrop,
+.drawer-backdrop {
+  transition: opacity var(--duration-normal) var(--ease-smooth),
+              backdrop-filter var(--duration-normal) var(--ease-smooth);
+}
+
+.modal-content,
+.drawer-content {
+  transition: transform var(--duration-entrance) var(--ease-smooth),
+              opacity var(--duration-entrance) var(--ease-smooth);
+}
+
 /* Accessibility: Reduced Motion */
 @media (prefers-reduced-motion: reduce) {
   *,
@@ -6039,5 +6316,13 @@ table tbody tr:hover,
     animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
     scroll-behavior: auto !important;
+  }
+  .conduit-pulse,
+  .conduit-packet,
+  .gateway-pulse-ring,
+  .anomaly-pulse-ring,
+  .service-status-dot.healthy,
+  .service-status-dot.degraded {
+    animation: none !important;
   }
 }

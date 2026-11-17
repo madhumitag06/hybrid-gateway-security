@@ -543,6 +543,19 @@ function Traffic({
                     />
                   )}
 
+                  {/* Soft Anomaly Pulse Ring */}
+                  {hasAnomaly && (
+                    <circle
+                      cx={cx}
+                      cy={cy}
+                      r={isSelected ? 14 : isHovered ? 12 : 10}
+                      className="anomaly-pulse-ring"
+                      fill="none"
+                      stroke="var(--muted-red)"
+                      strokeWidth="1.5"
+                    />
+                  )}
+
                   {/* Visual data point */}
                   <circle
                     cx={cx}
@@ -914,6 +927,8 @@ function Connectivity({
     flows
 
   const isSampled = Boolean(lastPcapIngest?.is_sampled)
+  const [selectedSegment, setSelectedSegment] = useState<'onprem' | 'gateway' | 'cloud' | null>(null)
+  const isTrafficActive = flows > 0 || packetsCaptured > 0
 
   return (
     <div className="connect">
@@ -921,7 +936,7 @@ function Connectivity({
         <div>
           <h2>Hybrid Cloud Connectivity &amp; Infrastructure Topology</h2>
           <p>
-            <i className="status-ping-dot" /> Verified Hybrid Lab Architecture •{' '}
+            <i className={`status-ping-dot ${isTrafficActive ? 'active' : 'idle'}`} /> Verified Hybrid Lab Architecture •{' '}
             <strong>On-Prem (10.10.10.0/24) ↔ Edge Gateway ↔ Simulated Cloud VPC (10.20.10.0/24)</strong>
           </p>
         </div>
@@ -938,9 +953,21 @@ function Connectivity({
         </div>
       </div>
 
-      <div className="topology-stage">
+      <div className={`topology-stage ${!isTrafficActive ? 'idle' : 'active'}`}>
         {/* Enclave 1: On-Premises Enterprise DC */}
-        <div className="topo-enclave onprem-enclave">
+        <div
+          className={`topo-enclave onprem-enclave ${selectedSegment === 'onprem' ? 'selected' : ''}`}
+          onClick={() => setSelectedSegment(selectedSegment === 'onprem' ? null : 'onprem')}
+          role="button"
+          tabIndex={0}
+          aria-label="On-Premises Zone enclave. Click or press Enter to inspect."
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault()
+              setSelectedSegment(selectedSegment === 'onprem' ? null : 'onprem')
+            }
+          }}
+        >
           <div className="enclave-header">
             <div className="enclave-icon-box">🏢</div>
             <div className="enclave-title-box">
@@ -975,10 +1002,12 @@ function Connectivity({
           </div>
         </div>
 
-        {/* Conduit 1: On-Prem to Gateway */}
-        <div className="topo-conduit">
+        {/* Conduit 1: On-Prem to Gateway with packet animation */}
+        <div className="topo-conduit" title="Bi-directional GRE / VxLAN Tunnel">
           <div className="conduit-line">
             <span className="conduit-pulse forward" />
+            <span className="conduit-packet p1 forward" />
+            <span className="conduit-packet p2 forward" />
           </div>
           <div className="conduit-badge">
             <span className="conduit-label">ON_PREM_TO_CLOUD →</span>
@@ -987,7 +1016,19 @@ function Connectivity({
         </div>
 
         {/* Enclave 2: Central AI Security Gateway */}
-        <div className="topo-enclave gateway-enclave central">
+        <div
+          className={`topo-enclave gateway-enclave central ${selectedSegment === 'gateway' ? 'selected' : ''}`}
+          onClick={() => setSelectedSegment(selectedSegment === 'gateway' ? null : 'gateway')}
+          role="button"
+          tabIndex={0}
+          aria-label="Adaptive AI Gateway central enclave. Click or press Enter to inspect."
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault()
+              setSelectedSegment(selectedSegment === 'gateway' ? null : 'gateway')
+            }
+          }}
+        >
           <div className="gateway-core-shield">
             <span className="gateway-symbol">🛡️</span>
             <div className="gateway-pulse-ring" />
@@ -1017,10 +1058,12 @@ function Connectivity({
           </div>
         </div>
 
-        {/* Conduit 2: Gateway to Cloud */}
-        <div className="topo-conduit">
+        {/* Conduit 2: Gateway to Cloud with packet animation */}
+        <div className="topo-conduit" title="VPC Flow Logs & Cloud Telemetry Conduits">
           <div className="conduit-line">
             <span className="conduit-pulse reverse" />
+            <span className="conduit-packet p1 reverse" />
+            <span className="conduit-packet p2 reverse" />
           </div>
           <div className="conduit-badge">
             <span className="conduit-label">← CLOUD_TO_ON_PREM</span>
@@ -1029,7 +1072,19 @@ function Connectivity({
         </div>
 
         {/* Enclave 3: Simulated Cloud VPC */}
-        <div className="topo-enclave cloud-enclave">
+        <div
+          className={`topo-enclave cloud-enclave ${selectedSegment === 'cloud' ? 'selected' : ''}`}
+          onClick={() => setSelectedSegment(selectedSegment === 'cloud' ? null : 'cloud')}
+          role="button"
+          tabIndex={0}
+          aria-label="Simulated Cloud VPC enclave. Click or press Enter to inspect."
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault()
+              setSelectedSegment(selectedSegment === 'cloud' ? null : 'cloud')
+            }
+          }}
+        >
           <div className="enclave-header">
             <div className="enclave-icon-box cloud-icon">☁</div>
             <div className="enclave-title-box">
@@ -1064,6 +1119,35 @@ function Connectivity({
           </div>
         </div>
       </div>
+
+      {/* Dynamic Segment Inspector Callout */}
+      {selectedSegment && (
+        <div className="topology-segment-inspector motion-fade-in">
+          <div className="inspector-left">
+            <span className="inspector-badge">SEGMENT INSPECTION</span>
+            <strong className="inspector-title">
+              {selectedSegment === 'onprem' && 'On-Premises Enterprise DC (10.10.10.0/24) • Site A Workloads'}
+              {selectedSegment === 'gateway' && 'Adaptive AI Security Gateway (Inline eth0 ↔ eth1) • XGBoost V2 & Containment Engine'}
+              {selectedSegment === 'cloud' && `Simulated Cloud VPC (10.20.10.0/24) • ${topology?.aws_region || 'us-east-1'} Subnet Target`}
+            </strong>
+          </div>
+          <div className="inspector-right">
+            <span className="inspector-detail">
+              {selectedSegment === 'onprem' && '4 docker lab workloads (client, web, workload, traffic-gen) feeding ingress network telemetry.'}
+              {selectedSegment === 'gateway' && 'Linux transit router agent with real-time SHAP feature attribution and automated iptables quarantine.'}
+              {selectedSegment === 'cloud' && 'AWS VPC CloudWatch flow log receiver and candidate shadow evaluation destination.'}
+            </span>
+            <button
+              type="button"
+              className="inspector-dismiss-btn"
+              onClick={() => setSelectedSegment(null)}
+              aria-label="Close segment inspection"
+            >
+              ✕ Close
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="topology-metrics-ribbon">
         <div className="topo-metric-item">
@@ -2178,7 +2262,14 @@ export default function App() {
                               : data.riskScore >= 40
                               ? 'var(--terracotta)'
                               : 'var(--olive-green)'
-                          } 0% ${Math.min(data.riskScore, 100)}%, rgba(73, 72, 61, 0.25) ${Math.min(data.riskScore, 100)}% 100%)`
+                          } 0% ${Math.min(data.riskScore, 100)}%, rgba(73, 72, 61, 0.25) ${Math.min(data.riskScore, 100)}% 100%)`,
+                          boxShadow:
+                            data.riskScore >= 70
+                              ? '0 0 24px rgba(224, 108, 117, 0.35)'
+                              : data.riskScore >= 40
+                              ? '0 0 20px rgba(200, 117, 85, 0.3)'
+                              : '0 0 20px rgba(133, 139, 89, 0.25)',
+                          transition: 'box-shadow var(--duration-slow) var(--ease-smooth), background var(--duration-slow) var(--ease-smooth)'
                         }}
                       >
                         <div className="gauge-dial-core">

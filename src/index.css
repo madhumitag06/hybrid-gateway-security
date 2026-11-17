@@ -97,9 +97,24 @@
   --z-modal: 400;
   --z-toast: 500;
 
-  /* Transitions */
-  --transition-fast: 160ms ease;
-  --transition-normal: 240ms ease;
+  /* Transitions & Motion Design System Tokens */
+  --ease-standard: cubic-bezier(0.16, 1, 0.3, 1);       /* Smooth natural deceleration */
+  --ease-smooth: cubic-bezier(0.4, 0, 0.2, 1);          /* Material natural ease-in-out */
+  --ease-tactile: cubic-bezier(0.2, 0.8, 0.2, 1);       /* Crisp responsive tactile click */
+  --ease-ambient: cubic-bezier(0.45, 0.05, 0.55, 0.95); /* Gentle continuous breathing */
+
+  --duration-instant: 80ms;
+  --duration-fast: 160ms;
+  --duration-normal: 260ms;
+  --duration-slow: 420ms;
+  --duration-entrance: 320ms;
+  --duration-ambient: 2800ms;
+  --duration-heartbeat: 2400ms;
+  --duration-packet: 2200ms;
+
+  --transition-fast: 160ms var(--ease-standard);
+  --transition-normal: 260ms var(--ease-standard);
+  --transition-slow: 420ms var(--ease-smooth);
 }
 
 *, *::before, *::after {

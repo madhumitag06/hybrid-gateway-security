@@ -245,6 +245,43 @@ The **Evaluated Flow Ingestion Telemetry (Last 24 hours)** chart on the main das
 
 ---
 
+## Motion Design & Interactive UI Guide
+
+The platform integrates a restrained, enterprise-grade motion design system designed specifically for mission-critical hybrid cloud security operations. Animations are purposeful, low-latency, and physics-driven—never ornamental or distracting.
+
+### 1. Motion Design Tokens & Timing System
+All transitions leverage centralized CSS design tokens defined in `src/index.css`:
+- `--ease-smooth`: `cubic-bezier(0.16, 1, 0.3, 1)` — for smooth camera and card elevations.
+- `--ease-tactile`: `cubic-bezier(0.4, 0, 0.2, 1)` — for snappy button clicks and segment interactions.
+- `--ease-ambient`: `ease-in-out` — for continuous background monitoring.
+- `--duration-instant`: `100ms` — immediate micro-interactions.
+- `--duration-fast`: `180ms` — hover and state transitions.
+- `--duration-normal`: `280ms` — drawer entrances and dropdowns.
+- `--duration-slow`: `420ms` — risk gauge transitions and status changes.
+- `--duration-heartbeat`: `3.2s` — healthy telemetry pulse cycle.
+
+### 2. Hybrid Network Topology Conduits & Segments
+- **Directional Flow Conduits**: Directional connecting lines feature moving packet indicators (`.conduit-packet.p1` and `p2`) with staggered intervals (0s and 1.1s) moving from On-Premises to the Central Gateway, and from the Gateway to Hybrid Cloud VPCs.
+- **Traffic-Aware States**: When no active flows or captured packets are detected (`flows === 0 && !packetsCaptured`), the topology gracefully transitions to an **idle state** (`.topology-stage.idle`), pausing moving packets and dimming conduit glow to conserve GPU overhead and provide honest status.
+- **Interactive Enclave Inspector**: Clicking any enclave pod (On-Premises Corporate HQ, Central Gateway Core, or Hybrid Multi-Cloud VPC) highlights the segment and reveals the **Topology Segment Inspector** callout banner with instant live interface throughput, MTU, encryption cipher, and packet drop metrics.
+- **Keyboard Navigation**: Press `Tab` to focus any segment, followed by `Enter` or `Space` to inspect; press `Escape` or click `✕` to dismiss.
+
+### 3. Gateway Health & Service Heartbeats
+- **Healthy Services (Nominal)**: Rhythmic, low-intensity green heartbeat pulse (`#858B59`, 3.2s cycle).
+- **Degraded Services (Warning)**: Soft amber breathing glow (`#C87555`, 2.0s cycle).
+- **Offline Services (Critical)**: Static muted red (`#E06C75`) with no pulsation, immediately signaling hard service failure.
+
+### 4. Telemetry Anomaly Beacons & Dynamic Risk Gauge
+- **Telemetry Anomaly Rings**: Plotted time buckets with detected security anomalies feature expanding radar beacon pulse rings (`.anomaly-pulse-ring`) behind the data point to draw operator attention without visual clutter.
+- **Security Risk Gauge Arc**: The conic-gradient risk bezel transitions dynamically between Low (`#858B59`), Medium (`#C87555`), and High (`#E06C75`) tiers with smooth easing and contextual drop-shadow bloom.
+
+### 5. Accessibility & Reduced Motion
+In strict accordance with WCAG 2.2 AA accessibility guidelines:
+- If the operating system or browser has **Reduced Motion** enabled (`prefers-reduced-motion: reduce`), all continuous animations (conduit packet movement, gateway pulse rings, anomaly beacons, and service heartbeats) are automatically disabled.
+- Transitions drop to `0.001ms`, instantly displaying static terminal states without disorientation.
+
+---
+
 ## Startup URL & Port Reference
 
 | Mode | Component | URL | Port |

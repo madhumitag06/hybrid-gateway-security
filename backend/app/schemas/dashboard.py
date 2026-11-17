@@ -82,6 +82,12 @@ class TrafficPointSchema(BaseModel):
     total_bytes: int = 0
     anomaly_count: int = 0
     anomaly_note: Optional[str] = None
+    bucket_start: Optional[str] = None
+    bucket_end: Optional[str] = None
+    telemetry_source: Optional[str] = None
+    avg_risk_score: Optional[float] = None
+    max_risk_score: Optional[int] = None
+    event_ids: Optional[List[str]] = None
 
 
 class TimelineStepSchema(BaseModel):

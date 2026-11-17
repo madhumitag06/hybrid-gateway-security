@@ -921,6 +921,17 @@ class DashboardService:
                 top_atk = anomaly_events[0].attack_type.replace('_', ' ').title()
                 anomaly_note = f"{top_atk} (Risk: {anomaly_events[0].risk_score})"
 
+            event_ids = [e.id for e in bucket_events[:15]]
+            avg_risk = round(sum([e.risk_score for e in bucket_events]) / len(bucket_events), 1) if bucket_events else 0.0
+            max_risk = max([e.risk_score for e in bucket_events]) if bucket_events else 0
+
+            # Telemetry source attribution
+            sources = set()
+            for e in bucket_events:
+                src = (e.flow_features or {}).get("telemetry_source") or ("DEMO_SEED" if e.is_demo else "PCAP_INGEST")
+                sources.add(src)
+            telem_src = ", ".join(sorted(sources)) if sources else ("AWS_VPC_FLOW" if "vpc" in range_label.lower() else "GATEWAY_STREAM")
+
             points.append(
                 TrafficPointSchema(
                     time_label=time_labels[i],
@@ -932,6 +943,12 @@ class DashboardService:
                     total_bytes=total_bytes,
                     anomaly_count=anomaly_count,
                     anomaly_note=anomaly_note,
+                    bucket_start=b_start.strftime("%Y-%m-%d %H:%M UTC"),
+                    bucket_end=b_end.strftime("%Y-%m-%d %H:%M UTC"),
+                    telemetry_source=telem_src,
+                    avg_risk_score=avg_risk,
+                    max_risk_score=max_risk,
+                    event_ids=event_ids,
                 )
             )
 

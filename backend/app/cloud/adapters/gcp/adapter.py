@@ -40,10 +40,12 @@ class GcpCloudAdapter(BaseCloudProviderAdapter):
     def __init__(self, config: CloudAccountConfigSchema):
         super().__init__(config)
         self.project_id = config.project_id or config.account_id
+        meta = config.metadata or {}
         self.identity_provider = GcpIdentityProvider(
             project_id=self.project_id,
             workload_identity_provider=config.workload_identity_provider,
             region=self.region,
+            service_account_info=meta.get("service_account_info") or meta.get("credentials"),
         )
         self.telemetry_provider = GcpTelemetryProvider(
             project_id=self.project_id,

@@ -32,6 +32,9 @@ class AwsIdentityProvider(BaseCloudIdentityProvider):
         oidc_role_arn: Optional[str] = None,
         oidc_token_path: Optional[str] = None,
         session_name: str = "AntigravitySecurityGatewaySession",
+        access_key_id: Optional[str] = None,
+        secret_access_key: Optional[str] = None,
+        session_token: Optional[str] = None,
     ):
         # Auto-detect security-gateway-readonly profile if available
         detected_profile = None
@@ -79,6 +82,9 @@ class AwsIdentityProvider(BaseCloudIdentityProvider):
         self.oidc_role_arn = oidc_role_arn or os.environ.get("AWS_OIDC_ROLE_ARN")
         self.oidc_token_path = oidc_token_path or os.environ.get("AWS_WEB_IDENTITY_TOKEN_FILE")
         self.session_name = session_name
+        self.access_key_id = access_key_id
+        self.secret_access_key = secret_access_key
+        self.session_token = session_token
         self._cached_session: Optional[Any] = None
         self._cached_credentials_expiration: Optional[datetime] = None
 
@@ -115,10 +121,18 @@ class AwsIdentityProvider(BaseCloudIdentityProvider):
             return self._cached_session, {"status": "CACHED", "message": "Using cached temporary session"}
 
         try:
-            base_session = boto3.Session(
-                region_name=self.region,
-                profile_name=self.profile_name,
-            )
+            if self.access_key_id and self.secret_access_key:
+                base_session = boto3.Session(
+                    aws_access_key_id=self.access_key_id,
+                    aws_secret_access_key=self.secret_access_key,
+                    aws_session_token=self.session_token,
+                    region_name=self.region,
+                )
+            else:
+                base_session = boto3.Session(
+                    region_name=self.region,
+                    profile_name=self.profile_name,
+                )
 
             sts = base_session.client("sts", region_name=self.region)
             identity = sts.get_caller_identity()

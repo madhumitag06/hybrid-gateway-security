@@ -46,6 +46,13 @@ export interface TrafficPoint {
   anomaly_count: number
   anomaly_note?: string
   total_packets?: number
+  total_bytes?: number
+  bucket_start?: string
+  bucket_end?: string
+  telemetry_source?: string
+  avg_risk_score?: number
+  max_risk_score?: number
+  event_ids?: string[]
 }
 
 export interface TimelineStep {

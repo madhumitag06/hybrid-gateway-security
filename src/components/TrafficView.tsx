@@ -922,7 +922,75 @@ export const TrafficView: React.FC = () => {
             No flow inspections executed yet in this session. Run an analysis above to populate history.
           </div>
         ) : (
-          <div style={{ overflowX: 'auto' }}>
+          <>
+            {/* Dynamic Session Traffic Composition & Protocol Bar */}
+            <div
+              style={{
+                marginBottom: '14px',
+                padding: '12px 16px',
+                background: 'var(--panel-inset)',
+                borderRadius: 'var(--radius-xs)',
+                border: '1px solid var(--line)',
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+                gap: '14px',
+              }}
+            >
+              {/* Risk Distribution */}
+              <div>
+                <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--warm-cream)', display: 'block', marginBottom: '6px' }}>
+                  Risk Distribution ({analysisHistory.length} flows)
+                </span>
+                <div style={{ display: 'flex', height: '10px', borderRadius: '4px', overflow: 'hidden', background: 'var(--panel)', border: '1px solid var(--line)' }}>
+                  {(() => {
+                    const low = analysisHistory.filter((h) => h.risk_score < 40).length
+                    const med = analysisHistory.filter((h) => h.risk_score >= 40 && h.risk_score < 70).length
+                    const high = analysisHistory.filter((h) => h.risk_score >= 70).length
+                    const total = analysisHistory.length || 1
+                    return (
+                      <>
+                        <div style={{ width: `${(low / total) * 100}%`, background: 'var(--olive-green)' }} title={`Low Risk (<40): ${low}`} />
+                        <div style={{ width: `${(med / total) * 100}%`, background: 'var(--pale-sand)' }} title={`Medium Risk (40-69): ${med}`} />
+                        <div style={{ width: `${(high / total) * 100}%`, background: 'var(--terracotta)' }} title={`High Risk (≥70): ${high}`} />
+                      </>
+                    )
+                  })()}
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10.5px', marginTop: '4px', color: 'var(--muted-cream)' }}>
+                  <span>Low: {analysisHistory.filter((h) => h.risk_score < 40).length}</span>
+                  <span>Med: {analysisHistory.filter((h) => h.risk_score >= 40 && h.risk_score < 70).length}</span>
+                  <span>High: {analysisHistory.filter((h) => h.risk_score >= 70).length}</span>
+                </div>
+              </div>
+
+              {/* Target Port Distribution */}
+              <div>
+                <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--warm-cream)', display: 'block', marginBottom: '6px' }}>
+                  Target Port Distribution ({analysisHistory.length} flows)
+                </span>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  {(() => {
+                    const portCounts = analysisHistory.reduce((acc, h) => {
+                      const port = h.flow?.dst_port ?? 'Unknown'
+                      acc[port] = (acc[port] || 0) + 1
+                      return acc
+                    }, {} as Record<string | number, number>)
+                    const entries = Object.entries(portCounts)
+                    return entries.length > 0 ? (
+                      entries.slice(0, 5).map(([port, count]) => (
+                        <span key={port} className="chip" style={{ fontSize: '11px', padding: '2px 8px', background: 'var(--panel)' }}>
+                          Port {port}: <b>{count}</b>
+                        </span>
+                      ))
+                    ) : (
+                      <span style={{ fontSize: '11px', color: 'var(--muted-cream)' }}>No port activity yet</span>
+                    )
+                  })()}
+                </div>
+              </div>
+            </div>
+
+            <div style={{ overflowX: 'auto' }}>
             <table className="traffic-history-table">
               <thead>
                 <tr>
@@ -998,6 +1066,7 @@ export const TrafficView: React.FC = () => {
               </tbody>
             </table>
           </div>
+          </>
         )}
       </div>
     </div>

@@ -354,12 +354,65 @@ export const SimulationView: React.FC = () => {
         </section>
       )}
 
-      {/* Recent Simulation Executions Ledger */}
+      {/* Recent Simulation Executions Ledger & Performance Chart */}
       {executionHistory.length > 0 && (
-        <section className="card" style={{ padding: '16px', background: 'var(--panel)', border: '1px solid var(--line)' }}>
-          <h2 style={{ margin: '0 0 10px', fontSize: '14px', color: 'var(--warm-cream)' }}>
-            Recent Simulation Runs ({executionHistory.length})
-          </h2>
+        <section className="card" style={{ padding: '18px 20px', background: 'var(--panel)', border: '1px solid var(--line)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+            <h2 style={{ margin: 0, fontSize: '15px', color: 'var(--warm-cream)' }}>
+              ⚡ Attack Scenario Execution Performance ({executionHistory.length} Runs)
+            </h2>
+            <small style={{ color: 'var(--muted-cream)', fontSize: '11px', fontFamily: 'var(--font-mono)' }}>
+              Docker Traffic-Gen Daemon & Sensor Bridge
+            </small>
+          </div>
+
+          {/* Dynamic Latency Visualizer */}
+          <div style={{ marginBottom: '16px', padding: '12px 14px', background: 'var(--panel-inset)', borderRadius: 'var(--radius-xs)', border: '1px solid var(--line)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+              <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--warm-cream)' }}>
+                Execution Latency per Scenario Run (ms)
+              </span>
+              <small style={{ fontSize: '10px', color: 'var(--muted-cream)' }}>Lower is faster</small>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'flex-end', gap: '8px', height: '80px', paddingTop: '10px' }}>
+              {executionHistory.map((item, idx) => {
+                const maxDur = Math.max(...executionHistory.map((h) => h.duration_ms || 100), 1000)
+                const heightPct = Math.min(Math.max(((item.duration_ms || 100) / maxDur) * 100, 10), 100)
+                const isSuccess = item.status === 'COMPLETED' || item.status === 'LATE_COMPLETION'
+                const isTimeout = item.status === 'TIMED_OUT'
+                return (
+                  <div
+                    key={item.run_id + idx}
+                    style={{
+                      flex: 1,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      height: '100%',
+                      justifyContent: 'flex-end',
+                    }}
+                    title={`${item.scenario}: ${item.duration_ms}ms (${item.status})`}
+                  >
+                    <div
+                      style={{
+                        width: '100%',
+                        maxWidth: '40px',
+                        height: `${heightPct}%`,
+                        background: isSuccess ? 'var(--olive-green)' : isTimeout ? 'var(--pale-sand)' : 'var(--terracotta)',
+                        borderRadius: '3px 3px 0 0',
+                        transition: 'height 0.3s ease',
+                        cursor: 'pointer',
+                      }}
+                    />
+                    <span style={{ fontSize: '9px', fontFamily: 'var(--font-mono)', color: 'var(--muted-cream)', marginTop: '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '45px' }}>
+                      {item.scenario}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
             {executionHistory.map((item) => (
               <div

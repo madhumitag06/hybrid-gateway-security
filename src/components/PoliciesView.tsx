@@ -400,6 +400,83 @@ export const PoliciesView: React.FC = () => {
             </div>
           </div>
 
+          {/* Dynamic Policy Decisions & Containment Action Distribution */}
+          <div className="card" style={{ marginBottom: '16px', padding: '16px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+              <h3 style={{ margin: 0, fontSize: '14px', color: 'var(--warm-cream)' }}>
+                📊 Policy Enforcement & Action Distribution ({rules.length} total rules evaluated)
+              </h3>
+              <small style={{ fontSize: '11px', color: 'var(--muted-cream)' }}>PostgreSQL & In-Memory Adapter</small>
+            </div>
+            {rules.length === 0 ? (
+              <p style={{ color: 'var(--muted-cream)', fontSize: '12px', margin: 0 }}>
+                No containment rules have been generated yet. When high-risk threats trigger policy thresholds, actions are dynamically tracked here.
+              </p>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '14px' }}>
+                <div>
+                  <span style={{ fontSize: '11px', color: 'var(--muted-cream)', display: 'block', marginBottom: '6px' }}>
+                    Enforcement Actions Breakdown
+                  </span>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                    {['Block', 'Restrict', 'Monitor', 'Allow'].map((act) => {
+                      const count = rules.filter((r) => r.action?.toLowerCase() === act.toLowerCase()).length
+                      const pct = rules.length > 0 ? ((count / rules.length) * 100).toFixed(0) : '0'
+                      return (
+                        <div key={act} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '11px' }}>
+                          <span style={{ width: '60px', color: 'var(--warm-cream)' }}>{act}</span>
+                          <div style={{ flex: 1, height: '8px', background: 'var(--panel-inset)', borderRadius: '4px', overflow: 'hidden' }}>
+                            <div
+                              style={{
+                                width: `${Math.max((count / rules.length) * 100, count > 0 ? 3 : 0)}%`,
+                                height: '100%',
+                                background: act === 'Block' ? 'var(--muted-red)' : act === 'Restrict' ? 'var(--terracotta)' : act === 'Monitor' ? 'var(--pale-sand)' : 'var(--olive-green)',
+                                borderRadius: '4px',
+                              }}
+                            />
+                          </div>
+                          <span style={{ fontFamily: 'var(--font-mono)', fontSize: '10.5px', color: 'var(--muted-cream)', minWidth: '40px', textAlign: 'right' }}>
+                            {count} ({pct}%)
+                          </span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                <div>
+                  <span style={{ fontSize: '11px', color: 'var(--muted-cream)', display: 'block', marginBottom: '6px' }}>
+                    Rule Lifecycle State Breakdown
+                  </span>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                    {['ACTIVE', 'SIMULATED', 'EXPIRED', 'REVOKED'].map((st) => {
+                      const count = rules.filter((r) => r.status?.toUpperCase() === st).length
+                      const pct = rules.length > 0 ? ((count / rules.length) * 100).toFixed(0) : '0'
+                      return (
+                        <div key={st} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '11px' }}>
+                          <span style={{ width: '75px', color: 'var(--muted-cream)' }}>{st}</span>
+                          <div style={{ flex: 1, height: '8px', background: 'var(--panel-inset)', borderRadius: '4px', overflow: 'hidden' }}>
+                            <div
+                              style={{
+                                width: `${Math.max((count / rules.length) * 100, count > 0 ? 3 : 0)}%`,
+                                height: '100%',
+                                background: st === 'ACTIVE' ? 'var(--terracotta)' : st === 'SIMULATED' ? 'var(--pale-sand)' : 'var(--line)',
+                                borderRadius: '4px',
+                              }}
+                            />
+                          </div>
+                          <span style={{ fontFamily: 'var(--font-mono)', fontSize: '10.5px', color: 'var(--muted-cream)', minWidth: '40px', textAlign: 'right' }}>
+                            {count} ({pct}%)
+                          </span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Quick Recent Activity Snapshot */}
           <div className="card" style={{ padding: '16px' }}>
             <div className="title-line" style={{ marginBottom: '10px' }}>

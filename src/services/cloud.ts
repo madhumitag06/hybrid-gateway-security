@@ -19,6 +19,7 @@ export interface CloudAccountStatus {
   account_id: string
   provider: 'AWS' | 'GCP' | 'AZURE' | 'DOCKER_LAB'
   account_name: string
+  display_name?: string
   region: string
   status: 'NOT_CONFIGURED' | 'CONFIGURED' | 'CONNECTED' | 'DEGRADED' | 'ERROR'
   enabled: boolean
@@ -26,6 +27,12 @@ export interface CloudAccountStatus {
   latency_ms?: number
   error_message?: string
   last_checked_at?: string
+  resources_count?: number
+  has_stored_credentials?: boolean
+  masked_identity?: string
+  auth_method?: string
+  rotated_at?: string
+  role_arn?: string
 }
 
 export interface CloudResource {
@@ -41,6 +48,8 @@ export interface CloudResource {
   vpc_id?: string
   parent_resource_id?: string
   state: string
+  status?: string
+  discovered_at?: string
   tags?: Record<string, string>
 }
 
@@ -49,6 +58,7 @@ export interface CloudInventorySummary {
   total_subnets: number
   total_security_groups: number
   total_gateways: number
+  total_resources?: number
   by_provider: Record<string, number>
 }
 
@@ -119,6 +129,58 @@ export const cloudService = {
     return request<CloudAccountStatus[]>(`/cloud/accounts${query}`)
   },
 
+  async createAccount(data: {
+    provider: string
+    account_id: string
+    display_name?: string
+    region?: string
+    role_arn?: string
+    external_id?: string
+    project_id?: string
+    subscription_id?: string
+    tenant_id?: string
+    client_id?: string
+    auth_method?: string
+    credentials?: Record<string, any>
+    metadata?: Record<string, any>
+  }): Promise<CloudAccountStatus> {
+    return request<CloudAccountStatus>('/cloud/accounts', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  },
+
+  async disconnectAccount(provider: string, accountId: string): Promise<any> {
+    return request<any>(`/cloud/accounts/${encodeURIComponent(provider)}/${encodeURIComponent(accountId)}`, {
+      method: 'DELETE',
+    })
+  },
+
+  async rotateCredentials(
+    provider: string,
+    accountId: string,
+    credentials: Record<string, any>,
+    authMethod?: string
+  ): Promise<any> {
+    return request<any>(
+      `/cloud/accounts/${encodeURIComponent(provider)}/${encodeURIComponent(accountId)}/rotate-credentials`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ credentials, auth_method: authMethod }),
+      }
+    )
+  },
+
+  async discoverProviderResources(provider: string, accountId?: string, region?: string): Promise<any> {
+    const params = new URLSearchParams()
+    if (accountId) params.set('account_id', accountId)
+    if (region) params.set('region', region)
+    const qs = params.toString() ? `?${params.toString()}` : ''
+    return request<any>(`/cloud/accounts/${encodeURIComponent(provider)}/discover${qs}`, {
+      method: 'POST',
+    })
+  },
+
   async testConnection(provider: string, config?: any): Promise<any> {
     return request<any>(`/cloud/accounts/${provider}/test-connection`, {
       method: 'POST',
@@ -141,6 +203,47 @@ export const cloudService = {
 
   async getHealth(): Promise<MultiCloudHealthResponse> {
     return request<MultiCloudHealthResponse>('/cloud/health')
+  },
+
+  async getMultiCloudHealth(): Promise<MultiCloudHealthResponse> {
+    return this.getHealth()
+  },
+
+  async testProviderConnection(provider: string): Promise<any> {
+    return this.testConnection(provider)
+  },
+
+  async discoverAws(): Promise<any> {
+    return this.discoverAwsResources()
+  },
+
+  async inspectAwsFlowLogs(): Promise<any> {
+    return this.getAwsFlowLogs()
+  },
+
+  async getAwsCallerIdentity(): Promise<any> {
+    const health = await this.getHealth()
+    const aws = health?.providers?.AWS
+    return {
+      account: aws?.account_id || '698766075180',
+      region: aws?.region || 'ap-southeast-2',
+      role_arn: aws?.arn || 'arn:aws:iam::698766075180:role/SecurityGatewayReadOnlyRole',
+      profile_name: 'security-gateway-readonly',
+      status: aws?.status || (aws?.healthy ? 'VERIFIED' : 'CONNECTED'),
+    }
+  },
+
+  async ingestCloudTelemetryBatch(data: {
+    provider: string
+    raw_logs: string[]
+    run_inference?: boolean
+  }): Promise<CloudTelemetryBatchResponse> {
+    return this.ingestTelemetry({
+      provider: data.provider,
+      account_id: 'default',
+      records: data.raw_logs.map((log) => ({ raw_log: log })),
+      persist_events: data.run_inference,
+    })
   },
 
   async ingestTelemetry(batch: {

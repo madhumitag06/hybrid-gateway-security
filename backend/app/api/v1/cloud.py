@@ -18,6 +18,8 @@ try:
         CloudAccountCreateRequest,
         CloudAccountStatusSchema,
         CloudCapabilitiesSchema,
+        CloudCredentialRotateRequest,
+        CloudVaultInfoSchema,
     )
     from backend.app.cloud.schemas.cloud_resource import (
         CloudInventorySummary,
@@ -32,6 +34,7 @@ try:
     from backend.app.cloud.services.cloud_connection_manager import CloudConnectionManager
     from backend.app.cloud.services.cloud_health_monitor import CloudHealthMonitor
     from backend.app.cloud.services.cloud_registry import CloudRegistry
+    from backend.app.cloud.services.credential_vault import CredentialVaultService
     from backend.app.api.deps import (
         require_admin,
         require_analyst,
@@ -41,7 +44,12 @@ try:
     from backend.app.cloud.services.telemetry_checkpoint_service import TelemetryCheckpointService
     from backend.app.cloud.services.telemetry_normalizer import TelemetryNormalizer
     from backend.app.db.session import get_db
-    from backend.app.models.cloud_account import CloudTelemetryCheckpointModel
+    from backend.app.models.cloud_account import (
+        CloudAccountModel,
+        CloudCredentialVaultModel,
+        CloudResourceModel,
+        CloudTelemetryCheckpointModel,
+    )
     from ml.features.extractor import FEATURE_NAMES_V2
 except ImportError:
     from app.api.deps import (
@@ -55,6 +63,8 @@ except ImportError:
         CloudAccountCreateRequest,
         CloudAccountStatusSchema,
         CloudCapabilitiesSchema,
+        CloudCredentialRotateRequest,
+        CloudVaultInfoSchema,
     )
     from app.cloud.schemas.cloud_resource import (
         CloudInventorySummary,
@@ -69,10 +79,16 @@ except ImportError:
     from app.cloud.services.cloud_connection_manager import CloudConnectionManager
     from app.cloud.services.cloud_health_monitor import CloudHealthMonitor
     from app.cloud.services.cloud_registry import CloudRegistry
+    from app.cloud.services.credential_vault import CredentialVaultService
     from app.cloud.services.telemetry_checkpoint_service import TelemetryCheckpointService
     from app.cloud.services.telemetry_normalizer import TelemetryNormalizer
     from app.db.session import get_db
-    from app.models.cloud_account import CloudTelemetryCheckpointModel
+    from app.models.cloud_account import (
+        CloudAccountModel,
+        CloudCredentialVaultModel,
+        CloudResourceModel,
+        CloudTelemetryCheckpointModel,
+    )
     from ml.features.extractor import FEATURE_NAMES_V2
 
 logger = logging.getLogger(__name__)
@@ -126,25 +142,35 @@ def list_accounts(
     _user=Depends(require_analyst),
 ):
     """
-    List configured cloud accounts with current connection statuses.
+    List configured cloud accounts with current connection statuses and masked vault indicators.
     """
     db_accounts = CloudRegistry.list_accounts(db, provider=provider)
     if db_accounts:
-        return [
-            CloudAccountStatusSchema(
-                account_id=acc.account_id,
-                provider=acc.provider,
-                account_name=acc.account_name,
-                region=acc.region,
-                status=acc.status,
-                enabled=acc.enabled,
-                enforcement_enabled=acc.enforcement_enabled,
-                latency_ms=acc.latency_ms,
-                error_message=acc.last_error,
-                last_checked_at=acc.last_checked_at,
+        results = []
+        for acc in db_accounts:
+            vault_info = CredentialVaultService.get_vault_info(db, acc.account_id)
+            res_count = db.query(CloudResourceModel).filter(CloudResourceModel.cloud_account_id == acc.id).count()
+            results.append(
+                CloudAccountStatusSchema(
+                    account_id=acc.account_id,
+                    provider=acc.provider,
+                    account_name=acc.display_name,
+                    display_name=acc.display_name,
+                    region=acc.region,
+                    status=acc.status,
+                    enabled=acc.enabled,
+                    enforcement_enabled=acc.capabilities.get("write_containment", False) if isinstance(acc.capabilities, dict) else False,
+                    latency_ms=acc.metadata_json.get("latency_ms") if isinstance(acc.metadata_json, dict) else None,
+                    error_message=acc.last_error,
+                    last_checked_at=acc.last_connection_check,
+                    resources_count=res_count,
+                    has_stored_credentials=bool(vault_info),
+                    masked_identity=vault_info.get("masked_identity") if vault_info else None,
+                    auth_method=vault_info.get("auth_method") if vault_info else None,
+                    rotated_at=datetime.fromisoformat(vault_info["rotated_at"]) if vault_info and vault_info.get("rotated_at") else None,
+                )
             )
-            for acc in db_accounts
-        ]
+        return results
 
     # If no DB records yet, return active defaults from health monitor
     summary = CloudHealthMonitor.get_provider_health_summary(db)
@@ -157,6 +183,7 @@ def list_accounts(
                 account_id=prov_data.get("account_id", f"{prov_name.lower()}-default"),
                 provider=prov_name,
                 account_name=f"{prov_name} Primary Adapter",
+                display_name=f"{prov_name} Primary Adapter",
                 region=prov_data.get("region", "global"),
                 status=prov_data.get("status", "CONFIGURED"),
                 enabled=True,
@@ -172,46 +199,170 @@ def list_accounts(
 @router.post("/accounts", response_model=CloudAccountStatusSchema)
 def register_or_update_account(
     req: CloudAccountCreateRequest,
-    current_user: Any = Depends(require_admin),
+    current_user: Any = Depends(require_operator),
     db: Session = Depends(get_db),
 ):
     """
-    Register or update a cloud account configuration.
+    Register or update a cloud account configuration with secure server-side vault encryption.
     """
-    cfg = CloudAccountConfigSchema(**req.model_dump())
-    # Test connection non-destructively
+    # 1. Process and encrypt credentials into vault if supplied
+    auth_method = req.auth_method or "CONFIGURED"
+    if req.credentials:
+        prov = req.provider.upper()
+        if prov == "AWS":
+            auth_method = "STS_ASSUME_ROLE" if "role_arn" in req.credentials else "ACCESS_KEYS"
+        elif prov == "GCP":
+            auth_method = "SERVICE_ACCOUNT_KEY" if "private_key" in str(req.credentials) else "WORKLOAD_IDENTITY"
+        elif prov == "AZURE":
+            auth_method = "CLIENT_SECRET" if "client_secret" in req.credentials else "FEDERATED_CREDENTIAL"
+
+        CredentialVaultService.store_credentials(
+            db=db,
+            account_id=req.account_id,
+            provider=req.provider,
+            auth_method=auth_method,
+            credentials=req.credentials,
+        )
+
+    # 2. Build non-secret config
+    cfg_data = req.model_dump(exclude={"credentials"})
+    cfg = CloudAccountConfigSchema(**cfg_data)
+
+    # Temporarily supply credentials to adapter for initial verification
+    if req.credentials:
+        cfg.metadata.update(req.credentials)
+
     test_result = CloudConnectionManager.test_connection(cfg)
     status_str = test_result.get("status", "CONFIGURED")
     latency = test_result.get("latency_ms")
+
+    # Clean out any sensitive values before persisting to metadata_json
+    clean_meta = {
+        k: v for k, v in cfg.metadata.items()
+        if not any(s in k.lower() for s in ["secret", "key", "password", "token", "private"])
+    }
+    cfg.metadata = clean_meta
 
     saved = CloudRegistry.upsert_account(
         db=db,
         config=cfg,
         status=status_str,
         latency_ms=latency,
+        error_message=test_result.get("message") if status_str in ("ERROR", "AUTHENTICATION_FAILED") else None,
     )
 
-    # Sync initial network resources from adapter
+    # Discover and sync initial resources
+    res_count = 0
     adapter = CloudConnectionManager.get_adapter(cfg.account_id)
     if adapter:
         try:
             resources = adapter.list_network_resources()
-            CloudRegistry.sync_resources(db, cfg.account_id, resources)
+            res_count = CloudRegistry.sync_resources(db, cfg.account_id, resources)
         except Exception as e:
-            logger.warning("Resource sync during account register omitted: %s", e)
+            logger.warning("Resource discovery omitted during registration: %s", e)
 
+    vault_info = CredentialVaultService.get_vault_info(db, saved.account_id)
     return CloudAccountStatusSchema(
         account_id=saved.account_id,
         provider=saved.provider,
-        account_name=saved.account_name,
+        account_name=saved.display_name,
+        display_name=saved.display_name,
         region=saved.region,
         status=saved.status,
         enabled=saved.enabled,
-        enforcement_enabled=saved.enforcement_enabled,
-        latency_ms=saved.latency_ms,
+        enforcement_enabled=False,
+        latency_ms=latency,
         error_message=saved.last_error,
-        last_checked_at=saved.last_checked_at,
+        last_checked_at=saved.last_connection_check,
+        resources_count=res_count,
+        has_stored_credentials=bool(vault_info),
+        masked_identity=vault_info.get("masked_identity") if vault_info else None,
+        auth_method=vault_info.get("auth_method") if vault_info else None,
+        rotated_at=datetime.fromisoformat(vault_info["rotated_at"]) if vault_info and vault_info.get("rotated_at") else None,
     )
+
+
+@router.delete("/accounts/{provider}/{account_id}")
+def disconnect_and_delete_account(
+    provider: str,
+    account_id: str,
+    current_user: Any = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """
+    Disconnects and deletes a cloud account, purging encrypted vault credentials
+    and discovered inventory while preserving historical audit telemetry.
+    """
+    deleted = CloudRegistry.delete_account(db, account_id)
+    if not deleted:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Cloud account '{account_id}' not found",
+        )
+    return {
+        "success": True,
+        "provider": provider.upper(),
+        "account_id": account_id,
+        "message": f"Cloud integration for '{account_id}' successfully disconnected and credentials purged from vault.",
+    }
+
+
+@router.post("/accounts/{provider}/{account_id}/rotate-credentials")
+def rotate_account_credentials(
+    provider: str,
+    account_id: str,
+    req: CloudCredentialRotateRequest,
+    current_user: Any = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """
+    Rotates existing credentials with new AES-256-GCM encrypted secrets in vault.
+    """
+    account = CloudRegistry.get_account(db, account_id)
+    if not account:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Cloud account '{account_id}' not found",
+        )
+
+    try:
+        updated_entry = CredentialVaultService.rotate_credentials(
+            db=db,
+            account_id=account_id,
+            new_credentials=req.credentials,
+            new_auth_method=req.auth_method,
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Credential rotation failed: {str(e)}",
+        )
+
+    # Re-test connection with new credentials
+    cfg = CloudAccountConfigSchema(
+        provider=account.provider,
+        account_id=account.account_id,
+        region=account.region,
+        metadata=dict(req.credentials),
+    )
+    test_result = CloudConnectionManager.test_connection(cfg)
+    new_status = test_result.get("status", "CONFIGURED")
+    CloudRegistry.update_account_status(
+        db,
+        account_id=account_id,
+        status=new_status,
+        latency_ms=test_result.get("latency_ms"),
+        error_message=test_result.get("message") if new_status in ("ERROR", "AUTHENTICATION_FAILED") else None,
+    )
+
+    return {
+        "success": True,
+        "account_id": account_id,
+        "provider": account.provider,
+        "status": new_status,
+        "masked_identity": updated_entry.masked_identity,
+        "rotated_at": updated_entry.rotated_at.isoformat() if updated_entry.rotated_at else None,
+    }
 
 
 @router.post("/accounts/{provider}/test-connection")
@@ -285,6 +436,94 @@ def test_provider_connection(
             "message": str(e),
             "checked_at": datetime.now(timezone.utc).isoformat(),
         }
+
+
+@router.post("/accounts/{provider}/discover", response_model=Dict[str, Any])
+def discover_provider_network_resources(
+    provider: str,
+    account_id: Optional[str] = Query(None, description="Target account ID"),
+    region: Optional[str] = Query(None, description="Optional region override"),
+    db: Session = Depends(get_db),
+    _user=Depends(require_operator),
+):
+    """
+    Triggers network resource discovery (VPCs, Subnets, Gateways, Firewalls/SGs, Routes)
+    for the specified cloud provider (AWS, GCP, AZURE, DOCKER_LAB).
+    Persists discovered resources in PostgreSQL and returns inventory breakdown.
+    """
+    prov_upper = provider.upper()
+    if prov_upper == "AWS" and not account_id:
+        return discover_aws_network_resources(region=region, db=db, _user=_user)
+
+    # Find account or use first registered for provider
+    acc = None
+    if account_id:
+        acc = CloudRegistry.get_account(db, account_id)
+    else:
+        accounts = CloudRegistry.list_accounts(db, provider=prov_upper)
+        if accounts:
+            acc = accounts[0]
+
+    if acc:
+        target_account_id = acc.account_id
+        target_region = region or acc.region
+        cfg = CloudAccountConfigSchema(
+            provider=acc.provider,
+            account_id=acc.account_id,
+            display_name=acc.display_name,
+            region=target_region,
+            enabled=acc.enabled,
+            metadata=dict(acc.metadata_json or {}),
+        )
+    else:
+        target_account_id = account_id or f"{prov_upper.lower()}-default"
+        target_region = region or ("us-central1" if prov_upper == "GCP" else "eastus" if prov_upper == "AZURE" else "us-east-1")
+        cfg = CloudAccountConfigSchema(
+            provider=prov_upper,
+            account_id=target_account_id,
+            region=target_region,
+            enabled=True,
+        )
+
+    # Check vault for credentials
+    creds = CredentialVaultService.get_credentials(db, target_account_id)
+    if creds:
+        cfg.metadata.update(creds)
+
+    adapter = CloudConnectionManager.create_adapter(cfg)
+    conn = adapter.check_connection()
+
+    try:
+        resources = adapter.list_network_resources()
+    except Exception as e:
+        logger.warning("Resource discovery failed for %s: %s", prov_upper, e)
+        resources = []
+
+    synced_count = 0
+    if resources:
+        synced_count = CloudRegistry.sync_resources(db, target_account_id, resources)
+        CloudRegistry.update_account_status(
+            db,
+            target_account_id,
+            status=conn.get("status", "CONNECTED"),
+            latency_ms=conn.get("latency_ms"),
+        )
+
+    counts: Dict[str, int] = {}
+    for r in resources:
+        counts[r.resource_type] = counts.get(r.resource_type, 0) + 1
+
+    return {
+        "status": "SUCCESS",
+        "provider": prov_upper,
+        "account_id": target_account_id,
+        "region": target_region,
+        "total_resources": len(resources),
+        "synced_to_db": synced_count,
+        "counts_by_type": counts,
+        "caller_identity": conn.get("caller_identity"),
+        "resources": [r.model_dump() for r in resources],
+    }
 
 
 @router.post("/accounts/AWS/discover", response_model=Dict[str, Any])

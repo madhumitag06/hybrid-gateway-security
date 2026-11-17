@@ -14,7 +14,7 @@ from sqlalchemy.orm import sessionmaker, Session
 from backend.app.config import settings
 from backend.app.db.base import Base
 
-HEAD_ALEMBIC_REVISION = "004_enterprise_schema"
+HEAD_ALEMBIC_REVISION = "005_cloud_credentials"
 
 # Determine engine parameters based on database dialect
 is_sqlite = settings.database_url.startswith("sqlite")

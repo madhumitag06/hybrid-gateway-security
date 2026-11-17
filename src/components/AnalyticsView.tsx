@@ -135,9 +135,19 @@ export const AnalyticsView: React.FC = () => {
           </p>
           <div className="zone-grid-list">
             {analytics.zone_traffic_distribution.map((z) => (
-              <div key={z.traffic_direction} className="zone-stat-row">
-                <code>{z.traffic_direction}</code>
-                <span className="zone-count-badge">{z.count} flows ({z.percentage}%)</span>
+              <div key={z.traffic_direction} className="zone-stat-row" style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                <code style={{ minWidth: '150px', color: 'var(--warm-cream)' }}>{z.traffic_direction}</code>
+                <div style={{ flex: 1, height: '8px', background: 'var(--panel-inset)', borderRadius: '4px', overflow: 'hidden' }}>
+                  <div
+                    style={{
+                      width: `${Math.max(z.percentage, 4)}%`,
+                      height: '100%',
+                      background: 'var(--terracotta)',
+                      borderRadius: '4px',
+                    }}
+                  />
+                </div>
+                <span className="zone-count-badge" style={{ minWidth: '110px', textAlign: 'right' }}>{z.count} flows ({z.percentage}%)</span>
               </div>
             ))}
           </div>

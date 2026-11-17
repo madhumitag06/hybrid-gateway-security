@@ -67,6 +67,7 @@ def test_scenario_1_clean_database_upgrade(disposable_db):
     expected_tables = {
         "alembic_version",
         "_alembic_004_created_tables",
+        "_alembic_005_created_tables",
         "users",
         "refresh_tokens",
         "security_events",
@@ -78,6 +79,7 @@ def test_scenario_1_clean_database_upgrade(disposable_db):
         "cloud_resources",
         "cloud_telemetry_checkpoints",
         "cloud_telemetry_ingestions",
+        "cloud_credential_vault",
         "adaptive_flow_feedbacks",
         "adaptive_training_runs",
     }
@@ -163,9 +165,10 @@ def test_scenario_4_downgrade_preserves_unowned_tables(disposable_db):
     tables_at_head = set(inspector_head.get_table_names())
     assert "policy_audit_logs" in tables_at_head
     assert "users" in tables_at_head
+    assert "cloud_credential_vault" in tables_at_head
 
-    # 2. Downgrade one step (004 -> 003)
-    command.downgrade(cfg, "-1")
+    # 2. Downgrade to 003_auth_users
+    command.downgrade(cfg, "003_auth_users")
 
     # 3. Verify revision is at 003_auth_users
     ver = get_current_alembic_version(engine)
@@ -201,7 +204,7 @@ def test_scenario_5_schema_drift_and_incomplete_schema_detected(disposable_db):
 
     # 2. Version is set to HEAD but critical tables are missing
     with engine.begin() as conn:
-        conn.execute(sa.text("UPDATE alembic_version SET version_num = '004_enterprise_schema'"))
+        conn.execute(sa.text("UPDATE alembic_version SET version_num = '005_cloud_credentials'"))
 
     is_valid, msg = verify_production_schema(engine)
     assert is_valid is False

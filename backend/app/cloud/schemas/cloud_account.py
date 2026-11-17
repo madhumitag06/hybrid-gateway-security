@@ -93,6 +93,10 @@ class CloudAccountStatusSchema(BaseModel):
     last_checked_at: Optional[datetime] = None
     last_telemetry_sync: Optional[datetime] = None
     resources_count: int = 0
+    has_stored_credentials: bool = False
+    masked_identity: Optional[str] = None
+    auth_method: Optional[str] = None
+    rotated_at: Optional[datetime] = None
 
     @model_validator(mode="before")
     @classmethod
@@ -126,6 +130,8 @@ class CloudAccountCreateRequest(BaseModel):
     client_id: Optional[str] = None
     enabled: bool = True
     enforcement_enabled: bool = False
+    auth_method: Optional[str] = None
+    credentials: Optional[Dict[str, Any]] = None  # Processed and encrypted into vault server-side
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -137,3 +143,19 @@ class CloudAccountUpdateRequest(BaseModel):
     enabled: Optional[bool] = None
     enforcement_enabled: Optional[bool] = None
     metadata: Optional[Dict[str, Any]] = None
+
+
+class CloudCredentialRotateRequest(BaseModel):
+    auth_method: Optional[str] = None
+    credentials: Dict[str, Any] = Field(..., description="New credential payload to be encrypted in vault")
+
+
+class CloudVaultInfoSchema(BaseModel):
+    has_credentials: bool
+    auth_method: str
+    masked_identity: str
+    key_version: str
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+    rotated_at: Optional[str] = None
+

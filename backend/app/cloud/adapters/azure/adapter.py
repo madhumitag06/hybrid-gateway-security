@@ -40,11 +40,13 @@ class AzureCloudAdapter(BaseCloudProviderAdapter):
     def __init__(self, config: CloudAccountConfigSchema):
         super().__init__(config)
         self.subscription_id = config.subscription_id or config.account_id
+        meta = config.metadata or {}
         self.identity_provider = AzureIdentityProvider(
             subscription_id=self.subscription_id,
             tenant_id=config.tenant_id,
             client_id=config.client_id,
             region=self.region,
+            client_secret=meta.get("client_secret") or meta.get("secret"),
         )
         self.telemetry_provider = AzureTelemetryProvider(
             subscription_id=self.subscription_id,

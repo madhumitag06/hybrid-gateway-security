@@ -268,3 +268,33 @@ class CloudRegistry:
             interfaces_count=if_count,
             by_provider=by_provider,
         )
+
+
+    @classmethod
+    def delete_account(cls, db: Session, account_id: str) -> bool:
+        """
+        Disconnects and removes a cloud account, purging associated vault credentials
+        and discovered resources while preserving audit event history.
+        """
+        account = cls.get_account(db, account_id)
+        if not account:
+            return False
+
+        # Explicitly delete vault credentials if present
+        try:
+            from backend.app.cloud.services.credential_vault import CredentialVaultService
+            CredentialVaultService.delete_credentials(db, account_id)
+        except Exception as e:
+            logger.debug("Vault credential cleanup for %s: %s", account_id, e)
+
+        # Remove adapter cache
+        try:
+            from backend.app.cloud.services.cloud_connection_manager import CloudConnectionManager
+            if account_id in CloudConnectionManager._adapters:
+                del CloudConnectionManager._adapters[account_id]
+        except Exception:
+            pass
+
+        db.delete(account)
+        db.commit()
+        return True

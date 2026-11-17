@@ -54,6 +54,10 @@ backend/executable/AdaptiveSecurityGateway/
 backend/executable/*_backup*/
 backend/executable/*.exe
 *.exe
+archive/rollback_executable/
+archive/env_backups_historical/
+archive/*backup*/
+archive/*executable*/
 
 # Scratch scripts and temporary test files
 scratch/

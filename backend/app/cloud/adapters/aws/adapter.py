@@ -56,6 +56,7 @@ class AwsCloudAdapter(BaseCloudProviderAdapter):
             getattr(config, "profile_name", None)
             or (config.metadata.get("profile_name") if config.metadata else None)
         )
+        meta = config.metadata or {}
         self.identity_provider = AwsIdentityProvider(
             account_id=self.account_id,
             role_arn=config.role_arn,
@@ -63,6 +64,9 @@ class AwsCloudAdapter(BaseCloudProviderAdapter):
             external_id=config.external_id,
             profile_name=resolved_profile,
             oidc_role_arn=config.oidc_role_arn,
+            access_key_id=meta.get("access_key_id"),
+            secret_access_key=meta.get("secret_access_key"),
+            session_token=meta.get("session_token"),
         )
         self.telemetry_provider = AwsTelemetryProvider(
             account_id=self.account_id,

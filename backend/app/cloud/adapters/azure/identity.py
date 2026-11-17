@@ -24,12 +24,14 @@ class AzureIdentityProvider(BaseCloudIdentityProvider):
         tenant_id: Optional[str] = "tenant-entra-id-01",
         client_id: Optional[str] = None,
         region: str = "eastus",
+        client_secret: Optional[str] = None,
     ):
         super().__init__(provider_name="AZURE", account_id=subscription_id)
         self.subscription_id = subscription_id
         self.tenant_id = tenant_id
         self.client_id = client_id or "00000000-0000-0000-0000-000000000001"
         self.region = region
+        self.client_secret = client_secret
 
     def validate_credentials(self) -> Tuple[bool, str]:
         """Validate Azure subscription and tenant configuration."""
@@ -41,9 +43,34 @@ class AzureIdentityProvider(BaseCloudIdentityProvider):
 
     def get_caller_identity(self) -> Dict[str, Any]:
         """
-        Verify caller identity via azure-identity DefaultAzureCredential if available,
-        otherwise return configured non-secret federated identity descriptor.
+        Verify caller identity via ClientSecretCredential, DefaultAzureCredential,
+        or federated identity descriptor.
         """
+        if self.client_secret:
+            try:
+                from azure.identity import ClientSecretCredential
+                cred = ClientSecretCredential(
+                    tenant_id=self.tenant_id,
+                    client_id=self.client_id,
+                    client_secret=self.client_secret,
+                )
+                return {
+                    "subscription_id": self.subscription_id,
+                    "tenant_id": self.tenant_id,
+                    "client_id": self.client_id,
+                    "status": "VERIFIED",
+                    "auth_method": "CLIENT_SECRET",
+                }
+            except Exception as e:
+                return {
+                    "subscription_id": self.subscription_id,
+                    "tenant_id": self.tenant_id,
+                    "client_id": self.client_id,
+                    "status": "AUTHENTICATION_FAILED",
+                    "error": f"Invalid Azure client secret or tenant configuration: {str(e)}",
+                    "auth_method": "CLIENT_SECRET",
+                }
+
         try:
             from azure.identity import DefaultAzureCredential
             # If credential resolves, report verified

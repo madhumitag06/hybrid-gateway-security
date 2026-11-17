@@ -102,6 +102,9 @@ hidden_imports = [
     "jwt",
     "multipart",
     "python_multipart",
+    "cryptography",
+    "cryptography.hazmat.primitives.ciphers.aead",
+    "cryptography.hazmat.primitives.kdf.hkdf",
 ]
 
 # Collect all backend.app, ml, and shap submodules dynamically

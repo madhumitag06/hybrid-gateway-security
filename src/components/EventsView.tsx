@@ -135,6 +135,27 @@ export const EventsView: React.FC = () => {
 
   const totalPages = Math.ceil(total / limit) || 1
 
+  // Dynamic Aggregations from actual loaded PostgreSQL events
+  const severityCounts = {
+    LOW: events.filter((e) => String(e.severity || '').toUpperCase() === 'LOW').length,
+    MEDIUM: events.filter((e) => String(e.severity || '').toUpperCase() === 'MEDIUM').length,
+    HIGH: events.filter((e) => ['HIGH', 'CRITICAL'].includes(String(e.severity || '').toUpperCase())).length,
+  }
+
+  const attackTypeCounts = events.reduce((acc, e) => {
+    const key = e.attack_type || 'UNKNOWN'
+    acc[key] = (acc[key] || 0) + 1
+    return acc
+  }, {} as Record<string, number>)
+
+  const actionCounts = events.reduce((acc, e) => {
+    const key = e.action || 'Unknown'
+    acc[key] = (acc[key] || 0) + 1
+    return acc
+  }, {} as Record<string, number>)
+
+  const totalLoaded = events.length
+
   return (
     <div className="events-view-container">
       <section className="intro">
@@ -150,6 +171,168 @@ export const EventsView: React.FC = () => {
       {toast && (
         <div className="toast" onClick={() => setToast('')}>
           {toast}
+        </div>
+      )}
+
+      {/* Dynamic Data-Driven Threat & Category Intelligence Strip */}
+      {totalLoaded > 0 && (
+        <div
+          className="card"
+          style={{
+            marginBottom: '16px',
+            padding: '16px 20px',
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+            gap: '16px',
+          }}
+        >
+          {/* 1. Threat Severity Breakdown */}
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+              <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--warm-cream)' }}>
+                Threat Severity Distribution ({totalLoaded} events)
+              </span>
+              <small style={{ fontSize: '10px', color: 'var(--muted-cream)' }}>Click bar to filter</small>
+            </div>
+            <div style={{ display: 'flex', height: '14px', borderRadius: '4px', overflow: 'hidden', background: 'var(--panel-inset)', border: '1px solid var(--line)' }}>
+              {severityCounts.LOW > 0 && (
+                <div
+                  onClick={() => { setThreatLevel(threatLevel === 'LOW' ? '' : 'LOW'); setPage(0); }}
+                  style={{
+                    width: `${(severityCounts.LOW / totalLoaded) * 100}%`,
+                    background: 'var(--olive-green)',
+                    cursor: 'pointer',
+                    transition: 'opacity 0.2s',
+                    opacity: !threatLevel || threatLevel === 'LOW' ? 1 : 0.35,
+                  }}
+                  title={`LOW Severity: ${severityCounts.LOW} events (${((severityCounts.LOW / totalLoaded) * 100).toFixed(1)}%)`}
+                />
+              )}
+              {severityCounts.MEDIUM > 0 && (
+                <div
+                  onClick={() => { setThreatLevel(threatLevel === 'MEDIUM' ? '' : 'MEDIUM'); setPage(0); }}
+                  style={{
+                    width: `${(severityCounts.MEDIUM / totalLoaded) * 100}%`,
+                    background: 'var(--pale-sand)',
+                    cursor: 'pointer',
+                    transition: 'opacity 0.2s',
+                    opacity: !threatLevel || threatLevel === 'MEDIUM' ? 1 : 0.35,
+                  }}
+                  title={`MEDIUM Severity: ${severityCounts.MEDIUM} events (${((severityCounts.MEDIUM / totalLoaded) * 100).toFixed(1)}%)`}
+                />
+              )}
+              {severityCounts.HIGH > 0 && (
+                <div
+                  onClick={() => { setThreatLevel(threatLevel === 'HIGH' ? '' : 'HIGH'); setPage(0); }}
+                  style={{
+                    width: `${(severityCounts.HIGH / totalLoaded) * 100}%`,
+                    background: 'var(--muted-red)',
+                    cursor: 'pointer',
+                    transition: 'opacity 0.2s',
+                    opacity: !threatLevel || threatLevel === 'HIGH' ? 1 : 0.35,
+                  }}
+                  title={`HIGH / CRITICAL Severity: ${severityCounts.HIGH} events (${((severityCounts.HIGH / totalLoaded) * 100).toFixed(1)}%)`}
+                />
+              )}
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', marginTop: '6px', color: 'var(--muted-cream)' }}>
+              <span style={{ cursor: 'pointer', color: threatLevel === 'LOW' ? 'var(--warm-cream)' : 'inherit', fontWeight: threatLevel === 'LOW' ? 700 : 400 }} onClick={() => { setThreatLevel(threatLevel === 'LOW' ? '' : 'LOW'); setPage(0); }}>
+                ● Low: {severityCounts.LOW}
+              </span>
+              <span style={{ cursor: 'pointer', color: threatLevel === 'MEDIUM' ? 'var(--warm-cream)' : 'inherit', fontWeight: threatLevel === 'MEDIUM' ? 700 : 400 }} onClick={() => { setThreatLevel(threatLevel === 'MEDIUM' ? '' : 'MEDIUM'); setPage(0); }}>
+                ▲ Med: {severityCounts.MEDIUM}
+              </span>
+              <span style={{ cursor: 'pointer', color: threatLevel === 'HIGH' ? 'var(--warm-cream)' : 'inherit', fontWeight: threatLevel === 'HIGH' ? 700 : 400 }} onClick={() => { setThreatLevel(threatLevel === 'HIGH' ? '' : 'HIGH'); setPage(0); }}>
+                ■ High: {severityCounts.HIGH}
+              </span>
+            </div>
+          </div>
+
+          {/* 2. Attack Categories Breakdown */}
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+              <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--warm-cream)' }}>
+                Attack Categories (XGBoost Evaluated)
+              </span>
+              <small style={{ fontSize: '10px', color: 'var(--muted-cream)' }}>Click category to filter</small>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+              {Object.entries(attackTypeCounts).slice(0, 4).map(([type, count]) => {
+                const isSelected = attackType === type
+                const pct = ((count / totalLoaded) * 100).toFixed(0)
+                return (
+                  <div
+                    key={type}
+                    onClick={() => { setAttackType(isSelected ? '' : type); setPage(0); }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      fontSize: '11px',
+                      cursor: 'pointer',
+                      opacity: !attackType || isSelected ? 1 : 0.45,
+                      transition: 'opacity 0.2s',
+                    }}
+                  >
+                    <span style={{ width: '130px', color: isSelected ? 'var(--warm-cream)' : 'var(--muted-cream)', fontWeight: isSelected ? 700 : 400, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {type}
+                    </span>
+                    <div style={{ flex: 1, height: '8px', background: 'var(--panel-inset)', borderRadius: '4px', overflow: 'hidden' }}>
+                      <div
+                        style={{
+                          width: `${Math.max((count / totalLoaded) * 100, 3)}%`,
+                          height: '100%',
+                          background: type === 'BENIGN' ? 'var(--olive-green)' : 'var(--terracotta)',
+                          borderRadius: '4px',
+                        }}
+                      />
+                    </div>
+                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: '10.5px', color: 'var(--warm-cream)', minWidth: '40px', textAlign: 'right' }}>
+                      {count} ({pct}%)
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* 3. Policy Decisions Breakdown */}
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+              <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--warm-cream)' }}>
+                Policy Decisions ({totalLoaded} actions)
+              </span>
+              <small style={{ fontSize: '10px', color: 'var(--muted-cream)' }}>Click action to filter</small>
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+              {Object.entries(actionCounts).map(([act, count]) => {
+                const isSelected = actionFilter.toLowerCase() === act.toLowerCase()
+                return (
+                  <button
+                    key={act}
+                    type="button"
+                    onClick={() => { setActionFilter(isSelected ? '' : act); setPage(0); }}
+                    style={{
+                      padding: '4px 10px',
+                      borderRadius: 'var(--radius-xs)',
+                      fontSize: '11px',
+                      fontWeight: 600,
+                      border: '1px solid var(--line)',
+                      background: isSelected ? 'var(--terracotta)' : 'var(--panel-inset)',
+                      color: isSelected ? '#ffffff' : 'var(--warm-cream)',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                    }}
+                  >
+                    <span>{act}</span>
+                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', opacity: 0.85 }}>({count})</span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
         </div>
       )}
 

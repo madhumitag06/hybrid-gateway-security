@@ -144,3 +144,25 @@ class CloudTelemetryIngestionModel(Base, TimestampMixin):
         default=list,
     )
 
+
+
+class CloudCredentialVaultModel(Base, TimestampMixin):
+    """
+    Secure vault storing envelope-encrypted secrets for cloud provider integrations.
+    All sensitive data (secret keys, tokens, client secrets, private keys)
+    is strictly encrypted at rest with AES-256-GCM.
+    """
+    __tablename__ = "cloud_credential_vault"
+
+    account_id: Mapped[str] = mapped_column(
+        String(128),
+        ForeignKey("cloud_accounts.id", ondelete="CASCADE"),
+        primary_key=True,
+        index=True,
+    )
+    provider: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    auth_method: Mapped[str] = mapped_column(String(64), nullable=False)
+    encrypted_blob: Mapped[str] = mapped_column(Text, nullable=False)
+    key_version: Mapped[str] = mapped_column(String(32), nullable=False, default="v1")
+    masked_identity: Mapped[str] = mapped_column(String(255), nullable=False)
+    rotated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)

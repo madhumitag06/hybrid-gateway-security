@@ -32,12 +32,12 @@ const fallbackDashboard: DashboardData = {
     { label: 'Unusual Data Transfer Size', value: 4, tone: 'blue' },
   ],
   trafficPoints: [
-    { time_label: '00:00', inbound_val: 32, outbound_val: 19, flow_count: 32, anomaly_count: 0 },
-    { time_label: '04:00', inbound_val: 45, outbound_val: 27, flow_count: 45, anomaly_count: 0 },
-    { time_label: '08:00', inbound_val: 68, outbound_val: 42, flow_count: 68, anomaly_count: 1, anomaly_note: 'Traffic Spike' },
-    { time_label: '12:00', inbound_val: 94, outbound_val: 58, flow_count: 94, anomaly_count: 2, anomaly_note: 'Port Scan (87/100)' },
-    { time_label: '16:00', inbound_val: 55, outbound_val: 33, flow_count: 55, anomaly_count: 0 },
-    { time_label: '20:00', inbound_val: 73, outbound_val: 45, flow_count: 73, anomaly_count: 1, anomaly_note: 'SSH Brute Force' },
+    { time_label: '00:00', inbound_val: 32, outbound_val: 19, flow_count: 32, total_packets: 640, total_bytes: 409600, anomaly_count: 0, bucket_start: '00:00 UTC', bucket_end: '04:00 UTC', telemetry_source: 'AWS_VPC_FLOW', avg_risk_score: 18.2, max_risk_score: 35 },
+    { time_label: '04:00', inbound_val: 45, outbound_val: 27, flow_count: 45, total_packets: 910, total_bytes: 582400, anomaly_count: 0, bucket_start: '04:00 UTC', bucket_end: '08:00 UTC', telemetry_source: 'GATEWAY_STREAM', avg_risk_score: 22.4, max_risk_score: 41 },
+    { time_label: '08:00', inbound_val: 68, outbound_val: 42, flow_count: 68, total_packets: 1480, total_bytes: 947200, anomaly_count: 1, anomaly_note: 'Traffic Spike', bucket_start: '08:00 UTC', bucket_end: '12:00 UTC', telemetry_source: 'PCAP_INGEST', avg_risk_score: 54.1, max_risk_score: 76 },
+    { time_label: '12:00', inbound_val: 94, outbound_val: 58, flow_count: 94, total_packets: 2350, total_bytes: 1504000, anomaly_count: 2, anomaly_note: 'Port Scan (87/100)', bucket_start: '12:00 UTC', bucket_end: '16:00 UTC', telemetry_source: 'AWS_VPC_FLOW, PCAP_INGEST', avg_risk_score: 72.8, max_risk_score: 87 },
+    { time_label: '16:00', inbound_val: 55, outbound_val: 33, flow_count: 55, total_packets: 1100, total_bytes: 704000, anomaly_count: 0, bucket_start: '16:00 UTC', bucket_end: '20:00 UTC', telemetry_source: 'GATEWAY_STREAM', avg_risk_score: 24.0, max_risk_score: 45 },
+    { time_label: '20:00', inbound_val: 73, outbound_val: 45, flow_count: 73, total_packets: 1650, total_bytes: 1056000, anomaly_count: 1, anomaly_note: 'SSH Brute Force', bucket_start: '20:00 UTC', bucket_end: '24:00 UTC', telemetry_source: 'PCAP_INGEST', avg_risk_score: 61.5, max_risk_score: 84 },
   ],
   timeline: [
     { time: '14:32:09', title: 'Containment Restrict Enforced', sub: 'Applied temporary restrict policy to 192.168.1.77', icon: '✹', action: 'Restrict', status: 'Applied' },

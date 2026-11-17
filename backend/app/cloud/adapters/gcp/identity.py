@@ -25,6 +25,7 @@ class GcpIdentityProvider(BaseCloudIdentityProvider):
         workload_identity_pool: Optional[str] = None,
         workload_identity_provider: Optional[str] = None,
         region: str = "us-central1",
+        service_account_info: Optional[Dict[str, Any]] = None,
     ):
         super().__init__(provider_name="GCP", account_id=project_id)
         self.project_id = project_id
@@ -32,6 +33,7 @@ class GcpIdentityProvider(BaseCloudIdentityProvider):
         self.workload_identity_pool = workload_identity_pool
         self.workload_identity_provider = workload_identity_provider
         self.region = region
+        self.service_account_info = service_account_info
 
     def validate_credentials(self) -> Tuple[bool, str]:
         """Validate GCP configuration parameters."""
@@ -41,9 +43,28 @@ class GcpIdentityProvider(BaseCloudIdentityProvider):
 
     def get_caller_identity(self) -> Dict[str, Any]:
         """
-        Verify caller identity via Google Cloud metadata or STS token if google-auth available,
-        otherwise return configured non-secret service account identity.
+        Verify caller identity via Service Account Key, Google Cloud metadata,
+        or Workload Identity Federation OIDC token.
         """
+        if self.service_account_info:
+            try:
+                from google.oauth2 import service_account
+                creds = service_account.Credentials.from_service_account_info(self.service_account_info)
+                return {
+                    "project_id": creds.project_id or self.project_id,
+                    "service_account": creds.service_account_email,
+                    "status": "VERIFIED",
+                    "auth_method": "SERVICE_ACCOUNT_KEY",
+                }
+            except Exception as e:
+                return {
+                    "project_id": self.project_id,
+                    "service_account": self.service_account_email,
+                    "status": "AUTHENTICATION_FAILED",
+                    "error": f"Invalid service account key: {str(e)}",
+                    "auth_method": "SERVICE_ACCOUNT_KEY",
+                }
+
         try:
             import google.auth
             credentials, project = google.auth.default()

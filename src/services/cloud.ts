@@ -117,6 +117,8 @@ export interface CloudTelemetryBatchResponse {
     timestamp_provenance: boolean
     direction_classified: boolean
   }
+  error_message?: string
+  message?: string
 }
 
 export const cloudService = {

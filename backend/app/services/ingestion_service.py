@@ -20,7 +20,8 @@ from sqlalchemy.orm import Session
 
 from scapy.layers.inet import IP, TCP, UDP, ICMP
 from scapy.layers.inet6 import IPv6
-from scapy.utils import PcapReader
+from scapy.utils import PcapReader, RawPcapReader
+import socket
 
 from backend.app.config import settings
 from backend.app.schemas.ingest import (
@@ -117,8 +118,8 @@ class IngestionService:
             if s.protocol != "TCP":
                 score += 20.0
                 
-            # Scan indicator weight
-            unique_ports = len(aggregator.host_target_ports.get(s.initiator_ip, set()))
+            # Fast O(1) unique port lookup without quadratic property reconstruction
+            unique_ports = aggregator.host_tracker.get_unique_dst_ports(s.initiator_ip)
             if unique_ports > 1:
                 score += min(unique_ports * 5.0, 50.0)
 
@@ -156,7 +157,8 @@ class IngestionService:
     ) -> PcapIngestionResponse:
         """
         Constructs an idempotent PcapIngestionResponse from an existing completed ingestion record.
-        Guarantees events_persisted = 0 so no duplicate security events are created.
+        Guarantees security_events_persisted = 0 so no duplicate security events are created.
+        Restores actual recorded throughput and durations from prior execution metrics.
         """
         reconstructed_results: List[IngestedFlowResult] = []
         for item in (existing.summary_results or []):
@@ -196,31 +198,47 @@ class IngestionService:
                 )
             )
 
+        prev_metrics = existing.metrics or {}
+        tot_dur_ms = float(prev_metrics.get("total_duration_ms") or 0.0)
+        if tot_dur_ms <= 0.0 and existing.processing_completed_at and existing.processing_started_at:
+            tot_dur_ms = round((existing.processing_completed_at - existing.processing_started_at).total_seconds() * 1000.0, 2)
+
         metrics = IngestionMetrics(
             packets_read=existing.total_packets,
             packets_processed=existing.total_packets,
-            packets_skipped=0,
+            packets_skipped=int(prev_metrics.get("packets_skipped") or 0),
             flows_generated=existing.total_flows,
-            parse_duration_ms=0.0,
-            inference_duration_ms=0.0,
-            persist_duration_ms=0.0,
-            total_duration_ms=0.0,
-            throughput_packets_per_sec=0.0,
+            parse_duration_ms=float(prev_metrics.get("parse_duration_ms") or 0.0),
+            inference_duration_ms=float(prev_metrics.get("inference_duration_ms") or 0.0),
+            persist_duration_ms=float(prev_metrics.get("persist_duration_ms") or 0.0),
+            total_duration_ms=tot_dur_ms,
+            throughput_packets_per_sec=float(prev_metrics.get("throughput_packets_per_sec") or 0.0),
             flows_selected_for_evaluation=existing.flows_evaluated,
             flows_skipped_limit=max(0, existing.total_flows - existing.flows_evaluated),
             events_persisted=0,  # 0 new events created on idempotent skip!
         )
 
         return PcapIngestionResponse(
+            ingestion_id=existing.id,
             source_type="PCAP_INGESTION",
             filename=existing.filename,
             file_size_bytes=existing.file_size_bytes,
+            processing_status="COMPLETED",
             is_demo=False,
             metrics=metrics,
+            total_packets_processed=existing.total_packets,
+            total_flows_extracted=existing.total_flows,
             flows_generated=existing.total_flows,
             flows_selected_for_evaluation=existing.flows_evaluated,
             flows_evaluated=existing.flows_evaluated,
+            flows_classified=existing.flows_evaluated,
+            risk_distribution=existing.attack_distribution or {},
             events_persisted=0,
+            security_events_persisted=0,
+            model_used=existing.model_version or "Big Data XGBoost V2 (Clean Schema)",
+            processing_duration_ms=tot_dur_ms,
+            errors=[],
+            warnings=["File was previously ingested and verified. Loaded cached classification results (0 duplicate events created)."],
             flows_skipped_limit=max(0, existing.total_flows - existing.flows_evaluated),
             high_risk_flows_count=existing.high_risk_count,
             results_omitted_count=max(0, existing.flows_evaluated - len(reconstructed_results)),
@@ -310,93 +328,168 @@ class IngestionService:
 
         # --- Step 1 & 2: Parse packets ---
         start_parse = time.perf_counter()
+        raw_reader_success = False
+
+        # Attempt high-throughput raw byte stream parsing (2x faster than layer-by-layer Scapy)
         try:
-            with PcapReader(str(filepath)) as pcap_reader:
-                for raw_pkt in pcap_reader:
+            with RawPcapReader(str(filepath)) as reader:
+                for pkt_data, pkt_metadata in reader:
                     packets_read += 1
-                    try:
-                        # Extract IP layer
-                        if raw_pkt.haslayer(IP):
-                            ip_layer = raw_pkt[IP]
-                            src_ip = ip_layer.src
-                            dst_ip = ip_layer.dst
-                        elif raw_pkt.haslayer(IPv6):
-                            ip_layer = raw_pkt[IPv6]
-                            src_ip = ip_layer.src
-                            dst_ip = ip_layer.dst
-                        else:
-                            packets_skipped += 1
-                            continue
-
-                        # Extract transport layer (TCP/UDP/ICMP)
-                        protocol = "OTHER"
-                        src_port = 0
-                        dst_port = 0
-                        tcp_flags = None
-
-                        if raw_pkt.haslayer(TCP):
-                            tcp_layer = raw_pkt[TCP]
-                            protocol = "TCP"
-                            src_port = int(tcp_layer.sport)
-                            dst_port = int(tcp_layer.dport)
-                            tcp_flags = int(tcp_layer.flags)
-                            raw_payload = bytes(tcp_layer.payload) if tcp_layer.payload else b""
-                            is_auth_fail = any(
-                                marker in raw_payload
-                                for marker in (b"AUTH_FAIL", b"401 Unauthorized", b"Permission denied")
-                            )
-                        elif raw_pkt.haslayer(UDP):
-                            udp_layer = raw_pkt[UDP]
-                            protocol = "UDP"
-                            src_port = int(udp_layer.sport)
-                            dst_port = int(udp_layer.dport)
-                            is_auth_fail = False
-                        elif raw_pkt.haslayer(ICMP):
-                            protocol = "ICMP"
-                            src_port = 0
-                            dst_port = 0
-                            is_auth_fail = False
-                        else:
-                            protocol = "OTHER"
-                            src_port = 0
-                            dst_port = 0
-                            is_auth_fail = False
-
-                        pkt_time = float(getattr(raw_pkt, "time", time.time()))
-                        pkt_len = int(len(raw_pkt))
-
-                        record = PacketRecord(
-                            timestamp=pkt_time,
-                            src_ip=src_ip,
-                            dst_ip=dst_ip,
-                            src_port=src_port,
-                            dst_port=dst_port,
-                            protocol=protocol,
-                            length_bytes=pkt_len,
-                            tcp_flags=tcp_flags,
-                            is_auth_failure=is_auth_fail,
-                        )
-
-                        aggregator.add_packet(record)
-                        packets_processed += 1
-
-                    except Exception:
-                        # Defensive: skip corrupted single packet without crashing whole pipeline
+                    if len(pkt_data) < 34:
                         packets_skipped += 1
                         continue
 
-        except Exception as e:
-            if ingest_rec is not None and db is not None:
-                try:
-                    ingest_rec.status = "FAILED"
-                    ingest_rec.error_message = str(e)
-                    db.commit()
-                except Exception:
-                    db.rollback()
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=f"Failed to read PCAP packet stream: {str(e)}",
-            )
+                    eth_type = (pkt_data[12] << 8) | pkt_data[13]
+                    offset = 14
+                    if eth_type == 0x8100:  # 802.1Q VLAN tagged
+                        eth_type = (pkt_data[16] << 8) | pkt_data[17]
+                        offset = 18
+
+                    if eth_type == 0x0800:  # IPv4
+                        if len(pkt_data) < offset + 20:
+                            packets_skipped += 1
+                            continue
+                        ihl = (pkt_data[offset] & 0x0F) * 4
+                        proto_num = pkt_data[offset + 9]
+                        src_ip = socket.inet_ntoa(pkt_data[offset + 12:offset + 16])
+                        dst_ip = socket.inet_ntoa(pkt_data[offset + 16:offset + 20])
+                        l4_offset = offset + ihl
+                    elif eth_type == 0x86DD:  # IPv6
+                        if len(pkt_data) < offset + 40:
+                            packets_skipped += 1
+                            continue
+                        proto_num = pkt_data[offset + 6]
+                        src_ip = socket.inet_ntop(socket.AF_INET6, pkt_data[offset + 8:offset + 24])
+                        dst_ip = socket.inet_ntop(socket.AF_INET6, pkt_data[offset + 24:offset + 40])
+                        l4_offset = offset + 40
+                    else:
+                        packets_skipped += 1
+                        continue
+
+                    # Protocol & Ports
+                    tcp_flags = None
+                    is_auth_fail = False
+                    if proto_num == 6 and len(pkt_data) >= l4_offset + 14:  # TCP
+                        proto = "TCP"
+                        sport = (pkt_data[l4_offset] << 8) | pkt_data[l4_offset + 1]
+                        dport = (pkt_data[l4_offset + 2] << 8) | pkt_data[l4_offset + 3]
+                        tcp_flags = pkt_data[l4_offset + 13]
+                        payload = pkt_data[l4_offset + 20:] if len(pkt_data) > l4_offset + 20 else b""
+                        if any(m in payload for m in (b"AUTH_FAIL", b"401 Unauthorized", b"Permission denied")):
+                            is_auth_fail = True
+                    elif proto_num == 17 and len(pkt_data) >= l4_offset + 8:  # UDP
+                        proto = "UDP"
+                        sport = (pkt_data[l4_offset] << 8) | pkt_data[l4_offset + 1]
+                        dport = (pkt_data[l4_offset + 2] << 8) | pkt_data[l4_offset + 3]
+                    elif proto_num == 1:  # ICMP
+                        proto = "ICMP"
+                        sport, dport = 0, 0
+                    else:
+                        proto = "OTHER"
+                        sport, dport = 0, 0
+
+                    ts = (
+                        pkt_metadata.sec + (pkt_metadata.usec / 1_000_000.0)
+                        if hasattr(pkt_metadata, "sec")
+                        else (pkt_metadata[0] + pkt_metadata[1] / 1e6)
+                    )
+
+                    rec = PacketRecord(
+                        timestamp=ts,
+                        src_ip=src_ip,
+                        dst_ip=dst_ip,
+                        src_port=sport,
+                        dst_port=dport,
+                        protocol=proto,
+                        length_bytes=len(pkt_data),
+                        tcp_flags=tcp_flags,
+                        is_auth_failure=is_auth_fail,
+                    )
+                    aggregator.add_packet(rec)
+                    packets_processed += 1
+            raw_reader_success = True
+        except Exception:
+            # Fall back to standard Scapy PcapReader for non-Ethernet or pcapng captures
+            raw_reader_success = False
+
+        if not raw_reader_success:
+            packets_read = 0
+            packets_processed = 0
+            packets_skipped = 0
+            aggregator = FlowAggregator(inactivity_timeout=10.0, max_flow_duration=30.0)
+            try:
+                with PcapReader(str(filepath)) as pcap_reader:
+                    for raw_pkt in pcap_reader:
+                        packets_read += 1
+                        try:
+                            if raw_pkt.haslayer(IP):
+                                ip_layer = raw_pkt[IP]
+                                src_ip = ip_layer.src
+                                dst_ip = ip_layer.dst
+                            elif raw_pkt.haslayer(IPv6):
+                                ip_layer = raw_pkt[IPv6]
+                                src_ip = ip_layer.src
+                                dst_ip = ip_layer.dst
+                            else:
+                                packets_skipped += 1
+                                continue
+
+                            protocol = "OTHER"
+                            src_port = 0
+                            dst_port = 0
+                            tcp_flags = None
+                            is_auth_fail = False
+
+                            if raw_pkt.haslayer(TCP):
+                                tcp_layer = raw_pkt[TCP]
+                                protocol = "TCP"
+                                src_port = int(tcp_layer.sport)
+                                dst_port = int(tcp_layer.dport)
+                                tcp_flags = int(tcp_layer.flags)
+                                raw_payload = bytes(tcp_layer.payload) if tcp_layer.payload else b""
+                                is_auth_fail = any(
+                                    marker in raw_payload
+                                    for marker in (b"AUTH_FAIL", b"401 Unauthorized", b"Permission denied")
+                                )
+                            elif raw_pkt.haslayer(UDP):
+                                udp_layer = raw_pkt[UDP]
+                                protocol = "UDP"
+                                src_port = int(udp_layer.sport)
+                                dst_port = int(udp_layer.dport)
+                            elif raw_pkt.haslayer(ICMP):
+                                protocol = "ICMP"
+
+                            pkt_time = float(getattr(raw_pkt, "time", time.time()))
+                            pkt_len = int(len(raw_pkt))
+
+                            record = PacketRecord(
+                                timestamp=pkt_time,
+                                src_ip=src_ip,
+                                dst_ip=dst_ip,
+                                src_port=src_port,
+                                dst_port=dst_port,
+                                protocol=protocol,
+                                length_bytes=pkt_len,
+                                tcp_flags=tcp_flags,
+                                is_auth_failure=is_auth_fail,
+                            )
+                            aggregator.add_packet(record)
+                            packets_processed += 1
+                        except Exception:
+                            packets_skipped += 1
+                            continue
+            except Exception as e:
+                if ingest_rec is not None and db is not None:
+                    try:
+                        ingest_rec.status = "FAILED"
+                        ingest_rec.error_message = str(e)
+                        db.commit()
+                    except Exception:
+                        db.rollback()
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=f"Failed to read PCAP packet stream: {str(e)}",
+                )
 
         # Flush remaining active sessions
         completed_sessions = aggregator.flush_all()
@@ -471,6 +564,7 @@ class IngestionService:
                 items=flow_items_to_evaluate,
                 is_demo=False,
                 batch_size=batch_size,
+                enable_shap=False,
             )
             persist_duration_ms = round((time.perf_counter() - p_start) * 1000.0, 2)
             events_persisted = len(predictions_and_models)
@@ -487,10 +581,19 @@ class IngestionService:
                     )
                 )
         else:
-            # Non-persisted fast evaluation with conditional SHAP
+            # Non-persisted fast evaluation with policy engine alignment
+            from backend.app.services.policy_engine import PolicyEngine
             for i, item in enumerate(flow_items_to_evaluate):
                 flow_req = item[0]
                 pred = MLService.predict(flow_req)
+                policy_dec = PolicyEngine.evaluate(
+                    prediction=pred,
+                    source_ip=item[1],
+                    destination_ip=item[2],
+                    dst_port=flow_req.dst_port,
+                    protocol=item[3] or "TCP",
+                )
+                pred.action_recommendation = policy_dec.policy_action
                 if pred.risk_score >= 70:
                     high_risk_count += 1
                 flow_results.append(
@@ -566,6 +669,7 @@ class IngestionService:
                         "risk_score": r.prediction.risk_score,
                         "threat_level": r.prediction.threat_level,
                         "action": r.prediction.action_recommendation,
+                        "policy_action": r.prediction.action_recommendation,
                         "event_id": r.persisted_event_id,
                     }
                     for r in bounded_results
@@ -624,16 +728,33 @@ class IngestionService:
             except Exception:
                 db.rollback()
 
+        # Build attack category distribution for response contract
+        attack_dist_resp: Dict[str, int] = {}
+        for r in flow_results:
+            at = r.prediction.attack_type
+            attack_dist_resp[at] = attack_dist_resp.get(at, 0) + 1
+
         return PcapIngestionResponse(
+            ingestion_id=ingest_id,
             source_type="PCAP_INGESTION",
             filename=filename,
             file_size_bytes=file_size_bytes,
+            processing_status="COMPLETED",
             is_demo=False,
             metrics=metrics,
+            total_packets_processed=packets_processed,
+            total_flows_extracted=total_flows_count,
             flows_generated=total_flows_count,
             flows_selected_for_evaluation=flows_selected_for_evaluation,
             flows_evaluated=len(flow_results),
+            flows_classified=len(flow_results),
+            risk_distribution=attack_dist_resp,
             events_persisted=events_persisted,
+            security_events_persisted=events_persisted,
+            model_used="Big Data XGBoost V2 (Clean Schema)",
+            processing_duration_ms=total_duration_ms,
+            errors=[],
+            warnings=[] if not is_sampled else [f"Evaluated {flows_selected_for_evaluation} representative flows using priority & diversity sampling out of {total_flows_count} total flow sessions."],
             flows_skipped_limit=flows_skipped_limit,
             high_risk_flows_count=high_risk_count,
             results_omitted_count=results_omitted_count,

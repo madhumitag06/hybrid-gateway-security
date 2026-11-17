@@ -31,6 +31,7 @@ try:
     from backend.app.services.hybrid_topology import NetworkZoneClassifier
     from backend.app.services.ml_service import MLService
     from backend.app.services.policy_engine import PolicyEngine
+    from backend.app.services.flow_aggregator import HostPortTracker
     from ml.features.extractor import FEATURE_NAMES_V2, FeatureExtractor, NetworkFlowInput, calculate_conn_rate
 except ImportError:
     from app.cloud.schemas.cloud_telemetry import (
@@ -48,6 +49,7 @@ except ImportError:
     from app.services.hybrid_topology import NetworkZoneClassifier
     from app.services.ml_service import MLService
     from app.services.policy_engine import PolicyEngine
+    from app.services.flow_aggregator import HostPortTracker
     from ml.features.extractor import FEATURE_NAMES_V2, FeatureExtractor, NetworkFlowInput, calculate_conn_rate
 
 logger = logging.getLogger(__name__)
@@ -58,6 +60,9 @@ class TelemetryNormalizer:
     Enterprise-grade normalizer for multi-cloud flow log telemetry.
     Ensures mathematical and schema parity across AWS, GCP, Azure, and Docker Lab.
     """
+
+    # Stateful, thread-safe, 300-second rolling-window tracker across telemetry polling batches
+    _host_tracker = HostPortTracker(window_seconds=300.0, max_hosts=10000)
 
     @classmethod
     def aggregate_canonical_records(
@@ -158,11 +163,7 @@ class TelemetryNormalizer:
         byte_count = max(int(raw_record.byte_count), 64)
         dst_port = max(min(int(raw_record.dst_port), 65535), 1)
 
-        # Connection rate calculated strictly according to training logic in clean_and_preprocess.py
-        conn_rate = calculate_conn_rate(pkt_count, duration)
-        bytes_per_sec = float(byte_count) / duration
-        packets_per_sec = float(pkt_count) / duration
-        avg_packet_size = float(byte_count) / float(pkt_count)
+        ts = raw_record.timestamp.timestamp() if raw_record.timestamp else time.time()
 
         # Windowed destination port diversity per source host
         if stateful_port_tracker is not None:
@@ -170,9 +171,24 @@ class TelemetryNormalizer:
                 stateful_port_tracker[raw_record.src_ip] = set()
             if raw_record.dst_port:
                 stateful_port_tracker[raw_record.src_ip].add(raw_record.dst_port)
-            unique_dst_ports = max(len(stateful_port_tracker[raw_record.src_ip]), 1)
+            batch_unique_ports = len(stateful_port_tracker[raw_record.src_ip])
         else:
-            unique_dst_ports = max(int(raw_record.unique_dst_ports), 1)
+            batch_unique_ports = 1
+
+        # Stateful rolling 300-second window destination port tracker
+        tracked_ports = cls._host_tracker.get_unique_dst_ports(raw_record.src_ip, current_time=ts)
+        unique_dst_ports = max(int(tracked_ports), int(batch_unique_ports), int(raw_record.unique_dst_ports or 1), 1)
+
+        # Connection rate: calculate with rolling host connection rate
+        conn_rate = cls._host_tracker.get_connection_rate(
+            raw_record.src_ip,
+            packet_count=pkt_count,
+            duration=duration,
+            current_time=ts,
+        )
+        bytes_per_sec = float(byte_count) / duration
+        packets_per_sec = float(pkt_count) / duration
+        avg_packet_size = float(byte_count) / float(pkt_count)
 
         # Enriched record
         raw_record.duration = duration
@@ -225,6 +241,8 @@ class TelemetryNormalizer:
         for rec in records:
             if rec.src_ip and rec.dst_port:
                 port_tracker[rec.src_ip].add(rec.dst_port)
+                ts = rec.timestamp.timestamp() if rec.timestamp else time.time()
+                cls._host_tracker.record_destination_port(rec.src_ip, rec.dst_port, ts)
 
         # Step 2: Session aggregation for compatible directed flow records
         aggregated_records = cls.aggregate_canonical_records(records)
@@ -265,9 +283,17 @@ class TelemetryNormalizer:
                 destination_ip=enriched_rec.dst_ip,
                 dst_port=enriched_rec.dst_port,
                 protocol=enriched_rec.protocol,
+                telemetry_action=enriched_rec.action,
             )
 
-            if policy_decision.policy_action in ["DROP", "BLOCK", "QUARANTINE"]:
+            # Synchronize prediction with evaluated policy decision
+            prediction.action_recommendation = policy_decision.policy_action
+            if policy_decision.risk_score > prediction.risk_score:
+                prediction.risk_score = policy_decision.risk_score
+            if policy_decision.threat_level != prediction.threat_level and policy_decision.threat_level != "LOW":
+                prediction.threat_level = policy_decision.threat_level
+
+            if policy_decision.policy_action in ["DROP", "BLOCK", "QUARANTINE", "Block"]:
                 dropped_count += 1
             else:
                 accepted_count += 1

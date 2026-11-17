@@ -13,10 +13,24 @@ from PyInstaller.utils.hooks import collect_data_files, collect_submodules, coll
 block_cipher = None
 WORKSPACE_ROOT = Path(os.path.abspath(".")).resolve()
 
-# 1. Collect Binaries (Native dynamic libraries including XGBoost)
+# 1. Collect Binaries (Native dynamic libraries including XGBoost, OpenSSL, and SQLite)
 binaries = []
 binaries += collect_dynamic_libs("xgboost")
 binaries += collect_dynamic_libs("lightgbm")
+
+# Explicitly collect core Python Windows runtime libraries (OpenSSL & SQLite)
+# These are required by _ssl.pyd, hashlib, and sqlalchemy/sqlite
+import sys
+python_base_dir = Path(getattr(sys, "base_prefix", sys.prefix))
+python_dlls_dir = python_base_dir / "DLLs"
+for dll_name in ["libcrypto-3.dll", "libssl-3.dll", "sqlite3.dll", "libffi-8.dll"]:
+    dll_path = python_dlls_dir / dll_name
+    if dll_path.is_file():
+        binaries.append((str(dll_path), "."))
+    else:
+        alt_path = Path(sys.prefix) / "DLLs" / dll_name
+        if alt_path.is_file():
+            binaries.append((str(alt_path), "."))
 
 try:
     import xgboost
@@ -29,8 +43,20 @@ except Exception as e:
     print(f"[!] Warning: Could not locate native xgboost.dll dynamically: {e}")
 
 # 2. Collect Data Files
+# Explicitly collect frontend dist assets without traversing directory junctions
+dist_datas = []
+dist_root = WORKSPACE_ROOT / "dist"
+if (dist_root / "index.html").is_file():
+    dist_datas.append((str(dist_root / "index.html"), "dist"))
+if (dist_root / "assets").is_dir():
+    dist_datas.append((str(dist_root / "assets"), "dist/assets"))
+if (dist_root / "favicon.svg").is_file():
+    dist_datas.append((str(dist_root / "favicon.svg"), "dist"))
+if (dist_root / "icons.svg").is_file():
+    dist_datas.append((str(dist_root / "icons.svg"), "dist"))
+
 datas = [
-    (str(WORKSPACE_ROOT / "dist"), "dist"),
+    *dist_datas,
     (str(WORKSPACE_ROOT / "ml" / "models"), "ml/models"),
     (str(WORKSPACE_ROOT / "backend" / "alembic"), "backend/alembic"),
     (str(WORKSPACE_ROOT / "backend" / "alembic.ini"), "backend"),
@@ -44,6 +70,7 @@ if (WORKSPACE_ROOT / ".env.example").is_file():
 datas += collect_data_files("shap")
 datas += collect_data_files("xgboost")
 datas += collect_data_files("lightgbm")
+datas += collect_data_files("botocore")
 
 # Also ensure xgboost.dll is in datas as backup
 try:
@@ -105,6 +132,11 @@ hidden_imports = [
     "cryptography",
     "cryptography.hazmat.primitives.ciphers.aead",
     "cryptography.hazmat.primitives.kdf.hkdf",
+    "boto3",
+    "botocore",
+    "botocore.session",
+    "botocore.client",
+    "urllib3",
 ]
 
 # Collect all backend.app, ml, and shap submodules dynamically
@@ -144,7 +176,7 @@ exe = EXE(
     exclude_binaries=True,
     name="AdaptiveSecurityGateway",
     debug=False,
-    bootloader_ignore_signals=False,
+    bootloader_ignore_signals=True,
     strip=False,
     upx=True,
     console=True,

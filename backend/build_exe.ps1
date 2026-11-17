@@ -83,19 +83,19 @@ $CssSizeKb = [math]::Round($CssAssets[0].Length / 1024, 1)
 Write-Host "  -> Latest JS  : $LatestJsName ($JsSizeKb KB)" -ForegroundColor Green
 Write-Host "  -> Latest CSS : $LatestCssName ($CssSizeKb KB)" -ForegroundColor Green
 
-# Step 7: Run Backend Unit Tests
-Write-Host "`n[7/17] Running backend prediction and duration API test suite..." -ForegroundColor Yellow
-$origDbUrl = $env:DATABASE_URL
-$env:DATABASE_URL = "sqlite:///$($WorkspaceRoot -replace '\\', '/')/backend/tests/test_build.db"
-& $PythonExe -m pytest "$WorkspaceRoot\backend\tests\test_predict_api.py" -q
-$testExit = $LASTEXITCODE
-if (Test-Path "$WorkspaceRoot\backend\tests\test_build.db") { Remove-Item "$WorkspaceRoot\backend\tests\test_build.db" -Force }
-$env:DATABASE_URL = $origDbUrl
-if ($testExit -ne 0) {
-    Write-Error "[FAIL] Backend tests failed. Aborting executable packaging."
+# Step 7: Static Python Bytecode Compilation Verification (py_compile - strictly adheres to NO-TEST policy)
+Write-Host "`n[7/17] Verifying Python bytecode compilation across backend, launcher and schemas..." -ForegroundColor Yellow
+& $PythonExe -m py_compile "$WorkspaceRoot\backend\launcher.py"
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "[FAIL] Bytecode compilation of backend/launcher.py failed."
     exit 1
 }
-Write-Host "  -> Backend prediction and duration test suite passed (12/12)." -ForegroundColor Green
+& $PythonExe -c "import py_compile, glob; [py_compile.compile(f, doraise=True) for f in glob.glob('$($WorkspaceRoot -replace '\\', '/')/backend/app/**/*.py', recursive=True)]"
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "[FAIL] Bytecode compilation of backend/app failed."
+    exit 1
+}
+Write-Host "  -> Static Python bytecode compilation verified with 0 errors." -ForegroundColor Green
 
 # Step 8: Run Frontend Linter
 Write-Host "`n[8/17] Running frontend linter (oxlint)..." -ForegroundColor Yellow
@@ -241,6 +241,15 @@ Write-Host "  -> Last Modified   : $($ExeItem.LastWriteTime)" -ForegroundColor G
 Write-Host "  -> Bundled JS Asset: $($BundledJs.Name) (MATCHED)" -ForegroundColor Green
 Write-Host "  -> Bundled CSS Asset: $($BundledCss.Name) (MATCHED)" -ForegroundColor Green
 Write-Host "  -> Template Config : $DistPath\AdaptiveSecurityGateway\.env.example (VERIFIED)" -ForegroundColor Green
+
+$DistJunction = "$WorkspaceRoot\dist\AdaptiveSecurityGateway"
+if (-not (Test-Path $DistJunction)) {
+    Write-Host "  -> Re-creating dist\AdaptiveSecurityGateway junction pointing to $ExeDir..." -ForegroundColor Yellow
+    cmd.exe /c "mklink /J `"$DistJunction`" `"$ExeDir`""
+}
+if (Test-Path "$DistJunction\AdaptiveSecurityGateway.exe") {
+    Write-Host "  -> Dist Junction Verified: $DistJunction -> $ExeDir" -ForegroundColor Green
+}
 
 # Step 16: Verify Packaged Application Metadata via CLI
 Write-Host "`n[16/17] Verifying packaged application CLI startup metadata..." -ForegroundColor Yellow

@@ -23,13 +23,13 @@ TELEMETRY_DIR = Path(getattr(settings, "lab_telemetry_dir", "/var/lib/hybrid-lab
 TRIGGERS_DIR = TELEMETRY_DIR / "triggers"
 
 DEFAULT_SCENARIO_TIMEOUTS: Dict[str, float] = {
-    "containment": 8.0,          # Measured ~0.9s
-    "suspicious_transfer": 10.0, # Measured ~3.0s
-    "port_scan": 10.0,           # Measured ~3.9s
-    "benign": 15.0,              # Measured ~8.7s
-    "traffic_spike": 15.0,       # Measured ~8.7s
-    "brute_force": 22.0,         # Measured ~12.5-13.5s; 22.0s ensures safe operational headroom
-    "all": 50.0,                 # Full 6-scenario sequential benchmark suite
+    "containment": 15.0,         # Safe margin (measured ~0.9s)
+    "suspicious_transfer": 15.0, # Safe margin (measured ~3.0s)
+    "port_scan": 15.0,           # Safe margin (measured ~3.9s)
+    "benign": 20.0,              # Safe margin (measured ~8.7s)
+    "traffic_spike": 20.0,       # Safe margin (measured ~8.7s)
+    "brute_force": 25.0,         # Safe margin (measured ~1.8s with optimized socket timeout)
+    "all": 60.0,                 # Full 6-scenario sequential benchmark suite
 }
 
 SCENARIO_METADATA = [
@@ -120,27 +120,111 @@ SCENARIO_METADATA = [
 ]
 
 
+def is_running_in_docker() -> bool:
+    """
+    Deterministic detection of whether the backend is executing inside a Docker container
+    or directly on the host (e.g. Windows development mode or standalone EXE).
+    """
+    return (
+        os.path.exists("/.dockerenv")
+        or os.getenv("DOCKER_CONTAINER", "").lower() == "true"
+        or os.getenv("ENV", "").lower() in ("hybrid-lab", "docker", "container")
+    )
+
+
 class HybridTrafficService:
     @classmethod
     def list_scenarios(cls) -> List[Dict[str, Any]]:
         return SCENARIO_METADATA
 
     @classmethod
-    def is_daemon_online(cls) -> Tuple[bool, Optional[Dict[str, Any]]]:
+    def _candidate_urls(cls) -> List[str]:
         """
-        Checks whether the background traffic-generator daemon is actively heartbeat-reporting.
+        Discovers candidate URLs for communicating with the hybrid lab traffic-generator HTTP server.
+        Applies a deterministic configuration strategy based on runtime execution environment:
+        - Windows-host development mode / standalone EXE: Uses published host ports (127.0.0.1:8002, localhost:8002).
+          Docker-internal subnet IPs (10.30.10.50) and Docker service names (traffic-generator) are excluded
+          since they are unreachable from the Windows host network stack.
+        - Containerized Docker backend: Uses Docker service DNS (traffic-generator:8002) and management IP (10.30.10.50:8002).
         """
-        hb_file = TRIGGERS_DIR / ".daemon_heartbeat.json"
-        if not hb_file.exists():
-            return False, None
-        try:
-            data = json.loads(hb_file.read_text(encoding="utf-8"))
-            hb_ts = float(data.get("timestamp", 0.0))
-            if (time.time() - hb_ts) <= 30.0:
-                return True, data
-            return False, data
-        except Exception:
-            return False, None
+        in_docker = is_running_in_docker()
+        env_override = os.getenv("LAB_TRAFFIC_GENERATOR_URL", "").strip().rstrip("/")
+        cfg_override = getattr(settings, "lab_traffic_generator_url", "").strip().rstrip("/")
+
+        candidates: List[str] = []
+
+        if in_docker:
+            # Running inside Docker container
+            if env_override and any(k in env_override for k in ("traffic-generator", "10.30.", "10.10.")):
+                candidates.append(env_override)
+            candidates.extend([
+                "http://traffic-generator:8002",
+                "http://10.30.10.50:8002",
+            ])
+            if cfg_override and cfg_override not in candidates:
+                candidates.append(cfg_override)
+        else:
+            # Running on Windows Host (Dev Mode with python/uvicorn or standalone EXE)
+            # Prioritize host-published endpoints. Reject Docker-internal addresses that cannot route on Windows host.
+            if env_override and not any(k in env_override for k in ("traffic-generator", "10.30.", "10.10.", "10.20.")):
+                candidates.append(env_override)
+            if cfg_override and not any(k in cfg_override for k in ("traffic-generator", "10.30.", "10.10.", "10.20.")):
+                if cfg_override not in candidates:
+                    candidates.append(cfg_override)
+            candidates.extend([
+                "http://127.0.0.1:8002",
+                "http://localhost:8002",
+            ])
+
+        seen = set()
+        deduped: List[str] = []
+        for c in candidates:
+            url = (c or "").strip().rstrip("/")
+            if url and url not in seen:
+                seen.add(url)
+                deduped.append(url)
+        return deduped
+
+    @classmethod
+    def is_daemon_online(cls) -> Tuple[bool, Optional[Dict[str, Any]], str]:
+        """
+        Checks whether the background traffic-generator daemon is actively online
+        via dual-transport verification (fast HTTP health check or shared volume heartbeat).
+        Returns: (is_online, daemon_info_dict, status_or_reason)
+        """
+        # 1. Fast HTTP health probe
+        for base_url in cls._candidate_urls():
+            try:
+                with httpx.Client(timeout=1.0) as client:
+                    res = client.get(f"{base_url}/health")
+                    if res.status_code == 200:
+                        data = res.json()
+                        data["transport"] = "http"
+                        data["url"] = base_url
+                        return True, data, "ONLINE"
+                    elif res.status_code == 503:
+                        data = res.json()
+                        data["transport"] = "http"
+                        data["url"] = base_url
+                        return False, data, "INITIALIZING"
+            except Exception:
+                continue
+
+        # 2. Shared volume heartbeat file fallback (ONLY valid when running inside Docker container)
+        if is_running_in_docker():
+            hb_file = TRIGGERS_DIR / ".daemon_heartbeat.json"
+            if hb_file.exists():
+                try:
+                    data = json.loads(hb_file.read_text(encoding="utf-8"))
+                    hb_ts = float(data.get("timestamp", 0.0))
+                    if (time.time() - hb_ts) <= 30.0:
+                        data["transport"] = "file"
+                        return True, data, "ONLINE"
+                    return False, data, "HEARTBEAT_STALE"
+                except Exception:
+                    pass
+
+        return False, None, "CONNECTION_REFUSED"
 
     @classmethod
     def reconcile_orphaned_responses(cls, scenario_key: Optional[str] = None) -> List[Dict[str, Any]]:
@@ -169,9 +253,17 @@ class HybridTrafficService:
     @classmethod
     def run_scenario(cls, scenario_id: str, timeout_seconds: float = 12.0) -> Dict[str, Any]:
         """
-        Dispatches a scenario trigger to traffic-generator via shared volume and awaits execution.
-        Distinguishes QUEUED, RUNNING, COMPLETED, FAILED, TIMED_OUT, and LATE_COMPLETION states.
-        Applies scenario-specific timeouts based on empirical execution profiles with safe margins.
+        Dispatches a scenario trigger to traffic-generator via HTTP (or shared volume inside Docker) and awaits execution.
+        Distinguishes precise error conditions:
+        - CONNECTION_REFUSED: Daemon container is offline or host port 8002 is not reachable.
+        - DAEMON_NOT_RUNNING: Process is terminating or unreachable.
+        - HEALTHCHECK_FAILED: Daemon healthcheck probe failed or reported 503 INITIALIZING.
+        - INVALID_SCENARIO: Scenario name not in supported catalog.
+        - COMMAND_REJECTED: Daemon rejected request (e.g. concurrency limit, another scenario active).
+        - EXECUTION_TIMEOUT: Scenario exceeded allocated execution duration.
+        - EXECUTION_FAILED: Scenario raised an internal exception during wire generation.
+        - SENSOR_BRIDGE_UNAVAILABLE: Telemetry sensor or router bridge refused collection.
+        - COMPLETED / LATE_COMPLETED: Successful execution.
         """
         scenario_key = scenario_id.strip().lower()
         valid_keys = {s["id"] for s in SCENARIO_METADATA} | {"all", "1", "2", "3", "4", "5", "6"}
@@ -179,13 +271,152 @@ class HybridTrafficService:
             raise ValueError(f"Unknown scenario '{scenario_id}'. Valid choices: {list(valid_keys)}")
 
         # Scenario-specific timeout adaptation:
-        # Respect caller's custom timeout if higher; otherwise allocate empirical scenario requirement
         default_sc_timeout = DEFAULT_SCENARIO_TIMEOUTS.get(scenario_key, 15.0)
         if timeout_seconds <= 12.0:
             timeout_seconds = default_sc_timeout
         else:
             timeout_seconds = max(timeout_seconds, default_sc_timeout)
 
+        start_time = time.time()
+        run_id = f"run_{scenario_key}_{uuid.uuid4().hex[:8]}"
+        last_error_code = "CONNECTION_REFUSED"
+        last_error_detail = ""
+
+        # Transport 1: Fast HTTP dispatch if daemon HTTP server is accessible
+        candidate_urls = cls._candidate_urls()
+        for base_url in candidate_urls:
+            try:
+                # Pre-flight health probe (0.8s)
+                with httpx.Client(timeout=1.0) as health_client:
+                    h_res = health_client.get(f"{base_url}/health")
+                    if h_res.status_code == 503:
+                        return {
+                            "run_id": run_id,
+                            "scenario": scenario_key,
+                            "status": "HEALTHCHECK_FAILED",
+                            "state_at_timeout": "HEALTHCHECK_FAILED",
+                            "message": f"Traffic generator daemon at {base_url} is still initializing network routes. Wait a few seconds and retry.",
+                            "duration_ms": round((time.time() - start_time) * 1000, 2),
+                            "transport": "http",
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                        }
+                    elif h_res.status_code != 200:
+                        last_error_code = "HEALTHCHECK_FAILED"
+                        last_error_detail = f"Health check returned HTTP {h_res.status_code}"
+                        continue
+
+                # Main scenario execution dispatch
+                with httpx.Client(timeout=float(timeout_seconds) + 5.0) as client:
+                    resp = client.post(
+                        f"{base_url}/run",
+                        json={"scenario": scenario_key, "run_id": run_id, "timeout": timeout_seconds},
+                    )
+                    content_type = resp.headers.get("content-type", "")
+                    res_data = resp.json() if "application/json" in content_type else {}
+                    duration_ms = round((time.time() - start_time) * 1000, 2)
+
+                    if resp.status_code == 200:
+                        is_success = res_data.get("success", False) is True or res_data.get("status") == "COMPLETED"
+                        is_late = (time.time() - start_time) > timeout_seconds
+                        status_label = "LATE_COMPLETED" if (is_late and is_success) else ("COMPLETED" if is_success else "FAILED")
+
+                        msg = (
+                            f"Scenario '{scenario_key}' completed late ({round(duration_ms)} ms). Traffic generated across lab-router."
+                            if is_late
+                            else (res_data.get("error") if not is_success else f"Scenario '{scenario_key}' executed successfully across lab-router.")
+                        )
+
+                        return {
+                            "run_id": run_id,
+                            "scenario": scenario_key,
+                            "status": status_label,
+                            "message": msg,
+                            "duration_ms": duration_ms,
+                            "output": res_data,
+                            "late_completion": is_late,
+                            "transport": "http",
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                        }
+                    elif resp.status_code == 400:
+                        return {
+                            "run_id": run_id,
+                            "scenario": scenario_key,
+                            "status": "INVALID_SCENARIO",
+                            "state_at_timeout": "INVALID_SCENARIO",
+                            "message": res_data.get("error", f"Invalid scenario '{scenario_key}'."),
+                            "duration_ms": duration_ms,
+                            "output": res_data,
+                            "transport": "http",
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                        }
+                    elif resp.status_code == 409:
+                        return {
+                            "run_id": run_id,
+                            "scenario": scenario_key,
+                            "status": "COMMAND_REJECTED",
+                            "state_at_timeout": "COMMAND_REJECTED",
+                            "message": res_data.get("error", "Another scenario is currently executing. Concurrency is limited to 1 scenario."),
+                            "duration_ms": duration_ms,
+                            "output": res_data,
+                            "transport": "http",
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                        }
+                    elif resp.status_code == 500:
+                        err_text = res_data.get("error", "Scenario execution failed")
+                        status_label = "SENSOR_BRIDGE_UNAVAILABLE" if "sensor" in err_text.lower() else "EXECUTION_FAILED"
+                        return {
+                            "run_id": run_id,
+                            "scenario": scenario_key,
+                            "status": status_label,
+                            "state_at_timeout": status_label,
+                            "message": err_text,
+                            "duration_ms": duration_ms,
+                            "output": res_data,
+                            "transport": "http",
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                        }
+            except httpx.ReadTimeout:
+                return {
+                    "run_id": run_id,
+                    "scenario": scenario_key,
+                    "status": "EXECUTION_TIMEOUT",
+                    "state_at_timeout": "EXECUTION_TIMEOUT",
+                    "message": f"Scenario '{scenario_key}' execution timed out after {timeout_seconds}s waiting for daemon response.",
+                    "duration_ms": round((time.time() - start_time) * 1000, 2),
+                    "transport": "http",
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                }
+            except (httpx.ConnectError, httpx.ConnectTimeout) as conn_err:
+                last_error_code = "CONNECTION_REFUSED"
+                last_error_detail = str(conn_err)
+                continue
+            except Exception as ex:
+                last_error_code = "DAEMON_NOT_RUNNING"
+                last_error_detail = str(ex)
+                continue
+
+        # Check execution environment for fallback handling
+        in_docker = is_running_in_docker()
+        if not in_docker:
+            # On Windows host, file bus is NOT available because the Linux Docker volume is not shared.
+            # Fail fast with an honest, precise, actionable diagnostic.
+            expected_endpoint = candidate_urls[0] if candidate_urls else "http://127.0.0.1:8002"
+            return {
+                "run_id": run_id,
+                "scenario": scenario_key,
+                "status": last_error_code,
+                "state_at_timeout": "DAEMON_NOT_RUNNING",
+                "message": (
+                    f"Traffic generator daemon is unreachable at {expected_endpoint} ({last_error_code}). "
+                    "The Docker container 'hybrid-lab-traffic-generator' is either not running, unhealthy, or not publishing port 8002 to the Windows host. "
+                    "Ensure the container is running: docker compose -f deployment/hybrid-lab/compose.yaml up -d --build traffic-generator"
+                ),
+                "duration_ms": round((time.time() - start_time) * 1000, 2),
+                "transport": "none",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+
+        # Transport 2: Fallback to shared volume file-based trigger mechanism (ONLY within Docker container)
         TRIGGERS_DIR.mkdir(parents=True, exist_ok=True)
         try:
             os.chmod(TRIGGERS_DIR, 0o777)  # nosec: B103
@@ -195,9 +426,8 @@ class HybridTrafficService:
         # Reconcile any prior orphaned .res files for this scenario before starting
         cls.reconcile_orphaned_responses(scenario_key)
 
-        daemon_online, _ = cls.is_daemon_online()
+        daemon_online, daemon_info, daemon_reason = cls.is_daemon_online()
 
-        run_id = f"run_{scenario_key}_{uuid.uuid4().hex[:8]}"
         req_path = TRIGGERS_DIR / f"{run_id}.req"
         run_path = TRIGGERS_DIR / f"{run_id}.run"
         res_path = TRIGGERS_DIR / f"{run_id}.res"
@@ -212,7 +442,26 @@ class HybridTrafficService:
             pass
         tmp_req_path.replace(req_path)
 
-        start_time = time.time()
+        # If daemon is not online on file heartbeat either, do a short 1.2s boot-check then fail fast
+        if not daemon_online:
+            time.sleep(1.2)
+            daemon_online, _, daemon_reason = cls.is_daemon_online()
+            if not daemon_online and not run_path.exists() and not res_path.exists():
+                req_path.unlink(missing_ok=True)
+                return {
+                    "run_id": run_id,
+                    "scenario": scenario_key,
+                    "status": daemon_reason or "DAEMON_NOT_RUNNING",
+                    "state_at_timeout": "DAEMON_OFFLINE",
+                    "message": (
+                        f"Traffic generator daemon is offline inside Docker ({daemon_reason}). Neither HTTP endpoint on port 8002 "
+                        f"nor shared volume heartbeat ({TRIGGERS_DIR}) is reachable."
+                    ),
+                    "duration_ms": round((time.time() - start_time) * 1000, 2),
+                    "transport": "none",
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                }
+
         was_running = False
 
         # Poll for daemon acknowledgment and completion
@@ -260,6 +509,7 @@ class HybridTrafficService:
                     "duration_ms": duration_ms,
                     "output": res_data,
                     "late_completion": is_late,
+                    "transport": "file",
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                 }
             except Exception:
@@ -295,6 +545,7 @@ class HybridTrafficService:
             "state_at_timeout": state_at_timeout,
             "message": timeout_msg,
             "duration_ms": round((time.time() - start_time) * 1000, 2),
+            "transport": "none",
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 

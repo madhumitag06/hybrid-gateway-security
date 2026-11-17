@@ -91,7 +91,7 @@ export const AwsVpcView: React.FC<AwsVpcViewProps> = ({ currentEnv, onSelectEnv,
   const refreshLiveTelemetryStatus = useCallback(async () => {
     try {
       const [statusRes, historyRes] = await Promise.all([
-        cloudService.getAwsTelemetryStatus().catch((e: any) => ({ error: e.message || String(e) })),
+        cloudService.getAwsTelemetryStatus().catch((e: any) => ({ error: e?.message || String(e) })),
         cloudService.getAwsTelemetryHistory(10).catch(() => []),
       ])
       if (statusRes && !statusRes.error) {
@@ -117,7 +117,7 @@ export const AwsVpcView: React.FC<AwsVpcViewProps> = ({ currentEnv, onSelectEnv,
     if (activeTab === 'LIVE_AWS') {
       let mounted = true
       Promise.all([
-        cloudService.getAwsTelemetryStatus().catch((e: any) => ({ error: e.message || String(e) })),
+        cloudService.getAwsTelemetryStatus().catch((e: any) => ({ error: e?.message || String(e) })),
         cloudService.getAwsTelemetryHistory(10).catch(() => []),
       ])
         .then(([statusRes, historyRes]) => {
@@ -159,10 +159,16 @@ export const AwsVpcView: React.FC<AwsVpcViewProps> = ({ currentEnv, onSelectEnv,
         mock_fallback: false,
       })
 
-      if (res.status === 'NO_NEW_EVENTS' || res.records_received === 0) {
+      if (res.status === 'ERROR' || res.status === 'FAILED' || res.error_message) {
+        setTelemetryStatus('INGESTION_FAILED')
+        const msg = res.error_message || res.message || 'AWS CloudWatch polling failed.'
+        setLastPollingError(msg)
+        setToast(`CloudWatch poll notice: ${msg}`)
+      } else if (res.records_received === 0 || res.status === 'NO_NEW_EVENTS') {
         setTelemetryStatus('NO_NEW_EVENTS')
-        setToast('CloudWatch poll complete: No new flow events detected since last checkpoint.')
-      } else if (res.status === 'ERROR' || res.status === 'PARSE_FAILED') {
+        setLastPollingError(null)
+        setToast(res.message || 'CloudWatch poll complete: No new flow events detected in selected log window.')
+      } else if (res.status === 'PARSE_FAILED') {
         setTelemetryStatus('PARSE_FAILED')
         setToast('CloudWatch poll warning: Unable to parse incoming flow records.')
       } else {

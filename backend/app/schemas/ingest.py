@@ -59,16 +59,29 @@ class IngestionMetrics(BaseModel):
 class PcapIngestionResponse(BaseModel):
     """
     Full response returned after ingesting a PCAP file or sample trace.
+    Conforms to strict response contract with unified identifiers, telemetry counters,
+    risk distributions, and model attribution.
     """
+    ingestion_id: Optional[str] = Field(default=None, description="Deterministic ingestion run ID")
     source_type: str = Field(default="PCAP_INGESTION", description="Origin tag: PCAP_INGESTION, LIVE_CAPTURE, etc.")
     filename: str = Field(..., description="Name of the ingested file or scenario")
     file_size_bytes: int = Field(..., description="Size of the uploaded/processed file in bytes")
+    processing_status: str = Field(default="COMPLETED", description="Status: QUEUED, PROCESSING, COMPLETED, PARTIAL, FAILED")
     is_demo: bool = Field(default=False, description="Whether this traffic is flagged as synthetic demo data")
     metrics: IngestionMetrics
+    total_packets_processed: int = Field(default=0, description="Total valid packets processed across capture")
+    total_flows_extracted: int = Field(default=0, description="Total distinct flow sessions extracted across capture")
     flows_generated: int = Field(default=0, description="Total distinct network flow sessions created across complete capture")
     flows_selected_for_evaluation: int = Field(default=0, description="Number of flows selected for detailed evaluation")
     flows_evaluated: int = Field(..., description="Number of flows passed through ML inference")
+    flows_classified: int = Field(default=0, description="Total flows scored through XGBoost classification")
+    risk_distribution: Dict[str, int] = Field(default_factory=dict, description="Distribution of classified threat categories")
     events_persisted: int = Field(default=0, description="Number of events successfully persisted to PostgreSQL")
+    security_events_persisted: int = Field(default=0, description="Confirmed security events stored in database")
+    model_used: str = Field(default="Big Data XGBoost V2 (Clean Schema)", description="Authoritative ML model and version")
+    processing_duration_ms: float = Field(default=0.0, description="Total processing wall-clock duration in milliseconds")
+    errors: List[str] = Field(default_factory=list, description="Any operational errors encountered during pipeline")
+    warnings: List[str] = Field(default_factory=list, description="Any operational warnings or sampling notes")
     flows_skipped_limit: int = Field(default=0, description="Flows not evaluated due to maximum evaluation limit")
     high_risk_flows_count: int = Field(..., description="Number of flows classified as HIGH or CRITICAL risk")
     results_omitted_count: int = Field(default=0, description="Number of evaluated flows omitted from detailed response results")

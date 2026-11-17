@@ -14,7 +14,7 @@ from typing import Any, Dict, List, Literal, Optional
 from pydantic import BaseModel, Field
 from backend.app.config import settings
 
-NetworkZone = Literal["ON_PREMISE", "AWS_VPC", "INTERNET"]
+NetworkZone = Literal["ON_PREMISE", "AWS_VPC", "INTERNET", "LOOPBACK"]
 TrafficDirection = Literal[
     "ON_PREM_TO_CLOUD",
     "CLOUD_TO_ON_PREM",
@@ -23,6 +23,7 @@ TrafficDirection = Literal[
     "INGRESS_EXTERNAL",
     "EGRESS_EXTERNAL",
     "EXTERNAL_TO_EXTERNAL",
+    "LOOPBACK_LOCAL",
 ]
 
 
@@ -85,8 +86,15 @@ class NetworkZoneClassifier:
         aws_vpc_cidrs: Optional[List[str]] = None,
     ) -> NetworkZone:
         """
-        Classifies an IP address into ON_PREMISE, AWS_VPC, or INTERNET.
+        Classifies an IP address into ON_PREMISE, AWS_VPC, INTERNET, or LOOPBACK.
         """
+        try:
+            ip_obj = ipaddress.ip_address(ip_str.strip())
+            if ip_obj.is_loopback:
+                return "LOOPBACK"
+        except ValueError:
+            pass
+
         on_prem = on_prem_cidrs if on_prem_cidrs is not None else settings.on_prem_cidrs
         aws_vpc = aws_vpc_cidrs if aws_vpc_cidrs is not None else settings.aws_vpc_cidrs
 
@@ -114,7 +122,9 @@ class NetworkZoneClassifier:
         src_zone = cls.classify_ip(src_ip, on_prem_cidrs, aws_vpc_cidrs)
         dst_zone = cls.classify_ip(dst_ip, on_prem_cidrs, aws_vpc_cidrs)
 
-        if src_zone == "ON_PREMISE" and dst_zone == "AWS_VPC":
+        if src_zone == "LOOPBACK" or dst_zone == "LOOPBACK":
+            return "LOOPBACK_LOCAL"
+        elif src_zone == "ON_PREMISE" and dst_zone == "AWS_VPC":
             return "ON_PREM_TO_CLOUD"
         elif src_zone == "AWS_VPC" and dst_zone == "ON_PREMISE":
             return "CLOUD_TO_ON_PREM"

@@ -302,6 +302,7 @@ class Settings(BaseSettings):
     # Virtual Hybrid-Cloud Docker Lab Integration (Isolated Data/Telemetry Plane)
     hybrid_lab_mode: str = "SIMULATED_HYBRID_LAB"
     lab_router_url: str = "http://10.30.10.2:8099"
+    lab_traffic_generator_url: str = os.getenv("LAB_TRAFFIC_GENERATOR_URL", "http://localhost:8002")
     lab_enforcement_enabled: bool = False  # Requires explicit opt-in; defaults to safe SANDBOX/DRY_RUN
     lab_allowed_target_cidrs: Union[List[str], str] = ["10.10.10.0/24", "10.20.10.0/24"]
     lab_telemetry_dir: str = "/var/lib/hybrid-lab/telemetry"

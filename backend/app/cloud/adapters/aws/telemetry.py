@@ -143,7 +143,12 @@ class AwsTelemetryProvider(BaseTelemetryProvider):
             from app.cloud.services.telemetry_checkpoint_service import TelemetryCheckpointService
         dedup_cache = TelemetryCheckpointService.get_dedup_cache()
 
-        cw_logs = session.client("logs", region_name=self.region)
+        try:
+            from botocore.config import Config
+            boto_config = Config(connect_timeout=4.0, read_timeout=10.0, retries={"max_attempts": 2})
+            cw_logs = session.client("logs", region_name=self.region, config=boto_config)
+        except Exception:
+            cw_logs = session.client("logs", region_name=self.region)
         clean_group = log_group
         if clean_group.startswith("arn:aws:logs:"):
             clean_group = clean_group.split(":log-group:")[-1].split(":*")[0]
@@ -373,7 +378,10 @@ class AwsTelemetryProvider(BaseTelemetryProvider):
 
         if self._identity_provider:
             session, diag = self._identity_provider.get_boto3_session()
-            if session is not None:
+            if session is None:
+                chk_out["error"] = diag.get("message", "AWS identity not configured or STS session could not be established.")
+                source_type = "UNCONFIGURED"
+            else:
                 sources = self.discover_flow_log_sources()
                 log_group = None
                 s3_destination = None

@@ -640,6 +640,12 @@ def poll_aws_telemetry(
     if not raw_events:
         # Return structured NO_NEW_EVENTS (or ERROR) response rather than failure
         resp_status = "ERROR" if chk_err else "NO_NEW_EVENTS"
+        err_msg = chk_err if chk_err else None
+        user_msg = (
+            f"CloudWatch poll notice: {chk_err}"
+            if chk_err
+            else "No new flow events detected in selected CloudWatch log window."
+        )
         return CloudTelemetryBatchResponse(
             status=resp_status,
             provider="AWS",
@@ -660,6 +666,8 @@ def poll_aws_telemetry(
                 timestamp_provenance=True,
                 direction_classified=True,
             ),
+            error_message=err_msg,
+            message=user_msg,
         )
 
     canonical_records: List[CanonicalFlowRecord] = []

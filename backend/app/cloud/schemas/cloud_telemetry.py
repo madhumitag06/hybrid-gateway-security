@@ -163,3 +163,5 @@ class CloudTelemetryBatchResponse(BaseModel):
     inference_duration_ms: float
     flows: List[CloudFlowItemResult]
     normalization_report: TelemetryNormalizationReport
+    error_message: Optional[str] = None
+    message: Optional[str] = None

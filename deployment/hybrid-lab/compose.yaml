@@ -42,6 +42,7 @@ services:
       JWT_SECRET_KEY: ${AUTH_JWT_SECRET:?AUTH_JWT_SECRET must be set in deployment/hybrid-lab/.env}
       HYBRID_LAB_MODE: "true"
       LAB_ROUTER_URL: "http://10.30.10.2:8099"
+      LAB_TRAFFIC_GENERATOR_URL: "http://10.30.10.50:8002"
       LAB_ENFORCEMENT_ENABLED: ${LAB_ENFORCEMENT_ENABLED:-false}
       LAB_TELEMETRY_DIR: "/var/lib/hybrid-lab/telemetry"
       ENFORCEMENT_MODE: ${ENFORCEMENT_MODE:-SANDBOX}
@@ -375,11 +376,23 @@ services:
       CLOUD_WORKLOAD_IP: "10.20.10.40"
       ONPREM_WEB_IP: "10.10.10.20"
       AUTO_RUN_ON_START: ${TRAFFIC_GEN_AUTO_START:-false}
+    ports:
+      - "${TRAFFIC_GEN_PORT:-8002}:8002"
     volumes:
       - hybrid_lab_telemetry:/var/lib/hybrid-lab/telemetry
+      - ./traffic-generator/trigger_daemon.py:/app/trigger_daemon.py:ro
+      - ./traffic-generator/scenarios:/app/scenarios:ro
     networks:
       onprem_net:
         ipv4_address: 10.10.10.50
+      mgmt_net:
+        ipv4_address: 10.30.10.50
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8002/health', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
     depends_on:
       lab-router:
         condition: service_healthy

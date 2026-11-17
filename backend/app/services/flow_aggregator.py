@@ -191,8 +191,11 @@ class FlowAggregator:
 
         if key in self.active_sessions:
             session = self.active_sessions[key]
-            # Track destination port only when packet is from initiator to responder (prevents reverse pollution)
-            if packet.src_ip == session.initiator_ip:
+            # Track destination port strictly when packet travels from initiator to responder.
+            # Disambiguate by matching BOTH initiator IP and initiator port.
+            # This is critical for loopback / intra-host traffic where src_ip == dst_ip (e.g. 127.0.0.1 -> 127.0.0.1),
+            # preventing reverse server responses to client ephemeral ports from polluting destination port tracking.
+            if packet.src_ip == session.initiator_ip and packet.src_port == session.initiator_port:
                 self.host_tracker.record_destination_port(packet.src_ip, packet.dst_port, packet.timestamp)
 
             # Check for inactivity or maximum session duration expiration
@@ -222,15 +225,26 @@ class FlowAggregator:
                 if packet.is_auth_failure:
                     session.failed_auth_count += 1
                 session.last_seen = packet.timestamp
-                session.packets.append(packet)
+                if len(session.packets) < 2:
+                    session.packets.append(packet)
         else:
-            # First packet of a new session: packet.src_ip is designated initiator
-            self.host_tracker.record_destination_port(packet.src_ip, packet.dst_port, packet.timestamp)
+            # First packet of a new session: determine canonical initiator and responder endpoints.
+            # If TCP SYN-ACK (flag 0x12) is seen first, packet sender is actually the server responder.
+            is_syn_ack = (packet.tcp_flags is not None and (packet.tcp_flags & 0x12) == 0x12)
+            if is_syn_ack:
+                init_ip, init_port = packet.dst_ip, packet.dst_port
+                resp_ip, resp_port = packet.src_ip, packet.src_port
+                self.host_tracker.record_destination_port(init_ip, resp_port, packet.timestamp)
+            else:
+                init_ip, init_port = packet.src_ip, packet.src_port
+                resp_ip, resp_port = packet.dst_ip, packet.dst_port
+                self.host_tracker.record_destination_port(init_ip, resp_port, packet.timestamp)
+
             session = FlowSession(
-                initiator_ip=packet.src_ip,
-                responder_ip=packet.dst_ip,
-                initiator_port=packet.src_port,
-                responder_port=packet.dst_port,
+                initiator_ip=init_ip,
+                responder_ip=resp_ip,
+                initiator_port=init_port,
+                responder_port=resp_port,
                 protocol=packet.protocol,
                 first_seen=packet.timestamp,
                 last_seen=packet.timestamp,

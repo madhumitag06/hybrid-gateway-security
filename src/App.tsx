@@ -1186,13 +1186,40 @@ function Connectivity({
 const riskClass = (risk: number) =>
   risk >= 80 ? 'r87' : risk >= 70 ? 'r76' : risk >= 60 ? 'r64' : 'r52'
 
+function getInitialViewFromPath(): { view: string; subTab: string } {
+  try {
+    const rawPath = window.location.pathname.toLowerCase().replace(/^\/|\/$/g, '')
+    if (rawPath === 'health' || rawPath === 'system-health') return { view: 'System Health', subTab: 'OVERVIEW' }
+    if (rawPath === 'events' || rawPath === 'security-events') return { view: 'Security Events', subTab: 'OVERVIEW' }
+    if (rawPath === 'network' || rawPath === 'traffic') return { view: 'Live Network', subTab: 'OVERVIEW' }
+    if (rawPath === 'simulation' || rawPath === 'attack-simulation') return { view: 'Attack Simulation', subTab: 'OVERVIEW' }
+    if (rawPath === 'policies' || rawPath === 'firewall') return { view: 'Policies & Firewall', subTab: 'OVERVIEW' }
+    if (rawPath === 'pcap' || rawPath === 'ingest') return { view: 'PCAP Ingestion', subTab: 'OVERVIEW' }
+    if (rawPath === 'aws-vpc' || rawPath === 'vpc-logs') return { view: 'AWS VPC Logs', subTab: 'OVERVIEW' }
+    if (rawPath === 'multi-cloud' || rawPath === 'cloud') return { view: 'Multi-Cloud', subTab: 'OVERVIEW' }
+    if (rawPath === 'cloud-accounts') return { view: 'Multi-Cloud', subTab: 'ACCOUNTS' }
+    if (rawPath === 'aws-integration') return { view: 'Multi-Cloud', subTab: 'AWS' }
+    if (rawPath === 'gcp-integration') return { view: 'Multi-Cloud', subTab: 'GCP' }
+    if (rawPath === 'azure-integration') return { view: 'Multi-Cloud', subTab: 'AZURE' }
+    if (rawPath === 'resource-inventory') return { view: 'Multi-Cloud', subTab: 'INVENTORY' }
+    if (rawPath === 'cloud-telemetry') return { view: 'Multi-Cloud', subTab: 'TELEMETRY' }
+    if (rawPath === 'ml-detection' || rawPath === 'evaluation') return { view: 'ML Detection', subTab: 'OVERVIEW' }
+    if (rawPath === 'explainability' || rawPath === 'analytics' || rawPath === 'xai') return { view: 'Explainability (XAI)', subTab: 'OVERVIEW' }
+    if (rawPath === 'settings' || rawPath === 'config') return { view: 'Settings', subTab: 'OVERVIEW' }
+  } catch {
+    // ignore
+  }
+  return { view: 'Dashboard', subTab: 'OVERVIEW' }
+}
+
 export default function App() {
+  const initialRoute = useMemo(() => getInitialViewFromPath(), [])
   const [data, setData] = useState<DashboardData | null>(null)
   const [isLiveBackend, setIsLiveBackend] = useState(false)
   const [search, setSearch] = useState('')
   const [range, setRange] = useState('Last 24 hours')
-  const [activeNav, setActiveNav] = useState('Dashboard')
-  const [activeSubTab, setActiveSubTab] = useState<string>('OVERVIEW')
+  const [activeNav, setActiveNav] = useState(initialRoute.view)
+  const [activeSubTab, setActiveSubTab] = useState<string>(initialRoute.subTab)
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({
     overview: true,
     security_ops: true,
@@ -1306,6 +1333,19 @@ export default function App() {
       mounted = false
       unsubscribe()
     }
+  }, [])
+
+  // Browser History & SPA URL synchronization
+  useEffect(() => {
+    const handlePopState = () => {
+      const route = getInitialViewFromPath()
+      setActiveNav(route.view)
+      if (route.subTab) {
+        setActiveSubTab(route.subTab)
+      }
+    }
+    window.addEventListener('popstate', handlePopState)
+    return () => window.removeEventListener('popstate', handlePopState)
   }, [])
 
   useEffect(() => {
@@ -1803,7 +1843,42 @@ export default function App() {
     )
   }
 
-  if (loading || !data) return <div className="loading">Loading security overview…</div>
+  if (loading && !data) return <div className="loading">Loading security overview…</div>
+
+  if (!data) {
+    return (
+      <div
+        className="card"
+        style={{
+          maxWidth: '640px',
+          margin: '80px auto',
+          padding: '36px',
+          textAlign: 'center',
+          background: 'var(--panel)',
+          border: '1px solid var(--muted-red)',
+          borderRadius: 'var(--radius-md)',
+        }}
+      >
+        <h2 style={{ color: 'var(--warm-cream)', marginBottom: '10px' }}>⚠️ Gateway Service Pending</h2>
+        <p style={{ color: 'var(--muted-cream)', fontSize: '13px', lineHeight: 1.6, marginBottom: '24px' }}>
+          Unable to establish connection with the Adaptive Security Gateway backend.
+          The backend service may still be booting or connecting to PostgreSQL.
+        </p>
+        <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+          <button
+            className="primary"
+            onClick={() => {
+              setLoading(true)
+              loadDashboard()
+            }}
+            style={{ padding: '8px 24px', fontSize: '13px', cursor: 'pointer' }}
+          >
+            🔄 Retry Connection
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="app" onClick={() => { setShowSearchDropdown(false); setShowNotifications(false); setShowEnvMenu(false); }}>
@@ -1866,6 +1941,14 @@ export default function App() {
                             if (item.subTab) {
                               setActiveSubTab(item.subTab)
                             }
+                            try {
+                              const slug = item.subTab
+                                ? `${item.view.toLowerCase().replace(/[^a-z0-9]+/g, '-')}/${item.subTab.toLowerCase()}`
+                                : item.view === 'Dashboard' ? '' : item.view.toLowerCase().replace(/[^a-z0-9]+/g, '-')
+                              window.history.pushState({}, '', slug ? `/${slug}` : '/')
+                            } catch {
+                              // ignore
+                            }
                             if ((item.view === 'Dashboard' || item.view === 'Overview') && activeNav !== item.view) {
                               loadDashboard()
                             }
@@ -1888,7 +1971,7 @@ export default function App() {
           <span>
             {isLiveBackend ? 'FastAPI ML Engine Connected' : 'Local Fallback Mode'}
             <br />
-            Uptime: {data.processUptime || data.uptime || 'Process Active'}
+            Uptime: {data?.processUptime || data?.uptime || 'Process Active'}
           </span>
         </div>
       </aside>

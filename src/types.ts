@@ -263,15 +263,26 @@ export interface IngestionMetrics {
 }
 
 export interface PcapIngestionResponse {
+  ingestion_id?: string
   source_type: string
   filename: string
   file_size_bytes: number
+  processing_status?: string
   is_demo: boolean
   metrics: IngestionMetrics
+  total_packets_processed?: number
+  total_flows_extracted?: number
   flows_generated?: number
   flows_selected_for_evaluation?: number
   flows_evaluated: number
+  flows_classified?: number
+  risk_distribution?: Record<string, number>
   events_persisted?: number
+  security_events_persisted?: number
+  model_used?: string
+  processing_duration_ms?: number
+  errors?: string[]
+  warnings?: string[]
   flows_skipped_limit?: number
   high_risk_flows_count: number
   results_omitted_count?: number

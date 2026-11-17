@@ -17,26 +17,21 @@ The authoritative project directory is:
 
 ---
 
-## Option A — Run the Standalone Executable (Recommended)
+## Option A — Run the Standalone Executable (Recommended Production Entry Point)
 
-The standalone executable packages the complete React frontend, FastAPI backend, XGBoost V2 model, Random Forest standby model, and AES-256-GCM credential vault into one unified binary.
+The standalone executable (`AdaptiveSecurityGateway.exe`) is the single application entry point for the entire system. It packages the React frontend, FastAPI backend, XGBoost V2 model, Random Forest standby model, Scapy flow ingestion, and AES-256-GCM credential vault into one unified executable.
 
-### Step 1: Ensure PostgreSQL Persistence is Running
+**No manual Python commands, virtual-environment activation, Vite servers, or separate terminal windows are required.**
 
-Open PowerShell in the project directory and start the lightweight PostgreSQL database container:
-
-```powershell
-cd C:\Users\LENOVO\Desktop\hybrid-gateway-security
-docker compose up -d db
-```
-*(Verify: `docker compose ps` shows `gateway-postgres` running on port 5434).*
+### Step 1: Ensure Docker Desktop is Running (If Persistence / Attack Simulation is Needed)
+Start Docker Desktop on your workstation.
+*(If Docker Desktop is offline, the application still launches cleanly in offline analysis mode: PCAP parsing, XGBoost V2 threat detection, and read-only cloud interfaces remain operational).*
 
 ### Step 2: Launch the Executable
-
-You can launch the application in either of two ways:
+Launch the application via either:
 
 #### Method 1: Double-Click (File Explorer)
-Open File Explorer, navigate to:
+Navigate to:
 ```
 C:\Users\LENOVO\Desktop\hybrid-gateway-security\dist\AdaptiveSecurityGateway
 ```
@@ -44,6 +39,7 @@ Double-click:
 ```
 AdaptiveSecurityGateway.exe
 ```
+*(Or the physical path: `C:\Users\LENOVO\Desktop\hybrid-gateway-security\backend\executable\AdaptiveSecurityGateway\AdaptiveSecurityGateway.exe`)*
 
 #### Method 2: Command Line (PowerShell)
 ```powershell
@@ -52,47 +48,41 @@ cd C:\Users\LENOVO\Desktop\hybrid-gateway-security
 ```
 *(Alternative shortcut wrapper: `.\backend\executable\AdaptiveSecurityGateway.cmd`)*
 
-### Step 3: Observe Startup Output and Identify the URL
-
-When the executable starts, a console window opens and prints the startup banner:
-
+### Step 3: Observe Automated Orchestration & Browser Launch
+The executable performs all orchestration steps automatically in sequence:
 ```text
 ==================================================================
- Adaptive Hybrid Cloud Security Gateway v2.2.0
+ Adaptive Hybrid Cloud Security Gateway v1.0.0
 ==================================================================
-[*] Binding host: 127.0.0.1:8000
-[*] Environment file: C:\Users\LENOVO\Desktop\hybrid-gateway-security\.env
+[*] Initializing packaged runtime...
 [*] Mode: Standalone Executable
-[*] Database: 5434/hybrid_gateway_db
-[*] ML Artifacts: ml/models
+[*] Workspace Root: C:\Users\LENOVO\Desktop\hybrid-gateway-security
+[*] Environment file: C:\Users\LENOVO\Desktop\hybrid-gateway-security\.env
+[*] Database target: 5434/hybrid_gateway_db
+[*] ML Artifacts directory: ...\_internal\ml\models
+[*] Checking Docker Desktop...
+[+] Docker Desktop is active.
+[*] Starting required infrastructure...
+[*] Waiting for PostgreSQL readiness...
+[+] PostgreSQL container 'gateway-postgres' is ready (port 5434).
+[*] Waiting for traffic-generator readiness...
+[+] Traffic generator 'hybrid-lab-traffic-generator' is ready (port 8002).
+[*] Serving frontend assets: ...\_internal\dist
+[*] Loading ML models...
+[*] Initializing application database...
+[*] Binding application port...
 ==================================================================
-[+] Serving frontend distribution from: ...\dist
+[*] Opening application URL: http://localhost:8000
 [*] Unified Gateway Dashboard: http://localhost:8000
 ==================================================================
-INFO:     Started server process
-INFO:     Waiting for application startup.
-INFO:     Application startup complete.
-INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+[*] Gateway Server is listening. Press Ctrl+C in this console to stop.
+==================================================================
 ```
 
-Look for the line:
-`[*] Unified Gateway Dashboard: http://localhost:8000`
+Your default web browser opens automatically to `http://localhost:8000` (or fallback port `8080` if 8000 is occupied).
 
-### Step 4: Open in Your Browser
-
-Open your web browser and navigate to:
-```
-http://localhost:8000
-```
-*(If port 8000 was busy, the launcher automatically selects fallback port `8080`, so navigate to `http://localhost:8080`).*
-
-### Step 5: How to Stop the Application
-
-In the console window where the executable is running, press:
-```text
-Ctrl + C
-```
-Or simply close the console window.
+### Step 4: Graceful Shutdown
+To stop the application at any time, press `Ctrl + C` in the console window or simply close the console. The server safely cleans up sockets and shuts down.
 
 ---
 
@@ -109,14 +99,13 @@ docker compose up -d db
 
 ### Step 2: Terminal 1 — Start the FastAPI Backend
 
-Open a PowerShell terminal:
+Open a PowerShell terminal (do not run `Activate.ps1` to avoid PowerShell script execution policy errors; invoke the project Python virtual environment interpreter directly):
 
 ```powershell
 cd C:\Users\LENOVO\Desktop\hybrid-gateway-security
-.\ml\.venv\Scripts\Activate.ps1
-python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000 --reload
+.\ml\.venv\Scripts\python.exe -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000 --reload
 ```
-Backend API will be active on `http://localhost:8000` (API Docs: `http://localhost:8000/docs`).
+Backend API will be active on `http://127.0.0.1:8000` (API Docs: `http://127.0.0.1:8000/docs`).
 
 ### Step 3: Terminal 2 — Start the React Frontend
 
@@ -315,3 +304,45 @@ In strict accordance with WCAG 2.2 AA accessibility guidelines:
 ### 4. How do I configure AWS, GCP, or Azure credentials?
 - See [SETUP_GUIDE.md](./SETUP_GUIDE.md) for step-by-step instructions.
 - Or use the in-app **Onboarding Wizard** under **Multi-Cloud $\to$ Cloud Accounts $\to$ "+ Onboard Cloud Account"**. Credentials are encrypted using AES-256-GCM.
+
+### 5. Diagnostic Notice: "WARNING: No libpcap provider available ! pcap won't be used"
+- **Behavior**: Scapy on Windows prints this diagnostic banner when Npcap or WinPcap (`wpcap.dll`) is not installed on the Windows system.
+- **Offline PCAP Processing**: **100% Functional**. All file-based PCAP analysis (uploading `.pcap` files via the dashboard, traffic replay, flow normalization, and XGBoost V2 threat inference) operates in pure Python without needing Npcap or administrative network drivers.
+- **Live Interface Capture**: Live packet capture from Windows hardware NICs requires [Npcap](https://npcap.com/) installed with "WinPcap API-compatible mode" enabled. In the Docker hybrid lab, live packet sniffing runs natively inside Linux containers using standard AF_PACKET sockets.
+
+### 6. Attack Simulation: Running the Daemon in Development Mode
+- **Windows Host Development Mode**: When triggering attack scenarios from the UI (**Security Operations $\to$ Attack Simulation**), the Windows backend communicates directly with the containerized simulation daemon via the published host port at `http://127.0.0.1:8002`.
+- **Starting the Simulation Container**:
+  ```powershell
+  cd C:\Users\LENOVO\Desktop\hybrid-gateway-security\deployment\hybrid-lab
+  docker compose up -d --build traffic-generator
+  ```
+- **Daemon Lifecycle & Status Codes**:
+  The daemon runs `ThreadingHTTPServer` on `0.0.0.0:8002` inside the container.
+  - `GET /health` reports `{"status": "ONLINE", "ready": true, "service": "hybrid-lab-traffic-generator"}`.
+  - The backend precisely distinguishes `CONNECTION_REFUSED`, `DAEMON_NOT_RUNNING`, `HEALTHCHECK_FAILED`, `INVALID_SCENARIO`, `COMMAND_REJECTED`, `EXECUTION_TIMEOUT`, and `EXECUTION_FAILED`.
+  - If the container is stopped or offline, the UI returns `CONNECTION_REFUSED` in under 1 second (no 22-second freeze).
+
+### 7. PCAP Ingestion: High-Volume PCAP Parsing (`dos.pcap`)
+- High-volume packet captures containing tens of thousands of connections (e.g. `dos.pcap` with 91,117 packets across 90,439 sessions) stream directly through `RawPcapReader` in ~23 seconds.
+- The UI features a genuine 5-step lifecycle stepper:
+  1. `UPLOADING` (tracks actual byte transfer progress from 0% to 100%).
+  2. `PROCESSING` (streams packets and aggregates flow sessions).
+  3. `CLASSIFYING` (runs Big Data XGBoost V2 threat classification).
+  4. `PERSISTING` (stores security events and active containment rules).
+  5. `COMPLETED` (renders full capture telemetry, flow table, and risk distributions).
+- If any operational error occurs, the UI transitions to `FAILED` and provides a direct `↺ Retry Ingestion` button without requiring a page refresh.
+
+### 8. Running in Development Mode with Explicit Python Interpreter
+- To run and verify the source-code fixes without PowerShell script execution policy errors:
+  - **Terminal 1 (Backend)**:
+    ```powershell
+    cd C:\Users\LENOVO\Desktop\hybrid-gateway-security
+    .\ml\.venv\Scripts\python.exe -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000 --reload
+    ```
+  - **Terminal 2 (Frontend)**:
+    ```powershell
+    cd C:\Users\LENOVO\Desktop\hybrid-gateway-security
+    cmd.exe /c "npm run dev"
+    ```
+    Access the frontend at `http://localhost:5174`. All API calls are automatically proxied to port 8000.

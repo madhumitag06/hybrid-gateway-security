@@ -374,6 +374,7 @@ class DashboardService:
                 )
 
                 action = policy_decision.policy_action
+                pred.action_recommendation = action
 
                 if pred.is_anomaly:
                     feat_reasons = ", ".join([f"{c.feature} ({c.value})" for c in pred.top_contributing_features[:2]])

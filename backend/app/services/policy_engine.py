@@ -120,6 +120,7 @@ class PolicyEngine:
         event_id: Optional[str] = None,
         custom_allowlist: Optional[List[str]] = None,
         byte_count: Optional[int] = None,
+        telemetry_action: Optional[str] = None,
     ) -> PolicyDecision:
         """
         Evaluate context-aware security policy for an evaluated network flow.
@@ -142,6 +143,27 @@ class PolicyEngine:
                 risk_score=prediction.risk_score,
                 rule_name="MANAGEMENT_ALLOWLIST_PROTECTION",
                 reason=f"Source IP {source_ip} matches protected management allowlist CIDR; enforcement bypassed.",
+                suggested_ttl_seconds=0,
+            )
+
+        # 2. Cloud Perimeter Firewall Rejection Check (e.g. AWS SG / NACL REJECT)
+        if telemetry_action and str(telemetry_action).upper() in ("REJECT", "DENY", "BLOCK", "DROP"):
+            base_risk = max(prediction.risk_score, 35) if prediction.threat_level == "LOW" else prediction.risk_score
+            threat_tier = "MEDIUM" if prediction.threat_level == "LOW" else prediction.threat_level
+            return PolicyDecision(
+                decision_id=decision_id,
+                event_id=event_id,
+                target_ip=source_ip,
+                target_port=dst_port,
+                protocol=protocol,
+                policy_action="Block",
+                enforcement_required=False,  # Already enforced by upstream cloud provider
+                confidence=prediction.confidence,
+                threat_level=threat_tier,
+                attack_type=prediction.attack_type,
+                risk_score=base_risk,
+                rule_name="CLOUD_PERIMETER_FIREWALL_REJECT",
+                reason=f"Flow dropped by cloud security group or network ACL from {source_ip} to {destination_ip}:{dst_port}.",
                 suggested_ttl_seconds=0,
             )
 

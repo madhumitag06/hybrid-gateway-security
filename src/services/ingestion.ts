@@ -50,61 +50,69 @@ export async function ingestSamplePcap(
 export async function uploadPcapFile(
   file: File,
   persist: boolean = true,
-  timeoutMs: number = 60000
+  timeoutMs: number = 180000,
+  onProgress?: (progress: { loaded: number; total: number; percent: number }) => void
 ): Promise<PcapIngestionResponse> {
-  const formData = new FormData()
-  formData.append('file', file)
-  formData.append('persist', String(persist))
-
-  const controller = new AbortController()
-  const timeoutId = setTimeout(() => {
-    controller.abort()
-  }, timeoutMs)
-
-  try {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
     const url = getApiUrl('v1/ingest/pcap')
-    let authHeader: Record<string, string> = {}
+    xhr.open('POST', url)
+    xhr.timeout = timeoutMs
+
     try {
       const rawTokens = localStorage.getItem('hgs_auth_tokens')
       if (rawTokens) {
         const parsed = JSON.parse(rawTokens)
         if (parsed?.access_token) {
-          authHeader = { Authorization: `Bearer ${parsed.access_token}` }
+          xhr.setRequestHeader('Authorization', `Bearer ${parsed.access_token}`)
         }
       }
     } catch {
       // ignore
     }
 
-    const response = await fetch(url, {
-      method: 'POST',
-      body: formData,
-      signal: controller.signal,
-      headers: {
-        ...authHeader,
-      },
-    })
-
-    if (!response.ok) {
-      let errorDetail = `Failed to upload and ingest PCAP (HTTP ${response.status})`
-      try {
-        const errorData = await response.json()
-        if (errorData.detail) errorDetail = errorData.detail
-      } catch {
-        // ignore
+    if (xhr.upload && onProgress) {
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable && e.total > 0) {
+          const percent = Math.min(100, Math.round((e.loaded / e.total) * 100))
+          onProgress({ loaded: e.loaded, total: e.total, percent })
+        }
       }
-      throw new Error(errorDetail)
     }
 
-    return await response.json()
-  } catch (err: any) {
-    if (err?.name === 'AbortError' || controller.signal.aborted) {
-      throw new Error(`PCAP upload and ingestion timed out after ${Math.round(timeoutMs / 1000)}s: the capture may be very large or the server is busy.`)
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          const data = JSON.parse(xhr.responseText)
+          resolve(data as PcapIngestionResponse)
+        } catch (jsonErr: any) {
+          reject(new Error(`Failed to parse server response as JSON: ${jsonErr.message}`))
+        }
+      } else {
+        let detail = `Failed to upload and ingest PCAP (HTTP ${xhr.status})`
+        try {
+          const errData = JSON.parse(xhr.responseText)
+          if (errData.detail) detail = errData.detail
+        } catch {
+          // ignore
+        }
+        reject(new Error(detail))
+      }
     }
-    throw err
-  } finally {
-    clearTimeout(timeoutId)
-  }
+
+    xhr.onerror = () => {
+      reject(new Error('Network error or connection refusal during PCAP upload.'))
+    }
+
+    xhr.ontimeout = () => {
+      reject(new Error(`PCAP upload and ingestion timed out after ${Math.round(timeoutMs / 1000)}s: the capture may be very large or server is busy.`))
+    }
+
+    const formData = new FormData()
+    formData.append('file', file)
+    formData.append('persist', String(persist))
+    xhr.send(formData)
+  })
 }
 
 export interface IngestionHistoryResponse {

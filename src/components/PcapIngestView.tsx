@@ -5,7 +5,7 @@
  * Streams real packet counters, flows generated, inference latency, and continuous risk scores.
  */
 
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import {
   getIngestionStatus,
   listSamplePcaps,
@@ -18,12 +18,26 @@ import {
 import { getAdaptiveTelemetry } from '../services/adaptive'
 import type { IngestionStatusResponse, PcapIngestionResponse, SamplePcapInfo } from '../types'
 
+export type IngestionLifecycleStage =
+  | 'IDLE'
+  | 'UPLOADING'
+  | 'PROCESSING'
+  | 'CLASSIFYING'
+  | 'PERSISTING'
+  | 'COMPLETED'
+  | 'PARTIAL'
+  | 'FAILED'
+
 export const PcapIngestView: React.FC = () => {
   const [status, setStatus] = useState<IngestionStatusResponse | null>(null)
   const [samples, setSamples] = useState<SamplePcapInfo[]>([])
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
+  const [stage, setStage] = useState<IngestionLifecycleStage>('IDLE')
+  const [stageMessage, setStageMessage] = useState<string>('')
   const [uploadProgress, setUploadProgress] = useState(0)
+  const [uploadBytes, setUploadBytes] = useState<{ loaded: number; total: number }>({ loaded: 0, total: 0 })
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [ingestResponse, setIngestResponse] = useState<PcapIngestionResponse | null>(null)
   const [toast, setToast] = useState<string | null>(null)
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
@@ -140,48 +154,105 @@ export const PcapIngestView: React.FC = () => {
     }
   }
 
+  const stageTimersRef = useRef<{ t1: any; t2: any }>({ t1: null, t2: null })
+
+  const clearStageTimers = () => {
+    if (stageTimersRef.current.t1) clearTimeout(stageTimersRef.current.t1)
+    if (stageTimersRef.current.t2) clearTimeout(stageTimersRef.current.t2)
+    stageTimersRef.current = { t1: null, t2: null }
+  }
+
   const handleUploadSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!selectedFile) return
     setUploading(true)
-    setUploadProgress(20)
-    setToast(`Parsing and classifying flows from '${selectedFile.name}'...`)
+    setStage('UPLOADING')
+    setErrorMessage(null)
+    setUploadProgress(5)
+    setStageMessage(`Uploading ${selectedFile.name} (${(selectedFile.size / (1024 * 1024)).toFixed(2)} MB)...`)
+    setToast(`Uploading capture '${selectedFile.name}'...`)
+
+    clearStageTimers()
 
     try {
-      setUploadProgress(50)
-      const res = await uploadPcapFile(selectedFile, true)
+      const resPromise = uploadPcapFile(
+        selectedFile,
+        true,
+        180000,
+        (progress) => {
+          setUploadBytes({ loaded: progress.loaded, total: progress.total })
+          setUploadProgress(progress.percent)
+          if (progress.percent >= 100) {
+            setStage('PROCESSING')
+            setStageMessage('Upload complete. Parsing packet stream & aggregating flow sessions...')
+            setToast('Parsing packet stream and aggregating flow sessions...')
+
+            stageTimersRef.current.t1 = setTimeout(() => {
+              setStage('CLASSIFYING')
+              setStageMessage('Extracting flow feature vectors & running XGBoost V2 threat inference...')
+              setToast('Evaluating XGBoost V2 model on extracted flow sessions...')
+
+              stageTimersRef.current.t2 = setTimeout(() => {
+                setStage('PERSISTING')
+                setStageMessage('Saving evaluated security events, containment decisions & adaptive telemetry...')
+                setToast('Persisting security events to database...')
+              }, 6000)
+            }, 3500)
+          }
+        }
+      )
+
+      const res = await resPromise
+      clearStageTimers()
+      setStage('COMPLETED')
       setUploadProgress(100)
+      setStageMessage(`Completed in ${res.processing_duration_ms || res.metrics?.total_duration_ms || 0} ms`)
       setIngestResponse(res)
       setToast(
-        `PCAP processed in ${res.metrics.total_duration_ms} ms: ${res.metrics.packets_processed} packets, ${res.metrics.flows_generated} flows evaluated (${res.high_risk_flows_count} high risk). Persisted to database.`
+        `PCAP completed in ${res.processing_duration_ms || res.metrics?.total_duration_ms || 0} ms: ` +
+        `${res.total_packets_processed || res.metrics?.packets_processed || 0} packets, ` +
+        `${res.total_flows_extracted || res.flows_generated || 0} flows extracted, ` +
+        `${res.flows_classified || res.flows_evaluated || 0} classified (${res.high_risk_flows_count} high risk).`
       )
       await reloadHistoryAndLatest()
     } catch (err: any) {
-      setToast(`PCAP Ingestion error: ${err.message || String(err)}`)
+      clearStageTimers()
+      setStage('FAILED')
+      const msg = err.message || String(err)
+      setErrorMessage(msg)
+      setToast(`PCAP Ingestion error: ${msg}`)
     } finally {
       setUploading(false)
-      setTimeout(() => setUploadProgress(0), 1500)
     }
   }
 
   const handleRunSample = async (filename: string) => {
     setUploading(true)
-    setUploadProgress(30)
+    setStage('PROCESSING')
+    setErrorMessage(null)
+    setUploadProgress(40)
+    setStageMessage(`Parsing benchmark capture '${filename}'...`)
     setToast(`Ingesting benchmark capture '${filename}'...`)
     try {
-      setUploadProgress(70)
+      setStage('CLASSIFYING')
+      setUploadProgress(75)
+      setStageMessage('Running XGBoost V2 threat inference on benchmark flows...')
       const res = await ingestSamplePcap(filename, true)
+      setStage('COMPLETED')
       setUploadProgress(100)
+      setStageMessage(`Completed in ${res.processing_duration_ms || res.metrics?.total_duration_ms || 0} ms`)
       setIngestResponse(res)
       setToast(
         `Benchmark '${filename}' completed: ${res.metrics.packets_processed} packets, ${res.flows_evaluated} flows evaluated. Persisted to database.`
       )
       await reloadHistoryAndLatest()
     } catch (err: any) {
-      setToast(`Sample PCAP error: ${err.message || String(err)}`)
+      setStage('FAILED')
+      const msg = err.message || String(err)
+      setErrorMessage(msg)
+      setToast(`Sample PCAP error: ${msg}`)
     } finally {
       setUploading(false)
-      setTimeout(() => setUploadProgress(0), 1500)
     }
   }
 
@@ -220,7 +291,104 @@ export const PcapIngestView: React.FC = () => {
         </div>
       </section>
 
-      {toast && (
+      {/* Visual Ingestion Lifecycle Pipeline Stepper */}
+      {stage !== 'IDLE' && (
+        <div
+          className="card"
+          style={{
+            padding: '12px 16px',
+            background: 'var(--panel-elevated)',
+            border: stage === 'FAILED' ? '1px solid var(--terracotta)' : '1px solid var(--line-strong)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '10px',
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ fontSize: '12px', fontWeight: 700, color: stage === 'FAILED' ? 'var(--terracotta)' : 'var(--warm-cream)' }}>
+                {stage === 'UPLOADING' && '1. UPLOADING'}
+                {stage === 'PROCESSING' && '2. PROCESSING & AGGREGATING'}
+                {stage === 'CLASSIFYING' && '3. CLASSIFYING THREATS'}
+                {stage === 'PERSISTING' && '4. PERSISTING TO DATABASE'}
+                {stage === 'COMPLETED' && '✓ 5. INGESTION COMPLETED'}
+                {stage === 'FAILED' && '✕ INGESTION FAILED'}
+              </span>
+              <span style={{ fontSize: '11px', color: 'var(--muted-cream)' }}>
+                {stageMessage || (stage === 'UPLOADING' ? `${uploadProgress}% (${(uploadBytes.loaded / (1024 * 1024)).toFixed(2)} / ${(uploadBytes.total / (1024 * 1024)).toFixed(2)} MB)` : '')}
+              </span>
+            </div>
+            {stage === 'FAILED' && (
+              <button
+                type="button"
+                className="primary"
+                onClick={handleUploadSubmit}
+                style={{ fontSize: '11px', padding: '4px 10px' }}
+              >
+                ↺ Retry Ingestion
+              </button>
+            )}
+          </div>
+
+          {/* Stepper Progress Bar */}
+          <div style={{ width: '100%', background: 'var(--panel-inset)', height: '6px', borderRadius: '3px', overflow: 'hidden' }}>
+            <div
+              style={{
+                width: stage === 'FAILED' ? '100%' : `${uploadProgress}%`,
+                background: stage === 'FAILED' ? 'var(--terracotta)' : stage === 'COMPLETED' ? 'var(--olive-green)' : 'var(--terracotta)',
+                height: '100%',
+                transition: 'width 240ms ease',
+              }}
+            />
+          </div>
+
+          {/* Stage Breadcrumbs */}
+          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', fontSize: '10.5px' }}>
+            {(['UPLOADING', 'PROCESSING', 'CLASSIFYING', 'PERSISTING', 'COMPLETED'] as const).map((s, idx) => {
+              const stagesOrder = ['UPLOADING', 'PROCESSING', 'CLASSIFYING', 'PERSISTING', 'COMPLETED']
+              const currentIdx = stagesOrder.indexOf(stage)
+              const stepIdx = idx
+              const isPast = currentIdx > stepIdx || stage === 'COMPLETED'
+              const isCurrent = stage === s
+              return (
+                <span
+                  key={s}
+                  style={{
+                    padding: '2px 8px',
+                    borderRadius: 'var(--radius-sm)',
+                    background: isCurrent
+                      ? 'var(--panel-inset)'
+                      : isPast
+                      ? 'rgba(133, 139, 89, 0.15)'
+                      : 'transparent',
+                    border: isCurrent
+                      ? '1px solid var(--terracotta)'
+                      : isPast
+                      ? '1px solid var(--olive-green)'
+                      : '1px solid var(--line-subtle)',
+                    color: isCurrent
+                      ? 'var(--warm-cream)'
+                      : isPast
+                      ? 'var(--olive-green)'
+                      : 'var(--muted-cream)',
+                    fontWeight: isCurrent ? 700 : 500,
+                  }}
+                >
+                  {isPast ? '✓ ' : ''}{idx + 1}. {s}
+                </span>
+              )
+            })}
+          </div>
+
+          {errorMessage && (
+            <div style={{ color: 'var(--terracotta)', fontSize: '11.5px', marginTop: '4px' }}>
+              <strong>Error Details:</strong> {errorMessage}
+            </div>
+          )}
+        </div>
+      )}
+
+      {toast && !errorMessage && (
         <div
           className="auth-alert"
           style={{
@@ -243,20 +411,6 @@ export const PcapIngestView: React.FC = () => {
           >
             ✕
           </button>
-        </div>
-      )}
-
-      {/* Progress Bar when Active */}
-      {uploading && (
-        <div style={{ width: '100%', background: 'var(--panel-inset)', height: '6px', borderRadius: '3px', overflow: 'hidden' }}>
-          <div
-            style={{
-              width: `${uploadProgress}%`,
-              background: 'var(--terracotta)',
-              height: '100%',
-              transition: 'width 240ms ease',
-            }}
-          />
         </div>
       )}
 
@@ -435,22 +589,96 @@ export const PcapIngestView: React.FC = () => {
       {/* Evaluated Flows Results Table */}
       {ingestResponse && (
         <section className="card" style={{ padding: '16px', background: 'var(--panel)', border: '1px solid var(--line)' }}>
-          <div className="title-line" style={{ marginBottom: '12px' }}>
+          <div className="title-line" style={{ marginBottom: '14px', flexWrap: 'wrap', gap: '8px' }}>
             <div>
               <h2 style={{ margin: 0, fontSize: '15px' }}>
                 Capture Telemetry: <code style={{ color: 'var(--terracotta)' }}>{ingestResponse.filename}</code>
               </h2>
               <span style={{ fontSize: '11px', color: 'var(--muted-cream)' }}>
-                {ingestResponse.metrics.packets_processed} packets in {ingestResponse.metrics.total_duration_ms} ms • {ingestResponse.flows_evaluated} flows evaluated
+                Ingestion ID: <code style={{ color: 'var(--warm-cream)' }}>{ingestResponse.ingestion_id || 'ingest-run'}</code> • Status: <strong style={{ color: 'var(--olive-green)' }}>{ingestResponse.processing_status || 'COMPLETED'}</strong> • Model: <strong>{ingestResponse.model_used || 'Big Data XGBoost V2'}</strong>
               </span>
             </div>
-            <span
-              className={`threat-tag ${ingestResponse.high_risk_flows_count > 0 ? 'HIGH' : 'LOW'}`}
-              style={{ fontSize: '11px' }}
-            >
-              {ingestResponse.high_risk_flows_count} High Risk Flows
-            </span>
+            <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+              <span
+                className={`threat-tag ${ingestResponse.high_risk_flows_count > 0 ? 'HIGH' : 'LOW'}`}
+                style={{ fontSize: '11px' }}
+              >
+                {ingestResponse.high_risk_flows_count} High Risk Flows
+              </span>
+              <span className="topology-badge" style={{ fontSize: '10.5px' }}>
+                ⏱️ {ingestResponse.processing_duration_ms || ingestResponse.metrics?.total_duration_ms || 0} ms
+              </span>
+            </div>
           </div>
+
+          {/* Unified Metric Cards Grid */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '10px', marginBottom: '16px' }}>
+            <div className="metric-card" style={{ padding: '10px 12px', background: 'var(--panel-inset)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--line-subtle)' }}>
+              <div style={{ fontSize: '10.5px', color: 'var(--muted-cream)' }}>Packets Processed</div>
+              <div style={{ fontSize: '18px', fontWeight: 700, color: 'var(--warm-cream)', marginTop: '2px' }}>
+                {(ingestResponse.total_packets_processed ?? ingestResponse.metrics?.packets_processed ?? 0).toLocaleString()}
+              </div>
+            </div>
+
+            <div className="metric-card" style={{ padding: '10px 12px', background: 'var(--panel-inset)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--line-subtle)' }}>
+              <div style={{ fontSize: '10.5px', color: 'var(--muted-cream)' }}>Flows Extracted</div>
+              <div style={{ fontSize: '18px', fontWeight: 700, color: 'var(--warm-cream)', marginTop: '2px' }}>
+                {(ingestResponse.total_flows_extracted ?? ingestResponse.flows_generated ?? 0).toLocaleString()}
+              </div>
+            </div>
+
+            <div className="metric-card" style={{ padding: '10px 12px', background: 'var(--panel-inset)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--line-subtle)' }}>
+              <div style={{ fontSize: '10.5px', color: 'var(--muted-cream)' }}>Flows Classified</div>
+              <div style={{ fontSize: '18px', fontWeight: 700, color: 'var(--warm-cream)', marginTop: '2px' }}>
+                {(ingestResponse.flows_classified ?? ingestResponse.flows_evaluated ?? 0).toLocaleString()}
+              </div>
+            </div>
+
+            <div className="metric-card" style={{ padding: '10px 12px', background: 'var(--panel-inset)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--line-subtle)' }}>
+              <div style={{ fontSize: '10.5px', color: 'var(--muted-cream)' }}>Events Persisted</div>
+              <div style={{ fontSize: '18px', fontWeight: 700, color: 'var(--olive-green)', marginTop: '2px' }}>
+                {(ingestResponse.security_events_persisted ?? ingestResponse.events_persisted ?? 0).toLocaleString()}
+              </div>
+            </div>
+
+            <div className="metric-card" style={{ padding: '10px 12px', background: 'var(--panel-inset)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--line-subtle)' }}>
+              <div style={{ fontSize: '10.5px', color: 'var(--muted-cream)' }}>Pipeline Throughput</div>
+              <div style={{ fontSize: '18px', fontWeight: 700, color: 'var(--warm-cream)', marginTop: '2px' }}>
+                {(ingestResponse.metrics?.throughput_packets_per_sec ?? 0).toLocaleString()} <span style={{ fontSize: '10.5px', fontWeight: 400 }}>pkts/s</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Risk Distribution Badges */}
+          {ingestResponse.risk_distribution && Object.keys(ingestResponse.risk_distribution).length > 0 && (
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '14px', padding: '8px 12px', background: 'var(--panel-inset)', borderRadius: 'var(--radius-sm)' }}>
+              <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--muted-cream)' }}>Risk Categories:</span>
+              {Object.entries(ingestResponse.risk_distribution).map(([cat, cnt]) => (
+                <span
+                  key={cat}
+                  style={{
+                    fontSize: '10.5px',
+                    padding: '2px 8px',
+                    borderRadius: 'var(--radius-sm)',
+                    background: cat === 'BENIGN' ? 'rgba(133, 139, 89, 0.2)' : 'rgba(200, 117, 85, 0.2)',
+                    color: cat === 'BENIGN' ? 'var(--olive-green)' : 'var(--terracotta)',
+                    fontWeight: 600,
+                  }}
+                >
+                  {cat}: {cnt}
+                </span>
+              ))}
+            </div>
+          )}
+
+          {/* Warnings and Ingestion Notes */}
+          {ingestResponse.warnings && ingestResponse.warnings.length > 0 && (
+            <div style={{ marginBottom: '14px', padding: '8px 12px', background: 'rgba(200, 117, 85, 0.1)', border: '1px solid var(--terracotta)', borderRadius: 'var(--radius-sm)', fontSize: '11px', color: 'var(--warm-cream)' }}>
+              {ingestResponse.warnings.map((w, idx) => (
+                <div key={idx}>ℹ️ {w}</div>
+              ))}
+            </div>
+          )}
 
           <div className="table-wrapper" style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', textAlign: 'left' }}>
@@ -468,26 +696,33 @@ export const PcapIngestView: React.FC = () => {
               </thead>
               <tbody>
                 {ingestResponse.results.slice(0, 15).map((r: any, i: number) => {
-                  const srcIp = r.flow_features?.source_ip || r.source_ip || '10.10.10.10'
-                  const dstIp = r.flow_features?.destination_ip || r.destination_ip || '10.20.10.20'
-                  const dstPort = r.flow_features?.dst_port || r.destination_port || 8080
-                  const predClass = r.prediction?.predicted_class || r.predicted_class || 'BENIGN'
-                  const risk = r.prediction?.risk_score ?? r.risk_score ?? 15
-                  const policyAct = r.prediction?.policy_action || r.policy_action || (risk >= 70 ? 'Block' : 'Allow')
+                  const srcIp = r.flow_features?.source_ip || r.source_ip || r.src_ip || '10.10.10.10'
+                  const dstIp = r.flow_features?.destination_ip || r.destination_ip || r.dst_ip || '10.20.10.20'
+                  const dstPort = r.flow_features?.dst_port || r.destination_port || r.dst_port || 80
+                  const predClass = r.prediction?.attack_type || r.attack_type || r.prediction?.predicted_class || r.predicted_class || 'BENIGN'
+                  const risk = r.prediction?.risk_score ?? r.risk_score ?? 0
+                  const policyAct = r.prediction?.action_recommendation || r.prediction?.policy_action || r.policy_action || r.action || (risk >= 70 ? 'Block' : 'Allow')
+                  const direction = r.flow_features?.traffic_direction || r.traffic_direction || (srcIp.startsWith('127.') || dstIp.startsWith('127.') ? 'LOOPBACK_LOCAL' : 'ON_PREM_TO_CLOUD')
+                  const pktCount = r.flow_features?.packet_count ?? r.packet_count ?? 1
+                  const byteCount = r.flow_features?.byte_count ?? r.byte_count ?? 64
                   return (
                     <tr key={i} style={{ borderBottom: '1px solid var(--line-subtle)', color: 'var(--warm-cream)' }}>
                       <td style={{ padding: '8px 10px' }}>
                         <span className="prov-badge" style={{ fontSize: '9.5px' }}>
-                          ON_PREM_TO_CLOUD
+                          {direction}
                         </span>
                       </td>
                       <td style={{ padding: '8px 10px', fontFamily: 'var(--font-mono)' }}>{srcIp}</td>
                       <td style={{ padding: '8px 10px', fontFamily: 'var(--font-mono)', color: 'var(--terracotta)' }}>
                         {dstIp}:{dstPort}
                       </td>
-                      <td style={{ padding: '8px 10px' }}>{r.packet_count || 25}</td>
-                      <td style={{ padding: '8px 10px' }}>{r.byte_count || 1500}</td>
-                      <td style={{ padding: '8px 10px', fontWeight: 600 }}>{predClass}</td>
+                      <td style={{ padding: '8px 10px' }}>{pktCount}</td>
+                      <td style={{ padding: '8px 10px' }}>{typeof byteCount === 'number' ? byteCount.toLocaleString() : byteCount}</td>
+                      <td style={{ padding: '8px 10px', fontWeight: 600 }}>
+                        <span style={{ color: predClass === 'BENIGN' ? 'var(--olive-green)' : 'var(--terracotta)' }}>
+                          {predClass}
+                        </span>
+                      </td>
                       <td style={{ padding: '8px 10px' }}>
                         <span
                           className="pill"

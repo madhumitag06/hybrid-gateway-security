@@ -74,13 +74,76 @@ export interface MultiCloudHealthResponse {
       status: string
       region: string
       account_id?: string
+      project_id?: string
+      project_number?: string
+      auth_method?: string
+      workload_identity_pool?: string
+      workload_identity_provider?: string
+      service_account_email?: string
       role?: string
       arn?: string
+      api_coverage_summary?: string
       telemetry_ready: boolean
       enforcement_ready: boolean
       checked_at: string
     }
   >
+}
+
+export interface GcpApiCoverageItem {
+  service: string
+  name: string
+  status: 'ENABLED_ACCESSIBLE' | 'UNAVAILABLE_BILLING_REQUIRED' | 'ENABLED_RESTRICTED' | 'DISABLED' | 'NOT_SUPPORTED'
+  label: string
+  required: boolean
+  feature: string
+  reason: string
+  remedy: string
+}
+
+export interface GcpIntegrationOverview {
+  project_configuration: {
+    project_id: string
+    project_number: string
+    region: string
+    billing_status: string
+    billing_status_label: string
+    enabled_apis: string[]
+    unavailable_apis: Array<{
+      service: string
+      name: string
+      reason: string
+      remedy: string
+    }>
+  }
+  identity_and_authentication: {
+    auth_method: string
+    auth_type_label: string
+    workload_identity_pool: string
+    workload_identity_provider: string
+    service_account_email: string
+    federation_status: string
+    service_account_impersonation_status: string
+    vault_status: string
+    credential_source: string
+    aws_credentials_status?: string
+    missing_requirement?: string
+    last_successful_authentication?: string
+  }
+  infrastructure_discovery: {
+    total_resources: number
+    compute_api_status: string
+    discovery_status: string
+    discovery_message: string
+    resources: CloudResource[]
+  }
+  api_coverage: {
+    total_services: number
+    accessible_count: number
+    services: GcpApiCoverageItem[]
+  }
+  connection_status: string
+  checked_at: string
 }
 
 export interface CloudTelemetryBatchResponse {
@@ -217,6 +280,22 @@ export const cloudService = {
 
   async discoverAws(): Promise<any> {
     return this.discoverAwsResources()
+  },
+
+  async getGcpStatus(): Promise<GcpIntegrationOverview> {
+    return request<GcpIntegrationOverview>('/cloud/accounts/GCP/status')
+  },
+
+  async discoverGcpResources(): Promise<any> {
+    return request<any>('/cloud/accounts/GCP/discover', {
+      method: 'POST',
+    })
+  },
+
+  async testGcpConnection(): Promise<any> {
+    return request<any>('/cloud/accounts/GCP/test-connection', {
+      method: 'POST',
+    })
   },
 
   async inspectAwsFlowLogs(): Promise<any> {

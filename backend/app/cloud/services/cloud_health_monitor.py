@@ -36,16 +36,7 @@ class CloudHealthMonitor:
         providers_status["AWS"] = aws_adapter.get_health()
 
         # 2. GCP
-        gcp_cfg = CloudAccountConfigSchema(
-            account_id=getattr(settings, "gcp_project_id", "gcp-builders-hub-prod") or "gcp-builders-hub-prod",
-            provider="GCP",
-            account_name="Google Cloud (Builders Hub)",
-            project_id=getattr(settings, "gcp_project_id", "gcp-builders-hub-prod"),
-            region=getattr(settings, "gcp_region", "us-central1") or "us-central1",
-            enabled=getattr(settings, "gcp_enabled", True),
-            enforcement_enabled=False,
-        )
-        gcp_adapter = CloudConnectionManager.create_adapter(gcp_cfg)
+        gcp_adapter = CloudConnectionManager.get_or_create_gcp_adapter()
         providers_status["GCP"] = gcp_adapter.get_health()
 
         # 3. Azure

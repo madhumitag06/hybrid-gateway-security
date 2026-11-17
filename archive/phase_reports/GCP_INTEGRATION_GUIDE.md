@@ -1,128 +1,109 @@
-# Google Cloud Platform (Google Builders Hub) Integration Guide
+# Google Cloud Platform (GCP) Live Integration & WIF Guide
 
 **Project:** Adaptive AI-Powered Security Gateway for Hybrid Cloud  
-**Provider:** Google Cloud Platform (GCP) / Google Builders Hub  
-**Target Services:** VPC Networks, Cloud Logging VPC Flow Logs, Workload Identity Federation, Cloud Firewalls  
+**Provider:** Google Cloud Platform (GCP)  
+**Project ID:** `hybrid-gateway-bridge`  
+**Project Number:** `77380112089`  
+**Region:** `us-central1`  
+**Authentication:** Workload Identity Federation (AWS to GCP STS Exchange with Service Account Impersonation)  
+**Target Services:** Security Token Service (STS), Cloud IAM, IAM Credentials, Cloud Logging, Cloud Storage, Access Context Manager  
 
 ---
 
 ## 1. Overview & Architecture
 
-The GCP Cloud Adapter integrates the Security Gateway with Google Cloud environments, specifically designed for development and deployment via Google Builders Hub. It captures VPC Flow Logs from Cloud Logging, extracts canonical 9-feature vectors, runs inference against authoritative XGBoost V2, and applies dynamic ingress deny firewall rules.
+The GCP Cloud Adapter integrates the Security Gateway with Google Cloud environments using **Workload Identity Federation (WIF)**. The security gateway authenticates keylessly by using local AWS SigV4 credentials to request an STS federated token from Google Cloud, which then generates short-lived OAuth2 access tokens via service account impersonation.
+
+### 1.1 Canonical Parameters
+| Parameter | Value |
+| :--- | :--- |
+| **GCP Project ID** | `hybrid-gateway-bridge` |
+| **GCP Project Number** | `77380112089` |
+| **Primary Region** | `us-central1` |
+| **Auth Mode** | `workload_identity` (`external_account`) |
+| **Workload Identity Pool** | `hybrid-gateway-pool` |
+| **Workload Identity Provider** | `aws-hybrid-gateway` |
+| **Impersonated Service Account** | `hybrid-gateway-security@hybrid-gateway-bridge.iam.gserviceaccount.com` |
+| **Credentials File** | `C:/Users/LENOVO/.config/hybrid-gateway/gcp-wif-credentials.json` |
+| **Credential Vault** | AES-256-GCM encrypted local vault key `gcp_wif_credentials` |
+| **Compute Engine API** | Disabled (Billing Account Required) |
+| **Compute Resource Ingestion** | 0 Resources (Strictly 0 Fabricated Items) |
 
 ---
 
-## 2. Workload Identity Federation (Keyless Authentication)
+## 2. Workload Identity Federation (AWS-to-GCP Keyless Authentication)
 
-Google Cloud Workload Identity Federation allows GitHub Actions and the Security Gateway to authenticate without managing or exporting static JSON service account keys.
+Google Cloud Workload Identity Federation eliminates the security risk of static, long-lived JSON service account keys.
 
-### 2.1 Workload Identity Pool Setup
-1. Create a Workload Identity Pool in your GCP project (e.g., `gcp-builders-hub-prod`):
-   ```bash
-   gcloud iam workload-identity-pools create "hybrid-sec-gh-pool" \
-     --project="gcp-builders-hub-prod" \
-     --location="global" \
-     --display-name="GitHub Actions Pool"
+### 2.1 Cross-Cloud Exchange Mechanism
+1. **Local AWS SigV4 Signing**: The gateway uses locally configured AWS credentials (via `boto3` session) to generate a signed AWS STS `GetCallerIdentity` request.
+2. **Google STS Token Exchange**: The signed AWS request is transmitted to `https://sts.googleapis.com/v1/token` with audience:
    ```
-2. Create an OIDC Provider within the pool:
-   ```bash
-   gcloud iam workload-identity-pools providers create-oidc "github-provider" \
-     --project="gcp-builders-hub-prod" \
-     --location="global" \
-     --workload-identity-pool="hybrid-sec-gh-pool" \
-     --display-name="GitHub Provider" \
-     --issuer-uri="https://token.actions.githubusercontent.com" \
-     --attribute-mapping="google.subject=assertion.sub,attribute.actor=assertion.actor,attribute.repository=assertion.repository"
+   //iam.googleapis.com/projects/77380112089/locations/global/workloadIdentityPools/hybrid-gateway-pool/providers/aws-hybrid-gateway
    ```
-3. Grant the repository permissions to impersonate the deployer service account:
-   ```bash
-   gcloud iam service-accounts add-iam-policy-binding "gateway-sa@gcp-builders-hub-prod.iam.gserviceaccount.com" \
-     --project="gcp-builders-hub-prod" \
-     --role="roles/iam.workloadIdentityUser" \
-     --member="principalSet://iam.googleapis.com/projects/123456789012/locations/global/workloadIdentityPools/hybrid-sec-gh-pool/attribute.repository/madhumitag06/hybrid-gateway-security"
-   ```
+3. **Federated Token Grant**: Google STS validates the AWS caller identity against the pool provider conditions and returns a federated STS token.
+4. **Service Account Impersonation**: The token calls `serviceAccounts.generateAccessToken` to impersonate `hybrid-gateway-security@hybrid-gateway-bridge.iam.gserviceaccount.com`.
+5. **Audited API Invocation**: The short-lived bearer token authenticates calls to Cloud Logging, Cloud Storage, and Cloud IAM.
 
----
-
-## 3. GCP VPC Flow Logs Configuration
-
-### 3.1 Enabling Flow Logs on Subnetworks
-In your custom VPC, enable flow logs with 5-second aggregation intervals and complete metadata:
-```bash
-gcloud compute networks subnets update hybrid-gcp-subnet-uscentral1 \
-  --region=us-central1 \
-  --project=gcp-builders-hub-prod \
-  --enable-flow-logs \
-  --logging-flow-sampling=0.5 \
-  --logging-aggregation-interval=INTERVAL_5_SEC \
-  --logging-metadata=INCLUDE_ALL_METADATA
-```
-
-### 3.2 Cloud Logging Flow Log JSON Schema
-Flow logs are written to Cloud Logging under the resource type `gce_subnetwork`:
+### 2.2 Credentials Configuration Format (`gcp-wif-credentials.json`)
 ```json
 {
-  "insertId": "gcp-rec-101",
-  "jsonPayload": {
-    "connection": {
-      "src_ip": "10.40.10.15",
-      "dest_ip": "10.40.10.2",
-      "src_port": 49152,
-      "dest_port": 443,
-      "protocol": 6
-    },
-    "bytes_sent": "25000",
-    "packets_sent": "30",
-    "start_time": "2026-11-15T00:10:00Z",
-    "end_time": "2026-11-15T00:10:15Z",
-    "rule_details": {
-      "action": "ALLOW"
-    }
+  "type": "external_account",
+  "audience": "//iam.googleapis.com/projects/77380112089/locations/global/workloadIdentityPools/hybrid-gateway-pool/providers/aws-hybrid-gateway",
+  "subject_token_type": "urn:ietf:params:aws:token-type:aws4_request",
+  "token_url": "https://sts.googleapis.com/v1/token",
+  "credential_source": {
+    "environment_id": "aws1",
+    "region_url": "http://169.254.169.254/latest/meta-data/placement/availability-zone",
+    "url": "http://169.254.169.254/latest/meta-data/iam/security-credentials",
+    "regional_cred_verification_url": "https://sts.{region}.amazonaws.com?Action=GetCallerIdentity&Version=2011-06-15"
   },
-  "resource": {
-    "type": "gce_subnetwork",
-    "labels": {
-      "subnetwork_name": "hybrid-gcp-subnet-uscentral1"
-    }
-  }
+  "service_account_impersonation_url": "https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/hybrid-gateway-security@hybrid-gateway-bridge.iam.gserviceaccount.com:generateAccessToken"
 }
 ```
 
 ---
 
-## 4. Telemetry Normalization & Parity
+## 3. Compute Engine API & Billing Transparency
 
-The `GcpTelemetryProvider` maps the Cloud Logging JSON schema into `CanonicalFlowRecord`:
-- Extracts: `packet_count` (from `packets_sent`), `byte_count` (from `bytes_sent`), `duration` (from `start_time` and `end_time`).
-- Computes: `conn_rate`, `bytes_per_sec`, `packets_per_sec`, `avg_packet_size`.
-- Evaluates: Passes normalized 9-feature vector to XGBoost V2 for instant threat scoring.
-- Authentication failures: Strictly excluded. `failed_auth_count` is NEVER synthesized.
+### 3.1 Billing Account Requirement
+The `compute.googleapis.com` API requires an active Google Cloud Billing Account linked to project `hybrid-gateway-bridge`. Because a billing account is not currently linked:
+- Live VPC networks, subnetworks, and firewall rules cannot be enumerated via Compute API.
+- The system reports status `UNAVAILABLE_BILLING_REQUIRED` with transparent remediation instructions.
+- **Audit Integrity Guarantee**: The gateway strictly reports 0 compute resources. No synthetic, simulated, or mock VPCs are displayed.
 
----
+### 3.2 Live API Coverage Matrix
+| API / Service | Endpoint | Status | Gateway Capability |
+| :--- | :--- | :--- | :--- |
+| **Compute Engine API** | `compute.googleapis.com` | `UNAVAILABLE_BILLING_REQUIRED` | VPC, Subnet & Firewall rule discovery (restricted) |
+| **IAM Service Account Credentials API** | `iamcredentials.googleapis.com` | `ENABLED_ACCESSIBLE` | Short-lived OAuth2 token generation (`generateAccessToken`) |
+| **Security Token Service API** | `sts.googleapis.com` | `ENABLED_ACCESSIBLE` | AWS SigV4 STS token exchange for Workload Identity |
+| **Identity and Access Management API** | `iam.googleapis.com` | `ENABLED_ACCESSIBLE` | Service account role inspection & WIF binding validation |
+| **Cloud Logging API** | `logging.googleapis.com` | `ENABLED_ACCESSIBLE` | VPC Flow Logs & Admin Activity audit telemetry ingestion |
+| **Cloud Storage API** | `storage.googleapis.com` | `ENABLED_ACCESSIBLE` | Flow log archives & forensic PCAP storage |
+| **Access Context Manager API** | `accesscontextmanager.googleapis.com` | `ENABLED_ACCESSIBLE` | VPC Service Controls & Zero-Trust perimeter isolation |
 
-## 5. Containment via Google Cloud Firewalls
-
-When high-risk anomalous behavior (e.g. port scan, volumetric burst, brute-force probe) is confirmed, the gateway executes containment:
-- **Action:** Creates a priority-100 deny rule in the VPC network:
-  ```bash
-  gcloud compute firewall-rules create "fw-deny-target-ip" \
-    --project=gcp-builders-hub-prod \
-    --network=hybrid-gcp-vpc \
-    --priority=100 \
-    --direction=INGRESS \
-    --action=DENY \
-    --rules=all \
-    --source-ranges=198.51.100.99/32
-  ```
-- **Reversion:** The audit record retains the revert command:
-  `gcloud compute firewall-rules delete fw-deny-target-ip --project gcp-builders-hub-prod --quiet`
+**Summary**: 5 of 7 core gateway integration APIs are fully accessible. Compute Engine API discovery will activate automatically as soon as billing is linked.
 
 ---
 
-## 6. Troubleshooting
+## 4. Telemetry Normalization & Security Operations
 
-- **Symptom:** `GCP Workload Identity Token Exchange Fails`
-  - **Resolution:** Verify that `gcp_workload_identity_provider` in configuration matches the format `projects/{PROJECT_NUMBER}/locations/global/workloadIdentityPools/{POOL}/providers/{PROVIDER}`.
-- **Symptom:** Flow logs not received from Cloud Logging.
-  - **Resolution:** Verify VPC subnet flow logs are enabled and the filter string matches `logName:"logs/compute.googleapis.com%2Fvpc_flows"`.
+Flow records ingested from Google Cloud Logging are normalized into `CanonicalFlowRecord` objects:
+- Source and destination IP/port tuples.
+- Packet count, byte count, flow duration.
+- Derived telemetry features: `conn_rate`, `bytes_per_sec`, `packets_per_sec`, `avg_packet_size`.
+- Scored against the authoritative XGBoost V2 model for sub-millisecond anomaly detection.
+
+---
+
+## 5. Troubleshooting & Operations
+
+- **Symptom:** `GCP Probe: DEGRADED (AWS credentials required for SigV4 exchange)`
+  - **Resolution:** Ensure AWS credentials are configured in `~/.aws/credentials` (or via `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`) so that the local AWS caller identity can be signed for Google STS.
+- **Symptom:** `GCP Discovery returns 0 resources`
+  - **Resolution:** This is expected when Compute Engine API lacks an active billing account. To enable VPC discovery, attach a billing account in GCP Console > Billing and run `gcloud services enable compute.googleapis.com --project=hybrid-gateway-bridge`.
+- **Symptom:** `Google auth module missing`
+  - **Resolution:** Installed `google-auth` into the environment (`pip install google-auth`).
+
 

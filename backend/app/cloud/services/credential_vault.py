@@ -149,6 +149,10 @@ class CredentialVaultService:
             return "AWS-IAM-Role"
 
         if prov == "GCP":
+            if "service_account_email" in creds:
+                sa = str(creds["service_account_email"])
+                pool = creds.get("workload_identity_pool")
+                return f"{sa} (WIF: {pool})" if pool else sa
             if "client_email" in creds:
                 return str(creds["client_email"])
             if "workload_identity_provider" in creds:

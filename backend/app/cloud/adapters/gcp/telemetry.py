@@ -28,7 +28,7 @@ IP_PROTOCOLS = {
 class GcpTelemetryProvider(BaseTelemetryProvider):
     """GCP Cloud Logging VPC Flow Log telemetry ingestion provider."""
 
-    def __init__(self, project_id: str = "gcp-builders-hub-prod", region: str = "us-central1"):
+    def __init__(self, project_id: str = "hybrid-gateway-bridge", region: str = "us-central1"):
         super().__init__(provider_name="GCP", account_id=project_id)
         self.project_id = project_id
         self.region = region

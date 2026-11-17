@@ -269,17 +269,25 @@ class Settings(BaseSettings):
     aws_flow_log_group: str = ""
     aws_flow_log_region: str = ""
 
-    # Google Cloud Platform (GCP - Google Builders Hub) Configuration
+    # Google Cloud Platform (GCP) Configuration
     gcp_enabled: bool = True
     gcp_auth_mode: str = "workload_identity"  # "workload_identity" or "service_account_json"
-    gcp_project_id: str = "gcp-builders-hub-prod"
-    gcp_project_number: str = ""
+    gcp_project_id: str = "hybrid-gateway-bridge"
+    gcp_project_number: str = "77380112089"
     gcp_region: str = "us-central1"
-    gcp_workload_identity_pool: str = ""
-    gcp_workload_identity_provider: str = ""
-    gcp_service_account: str = ""
-    gcp_service_account_email: str = ""
-    gcp_service_account_json_path: str = ""
+    gcp_workload_identity_pool: str = "hybrid-gateway-pool"
+    gcp_workload_identity_provider: str = (
+        "projects/77380112089/locations/global/workloadIdentityPools/hybrid-gateway-pool/providers/aws-hybrid-gateway"
+    )
+    gcp_service_account: str = (
+        "hybrid-gateway-security@hybrid-gateway-bridge.iam.gserviceaccount.com"
+    )
+    gcp_service_account_email: str = (
+        "hybrid-gateway-security@hybrid-gateway-bridge.iam.gserviceaccount.com"
+    )
+    gcp_service_account_json_path: str = (
+        "C:/Users/LENOVO/.config/hybrid-gateway/gcp-wif-credentials.json"
+    )
     gcp_vpc_cidrs: Union[List[str], str] = ["10.40.0.0/16", "10.40.10.0/24"]
 
     # Microsoft Azure Configuration

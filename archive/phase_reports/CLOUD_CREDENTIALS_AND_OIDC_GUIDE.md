@@ -53,17 +53,17 @@ The Security Gateway architecture enforces **Zero Static Secrets** for cloud int
       audience: sts.amazonaws.com
   ```
 
-### 3.2 Google Cloud Platform (Google Builders Hub)
+### 3.2 Google Cloud Platform (Workload Identity Federation)
 - **Issuer URI:** `https://token.actions.githubusercontent.com`
-- **Workload Identity Pool:** `projects/123456789012/locations/global/workloadIdentityPools/hybrid-sec-gh-pool`
-- **Provider:** `github-provider`
+- **Workload Identity Pool:** `projects/77380112089/locations/global/workloadIdentityPools/hybrid-gateway-pool`
+- **Provider:** `aws-hybrid-gateway`
 - **GitHub Workflow Step:**
   ```yaml
   - name: Authenticate to GCP via WIF
     uses: google-github-actions/auth@v2
     with:
-      workload_identity_provider: 'projects/123456789012/locations/global/workloadIdentityPools/hybrid-sec-gh-pool/providers/github-provider'
-      service_account: 'gateway-sa@gcp-builders-hub-prod.iam.gserviceaccount.com'
+      workload_identity_provider: 'projects/77380112089/locations/global/workloadIdentityPools/hybrid-gateway-pool/providers/aws-hybrid-gateway'
+      service_account: 'hybrid-gateway-security@hybrid-gateway-bridge.iam.gserviceaccount.com'
   ```
 
 ### 3.3 Microsoft Azure

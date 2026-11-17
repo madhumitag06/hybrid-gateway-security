@@ -137,12 +137,25 @@ hidden_imports = [
     "botocore.session",
     "botocore.client",
     "urllib3",
+    "google.auth",
+    "google.auth.transport",
+    "google.auth.transport.requests",
+    "google.auth.aws",
+    "google.auth.identity_pool",
+    "google.oauth2",
+    "google.oauth2.credentials",
+    "google.oauth2.service_account",
 ]
 
-# Collect all backend.app, ml, and shap submodules dynamically
+# Collect all backend.app, ml, shap, and google submodules dynamically
 hidden_imports += collect_submodules("backend.app")
 hidden_imports += collect_submodules("ml")
 hidden_imports += collect_submodules("shap")
+try:
+    hidden_imports += collect_submodules("google.auth")
+    hidden_imports += collect_submodules("google.oauth2")
+except Exception:
+    pass
 
 # Ensure unique entries
 hidden_imports = sorted(list(set(hidden_imports)))

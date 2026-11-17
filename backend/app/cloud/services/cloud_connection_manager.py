@@ -8,6 +8,7 @@ across AWS, GCP, Azure, and Docker Lab.
 from datetime import datetime, timezone
 import logging
 import os
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 try:
@@ -21,6 +22,7 @@ try:
         CloudAccountStatusSchema,
         CloudCapabilitiesSchema,
     )
+    from backend.app.config import settings
 except ImportError:
     from app.cloud.adapters.aws.adapter import AwsCloudAdapter
     from app.cloud.adapters.azure.adapter import AzureCloudAdapter
@@ -32,6 +34,7 @@ except ImportError:
         CloudAccountStatusSchema,
         CloudCapabilitiesSchema,
     )
+    from app.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -119,6 +122,86 @@ class CloudConnectionManager:
             enabled=True,
             enforcement_enabled=False,
             metadata={"profile_name": resolved_profile},
+        )
+        return cls.create_adapter(cfg)  # type: ignore
+
+    @classmethod
+    def get_or_create_gcp_adapter(
+        cls,
+        project_id: Optional[str] = None,
+        region: Optional[str] = None,
+        account_id: Optional[str] = None,
+    ) -> GcpCloudAdapter:
+        """Returns or instantiates the authoritative GCP adapter using environment or explicit configuration."""
+        proj_id = (
+            account_id
+            or project_id
+            or os.environ.get("GCP_PROJECT_ID")
+            or getattr(settings, "gcp_project_id", "hybrid-gateway-bridge")
+            or "hybrid-gateway-bridge"
+        )
+        if proj_id in cls._adapters and isinstance(cls._adapters[proj_id], GcpCloudAdapter):
+            return cls._adapters[proj_id]  # type: ignore
+
+        resolved_region = (
+            region
+            or os.environ.get("GCP_REGION")
+            or getattr(settings, "gcp_region", "us-central1")
+            or "us-central1"
+        )
+        resolved_proj_num = (
+            os.environ.get("GCP_PROJECT_NUMBER")
+            or getattr(settings, "gcp_project_number", "77380112089")
+            or "77380112089"
+        )
+        resolved_pool = (
+            os.environ.get("GCP_WORKLOAD_IDENTITY_POOL")
+            or getattr(settings, "gcp_workload_identity_pool", "hybrid-gateway-pool")
+            or "hybrid-gateway-pool"
+        )
+        resolved_provider = (
+            os.environ.get("GCP_WORKLOAD_IDENTITY_PROVIDER")
+            or getattr(
+                settings,
+                "gcp_workload_identity_provider",
+                "projects/77380112089/locations/global/workloadIdentityPools/hybrid-gateway-pool/providers/aws-hybrid-gateway",
+            )
+        )
+        resolved_sa = (
+            os.environ.get("GCP_SERVICE_ACCOUNT")
+            or os.environ.get("GCP_SERVICE_ACCOUNT_EMAIL")
+            or getattr(
+                settings,
+                "gcp_service_account_email",
+                "hybrid-gateway-security@hybrid-gateway-bridge.iam.gserviceaccount.com",
+            )
+        )
+        cred_path = (
+            os.environ.get("GCP_SERVICE_ACCOUNT_JSON_PATH")
+            or getattr(settings, "gcp_service_account_json_path", None)
+            or str(Path.home() / ".config" / "hybrid-gateway" / "gcp-wif-credentials.json")
+        )
+
+        cfg = CloudAccountConfigSchema(
+            account_id=proj_id,
+            provider="GCP",
+            account_name="Google Cloud Platform (hybrid-gateway-bridge)",
+            display_name=f"Google Cloud Platform ({proj_id})",
+            project_id=proj_id,
+            region=resolved_region,
+            workload_identity_pool=resolved_pool,
+            workload_identity_provider=resolved_provider,
+            service_account_email=resolved_sa,
+            enabled=getattr(settings, "gcp_enabled", True),
+            enforcement_enabled=False,
+            metadata={
+                "project_number": resolved_proj_num,
+                "workload_identity_pool": resolved_pool,
+                "workload_identity_provider": resolved_provider,
+                "service_account_email": resolved_sa,
+                "credential_path": cred_path,
+                "auth_mode": "workload_identity",
+            },
         )
         return cls.create_adapter(cfg)  # type: ignore
 

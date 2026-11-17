@@ -49,6 +49,8 @@ class CloudAccountConfigSchema(BaseModel):
     project_id: Optional[str] = None
     workload_identity_provider: Optional[str] = None
     workload_identity_pool: Optional[str] = None
+    service_account_email: Optional[str] = None
+    service_account: Optional[str] = None
     subscription_id: Optional[str] = None
     tenant_id: Optional[str] = Field(None, description="Azure Entra ID Tenant ID")
     client_id: Optional[str] = None

@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 class GcpEnforcementProvider(BaseCloudEnforcementProvider):
     """GCP Cloud Firewall containment provider."""
 
-    def __init__(self, project_id: str = "gcp-builders-hub-prod", region: str = "us-central1", enabled: bool = False):
+    def __init__(self, project_id: str = "hybrid-gateway-bridge", region: str = "us-central1", enabled: bool = False):
         super().__init__(provider_name="GCP", account_id=project_id, enabled=enabled)
         self.project_id = project_id
         self.region = region

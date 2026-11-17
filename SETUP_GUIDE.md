@@ -62,13 +62,16 @@ AWS_SECRET_ACCESS_KEY=
 # ==============================================================================
 # GOOGLE CLOUD PLATFORM (GCP) CONFIGURATION
 # ==============================================================================
-# Authentication Mode: "SERVICE_ACCOUNT_KEY" or "BUILDERS_HUB"
-GCP_AUTH_MODE=BUILDERS_HUB
-GCP_PROJECT_ID=builders-hub-prod
-GCP_REGION=asia-southeast1
-GCP_SERVICE_ACCOUNT_EMAIL=security-gateway@builders-hub-prod.iam.gserviceaccount.com
-# Path to service account key file (or leave empty if using application default):
-GCP_SERVICE_ACCOUNT_KEY_FILE=
+# Authentication Mode: "workload_identity" (AWS-to-GCP WIF) or "service_account"
+GCP_ENABLED=true
+GCP_AUTH_MODE=workload_identity
+GCP_PROJECT_ID=hybrid-gateway-bridge
+GCP_PROJECT_NUMBER=77380112089
+GCP_REGION=us-central1
+GCP_WORKLOAD_IDENTITY_POOL=hybrid-gateway-pool
+GCP_WORKLOAD_IDENTITY_PROVIDER=aws-hybrid-gateway
+GCP_SERVICE_ACCOUNT_EMAIL=hybrid-gateway-security@hybrid-gateway-bridge.iam.gserviceaccount.com
+GCP_CREDENTIALS_FILE=~/.config/hybrid-gateway/gcp-wif-credentials.json
 
 # ==============================================================================
 # MICROSOFT AZURE CONFIGURATION

@@ -208,6 +208,23 @@ function Traffic({
   const [showOutbound, setShowOutbound] = useState<boolean>(true)
   const chartWrapperRef = useRef<HTMLDivElement | null>(null)
 
+  // Correlate security events belonging to this bucket
+  const bucketEvents = useMemo(() => {
+    if (!selectedPoint || !events || events.length === 0) return []
+    // 1. If explicit event IDs are present in telemetry bucket
+    if (selectedPoint.event_ids && selectedPoint.event_ids.length > 0) {
+      const idSet = new Set(selectedPoint.event_ids)
+      const matched = events.filter((e) => idSet.has(e.id))
+      if (matched.length > 0) return matched
+    }
+    // 2. Correlate by time label substring matching
+    const labelPrefix = selectedPoint.time_label.trim()
+    return events.filter((e) => {
+      if (e.time && e.time.includes(labelPrefix)) return true
+      return false
+    })
+  }, [selectedPoint, events])
+
   if (!points || points.length === 0) {
     return (
       <div
@@ -321,23 +338,6 @@ function Traffic({
       setFocusedIdx(null)
     }
   }
-
-  // Correlate security events belonging to this bucket
-  const bucketEvents = useMemo(() => {
-    if (!selectedPoint || !events || events.length === 0) return []
-    // 1. If explicit event IDs are present in telemetry bucket
-    if (selectedPoint.event_ids && selectedPoint.event_ids.length > 0) {
-      const idSet = new Set(selectedPoint.event_ids)
-      const matched = events.filter((e) => idSet.has(e.id))
-      if (matched.length > 0) return matched
-    }
-    // 2. Correlate by time label substring matching
-    const labelPrefix = selectedPoint.time_label.trim()
-    return events.filter((e) => {
-      if (e.time && e.time.includes(labelPrefix)) return true
-      return false
-    })
-  }, [selectedPoint, events])
 
   return (
     <div

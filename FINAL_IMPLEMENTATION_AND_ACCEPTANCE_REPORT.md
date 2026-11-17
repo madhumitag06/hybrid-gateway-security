@@ -292,15 +292,15 @@ All static placeholder mock charts have been replaced with dynamic, data-driven 
 
 ### 8.2 Frontend Compilation & Build Results
 - **TypeScript (`tsc -b`)**: 0 errors.
-- **Vite Production Build**: Succeeded in 353ms with 0 errors.
+- **Vite Production Build**: Succeeded in 297ms with 0 errors.
 - **Generated Assets**:
   - `dist/index.html` (0.74 kB)
   - `dist/assets/index-DmB6aeiC.css` (96.54 kB)
-  - `dist/assets/index-BhZ7IGqm.js` (615.68 kB)
+  - `dist/assets/index-CQFZU0uQ.js` (615.67 kB)
 
 ### 8.3 Standalone Native Windows Executable Build
 - **Compiler**: PyInstaller 6.22.3 on Python 3.14.5 x64.
-- **Specification**: `AdaptiveSecurityGateway.spec` incorporating latest interactive telemetry chart, global glossy UI consistency design system (`dist/assets/index-DmB6aeiC.css`, `dist/assets/index-BhZ7IGqm.js`), `ml/models`, `backend/alembic`, and AES-256-GCM cryptography.
+- **Specification**: `AdaptiveSecurityGateway.spec` incorporating latest interactive telemetry chart, global glossy UI consistency design system (`dist/assets/index-DmB6aeiC.css`, `dist/assets/index-CQFZU0uQ.js`), `ml/models`, `backend/alembic`, and AES-256-GCM cryptography.
 - **Output Artifact**: `backend/executable/AdaptiveSecurityGateway/AdaptiveSecurityGateway.exe`
 - **Junction Access Points**:
   - `dist/AdaptiveSecurityGateway/AdaptiveSecurityGateway.exe`

@@ -523,7 +523,7 @@ export const MultiCloudView: React.FC<MultiCloudViewProps> = ({
   const uniqueRegions = Array.from(new Set(resources.map((r) => r.region).filter(Boolean)))
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+    <div className="multi-cloud-view-container" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
       {/* Top Header & Sub-Tabs Navigation */}
       <div
         className="card"
